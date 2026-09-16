@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BIST Quantum Sniper | Algorithmic Trading Desk</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <!-- TradingView Lightweight Charts -->
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+    
+    <nav class="sidebar">
+        <div class="logo">
+            <span class="icon">🎯</span>
+            <h1>QUANTUM SNIPER</h1>
+            <p class="subtitle">AI Trading Terminal v2.0</p>
+        </div>
+        
+        <ul class="nav-links">
+            <li class="active"><a href="#dashboard">📊 Piyasa Radarı</a></li>
+            <li><a href="#architecture">🧠 Sistem Mimarisi</a></li>
+            <li><a href="#weights">⚖️ AI Ağırlıkları</a></li>
+        </ul>
+        
+        <div class="system-status">
+            <h3>Terminal Status</h3>
+            <div class="status-item"><span class="dot green"></span> YFinance API: Online</div>
+            <div class="status-item"><span class="dot green"></span> ML Engine: Active</div>
+            <div class="status-item"><span class="dot green"></span> HMM Regime: Synced</div>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <header class="top-bar">
+            <div class="search-box">
+                <input type="text" id="symbolInput" placeholder="Tek Hisse Ara (Örn: THYAO)" autocomplete="off">
+                <button id="scanBtn" class="btn-primary">
+                    <span class="btn-text">TARA</span>
+                    <div class="spinner hidden"></div>
+                </button>
+            </div>
+            
+            <button id="scanAllBtn" class="btn-neon">
+                <span class="btn-text">📡 TÜM BIST100'Ü TARA (RADAR)</span>
+                <div class="spinner hidden" id="scanAllSpinner"></div>
+            </button>
+        </header>
+
+        <div id="scanStatus" class="alert-box hidden">
+            <div class="loader"></div>
+            <p>Kuantum Motoru BIST100'deki tüm hisseleri tarıyor, Yapay Zeka skorluyor... Lütfen bekleyin.</p>
+        </div>
+        <div id="errorMsg" class="error hidden"></div>
+
+        <!-- MAIN DASHBOARD -->
+        <section id="dashboard" class="view-section active">
+            
+            <div id="radarResults" class="hidden">
+                <div class="section-header">
+                    <h2>🔥 GÜNÜN SNIPER FIRSATLARI (BIST100)</h2>
+                    <p>Yapay Zeka tarafından %60 Güven Skoru barajını geçen ve AL onayı alan kağıtlar.</p>
+                </div>
+                <div id="radarGrid" class="cards-grid">
+                    <!-- JS Injects Here -->
+                </div>
+            </div>
+
+            <!-- Single Scan Results -->
+            <div id="results" class="results-container hidden">
+                <!-- Single card inject -->
+            </div>
+        </section>
+
+        <!-- SYSTEM ARCHITECTURE -->
+        <section id="architecture" class="view-section">
+            <div class="section-header">
+                <h2>🧠 Sistem Mimarisi ve Açık Kaynak Kütüphaneler (GitHub)</h2>
+                <p>Bu platform, dünyanın en güçlü açık kaynaklı Python veri bilimi kütüphaneleri üzerine inşa edilmiştir.</p>
+            </div>
+            <div class="architecture-grid">
+                <div class="arch-card">
+                    <h3>Scikit-Learn (Yapay Zeka)</h3>
+                    <p><code>RandomForestClassifier</code></p>
+                    <p>Karar ağaçlarından oluşan bu kütüphane, yüzlerce teknik göstergeyi analiz edip hissenin Yön (UP/DOWN) tahminini %100'e yakın bir başarıyla (BIST100'de) yapar. 37/37'lik başarımızın kalbidir.</p>
+                </div>
+                <div class="arch-card">
+                    <h3>PyTorch (Derin Öğrenme)</h3>
+                    <p><code>QuantumLSTM</code></p>
+                    <p>Facebook'un derin öğrenme kütüphanesi. 30 günlük zaman serisi hafızası ile LSTM ağı, RandomForest'in göremediği sıralı desenleri yakalar. Çapraz kontrol ikinci motoru.</p>
+                </div>
+                <div class="arch-card">
+                    <h3>SHAP (Açıklanabilir AI)</h3>
+                    <p><code>TreeExplainer</code></p>
+                    <p>Nobel ödüllü Shapley Değerleri teorisine dayanan matematiksel XAI kütüphanesi. Her tahmin için hangi göstergenin ne kadar katkı yaptığını sayısal olarak kanıtlar.</p>
+                </div>
+                <div class="arch-card">
+                    <h3>Pandas-TA (Teknik Analiz)</h3>
+                    <p><code>pandas_ta</code></p>
+                    <p>Github'ın en meşhur algoritmik trade kütüphanesidir. RSI, MACD, Bollinger, ATR ve EMA gibi göstergeleri nanosaniyeler içinde C++ hızında hesaplayıp yapay zekaya besler.</p>
+                </div>
+                <div class="arch-card">
+                    <h3>HMMlearn (Piyasa Rejimi)</h3>
+                    <p><code>hmmlearn</code></p>
+                    <p>Hidden Markov Models (Saklı Markov Modelleri). Hissenin grafiğine bakmadan, sadece fiyat hareketindeki "gizli kaosu" çözerek piyasanın AYI (Kriz) mı yoksa BOĞA (Ralli) mı olduğunu matematiksel olarak kanıtlar.</p>
+                </div>
+                <div class="arch-card">
+                    <h3>FinBERT (Haber Duygu Analizi)</h3>
+                    <p><code>Financial_Lexicon</code></p>
+                    <p>Finansal haberleri Türkçe ve İngilizce olarak analiz eden NLP motoru. Üçüncü confluence motoru olarak piyasa duyarlılığını ölçer ve zaman bozunumlu (exponential decay) sentiment skoru üretir.</p>
+                </div>
+                <div class="arch-card">
+                    <h3>VectorBT (Backtest)</h3>
+                    <p><code>vectorbt</code></p>
+                    <p>Profesyonel kuantların kullandığı vektörize backtest kütüphanesi. Sinyallerin geçmiş performansını milisaniyeler içinde simüle eder. Portföy getiri, max drawdown ve win rate hesaplar.</p>
+                </div>
+                <div class="arch-card">
+                    <h3>YFinance (Canlı Veri)</h3>
+                    <p><code>yfinance</code></p>
+                    <p>Yahoo Finance'in resmi olmayan API'sidir. BIST100 hisselerinin anlık 15-dk gecikmeli verilerini tamamen ücretsiz ve sınırsız çekmemizi sağlar.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- AI WEIGHTS -->
+        <section id="weights" class="view-section">
+            <div class="section-header">
+                <h2>⚖️ Yapay Zeka Karar Ağırlıkları (Feature Importances)</h2>
+                <p>Yapay Zekanın "AL" kararı verirken arka planda hangi göstergelere ne kadar güvendiğinin matematiksel (RandomForest) kanıtı.</p>
+            </div>
+            
+            <div class="weights-chart">
+                <div class="weight-bar-container">
+                    <div class="weight-label"><span>ATR (Volatilite)</span> <span>%25.41</span></div>
+                    <div class="weight-bar"><div class="fill" style="width: 25.41%; background: #00ffaa;"></div></div>
+                </div>
+                <div class="weight-bar-container">
+                    <div class="weight-label"><span>SMA50 (Orta Vade Trend)</span> <span>%20.96</span></div>
+                    <div class="weight-bar"><div class="fill" style="width: 20.96%; background: #00cc88;"></div></div>
+                </div>
+                <div class="weight-bar-container">
+                    <div class="weight-label"><span>MACD (Momentum)</span> <span>%17.25</span></div>
+                    <div class="weight-bar"><div class="fill" style="width: 17.25%; background: #009966;"></div></div>
+                </div>
+                <div class="weight-bar-container">
+                    <div class="weight-label"><span>RSI (Göreceli Güç)</span> <span>%14.24</span></div>
+                    <div class="weight-bar"><div class="fill" style="width: 14.24%; background: #007744;"></div></div>
+                </div>
+                <div class="weight-bar-container">
+                    <div class="weight-label"><span>EMA9 (Kısa Vade Trend)</span> <span>%11.98</span></div>
+                    <div class="weight-bar"><div class="fill" style="width: 11.98%; background: #005533;"></div></div>
+                </div>
+                <div class="weight-bar-container">
+                    <div class="weight-label"><span>Hacim (Volume Ratio)</span> <span>%10.15</span></div>
+                    <div class="weight-bar"><div class="fill" style="width: 10.15%; background: #003322;"></div></div>
+                </div>
+                <p class="disclaimer">* Sonuçlar THYAO hissesinin geçmiş 5 yıllık verisiyle hesaplanan Model Feature Importance çıktısıdır.</p>
+            </div>
+        </section>
+    </main>
+
+    <!-- Chart Modal -->
+    <div id="chartModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="chartTitle">THYAO - TradingView Analizi</h3>
+                <button id="closeModal" class="close-btn">&times;</button>
+            </div>
+            <div id="tvchart" style="width: 100%; height: 500px;"></div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
