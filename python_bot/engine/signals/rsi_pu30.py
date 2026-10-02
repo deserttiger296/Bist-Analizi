@@ -353,11 +353,38 @@ def scan_universe_rsi_pu30(
             found = []
             last_close = float(df["close"].iloc[-1])
 
+            # Prepare cross-check dataframe for confluence
+            df_cross = None
+            cross_interval = "4h" if interval == "1h" else ("1h" if interval == "4h" else None)
+            if cross_interval:
+                try:
+                    df_cross = _fetch_adjusted_bars(symbol, interval=cross_interval)
+                except Exception:
+                    df_cross = None
+
             if signal_type in ("all", "pu30"):
                 sig_pu = detect_rsi_pu30(df, DEFAULT_PU30_CONFIG, interval=interval)
                 if sig_pu:
                     sig_pu["symbol"] = symbol
                     sig_pu["last_close"] = last_close
+                    # Multi-timeframe confluence check per Semih Murat Ersoy
+                    has_cross_pu = False
+                    if df_cross is not None:
+                        has_cross_pu = bool(detect_rsi_pu30(df_cross, DEFAULT_PU30_CONFIG, interval=cross_interval))
+
+                    if has_cross_pu:
+                        sig_pu["confluence"] = "DOUBLE_BULL"
+                        sig_pu["confluence_badge"] = "💎 1s + 4s ÇİFTE ONAY (ANA RALLİ)"
+                        sig_pu["strategy_action"] = "Hem 1s hem 4s teyitli ana dip dönüşü. Büyük trend potansiyeli!"
+                    elif interval == "1h":
+                        sig_pu["confluence"] = "SCALP_1H"
+                        sig_pu["confluence_badge"] = "⚡ 1s TEPKİ YÜKSELİŞİ (KISA VADE)"
+                        sig_pu["strategy_action"] = "Düşüş trendi içinde ara tepkidir (4s teyidi henüz yok). Kısa vadeli gir-çık yapılmalı."
+                    else:
+                        sig_pu["confluence"] = "MACRO_4H"
+                        sig_pu["confluence_badge"] = "🏛️ 4s ANA DÖNÜŞ (Saatlik Tetik Bekleniyor)"
+                        sig_pu["strategy_action"] = "4 saatlikte güçlü dip oluştu. Saatlik bazda güven kıran dip aşılınca giriş yapılabilir."
+
                     found.append(sig_pu)
 
             if signal_type in ("all", "nu70"):
@@ -365,6 +392,23 @@ def scan_universe_rsi_pu30(
                 if sig_nu:
                     sig_nu["symbol"] = symbol
                     sig_nu["last_close"] = last_close
+                    has_cross_nu = False
+                    if df_cross is not None:
+                        has_cross_nu = bool(detect_rsi_nu70(df_cross, DEFAULT_NU70_CONFIG, interval=cross_interval))
+
+                    if has_cross_nu:
+                        sig_nu["confluence"] = "DOUBLE_BEAR"
+                        sig_nu["confluence_badge"] = "🚨 1s + 4s ÇİFTE DÜŞÜŞ (ZİRVE ÇÖKÜŞ)"
+                        sig_nu["strategy_action"] = "Güven kıran dip kırıldı, tepeden sert kâr satışı riski. Kâr al / Stop tavsiye edilir."
+                    elif interval == "1h":
+                        sig_nu["confluence"] = "SCALP_BEAR"
+                        sig_nu["confluence_badge"] = "⚠️ 1s GÜVEN KIRAN DİP UYARISI"
+                        sig_nu["strategy_action"] = "Saatlik bazda zirve geçilemedi ve ara dip altına indi. Erken çıkış fırsatı."
+                    else:
+                        sig_nu["confluence"] = "MACRO_BEAR"
+                        sig_nu["confluence_badge"] = "🔴 4s TEPE YORULMASI"
+                        sig_nu["strategy_action"] = "4 saatlikte tepe uyumsuzluğu. 1 saatlikte güven kıran dip aranmalı."
+
                     found.append(sig_nu)
 
             return symbol, found, None

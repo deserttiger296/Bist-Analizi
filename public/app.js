@@ -314,6 +314,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 const rsiChangeText = (rsiChange >= 0 ? '+' : '') + fmtTR(rsiChange, 1);
                 const rsiColor = isNU ? '#f43f5e' : '#10b981';
 
+                const confluenceHtml = s.confluence_badge
+                    ? `<div style="font-size:0.75rem; font-weight:800; padding:0.3rem 0.6rem; border-radius:6px; margin-top:0.5rem; display:inline-block; background:${isNU ? 'rgba(244,63,94,0.18)' : 'rgba(16,185,129,0.18)'}; border:1px solid ${isNU ? '#f43f5e' : '#10b981'}; color:${isNU ? '#fda4af' : '#6ee7b7'};">
+                         ${s.confluence_badge}
+                       </div>`
+                    : '';
+
+                const strategyHtml = s.strategy_action
+                    ? `<div style="font-size:0.75rem; color:#cbd5e1; margin-top:0.5rem; background:rgba(0,0,0,0.3); padding:0.4rem 0.6rem; border-radius:6px; border-left:3px solid ${isNU ? '#f43f5e' : '#10b981'};">
+                         💡 <strong>Semih Ersoy Stratejisi:</strong> ${s.strategy_action}
+                       </div>`
+                    : '';
+
                 card.innerHTML = `
                     <div class="card-top">
                         <div class="card-symbol" style="font-size:1.25rem; font-weight:900;">${s.symbol}</div>
@@ -325,7 +337,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                     </div>
 
-                    <div class="target-val" style="margin-top:1rem; font-size:1.4rem;">${fmtTR(s.last_close)} ₺</div>
+                    ${confluenceHtml}
+
+                    <div class="target-val" style="margin-top:0.75rem; font-size:1.4rem;">${fmtTR(s.last_close)} ₺</div>
                     
                     <div class="dip-grid" style="margin-top:0.75rem;">
                         <div class="target-item">
@@ -344,6 +358,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span style="color:${rsiColor};">RSI: ${rsiChangeText}</span>
                         <span style="color:var(--accent);">${isNU ? 'Düzeltme: -%' + fmtTR(s.pullback_pct, 1) : 'Tepki: +%' + fmtTR(s.bounce_pct, 1)}</span>
                     </div>
+
+                    ${strategyHtml}
 
                     ${s.explanation ? `<div style="font-size:0.75rem; color:#94a3b8; margin-top:0.6rem; line-height:1.3; background:rgba(0,0,0,0.25); padding:0.4rem; border-radius:6px;">${s.explanation}</div>` : ''}
 
