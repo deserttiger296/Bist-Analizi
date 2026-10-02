@@ -88,3 +88,71 @@ export async function getRsiPu30SymbolDetail(symbol: string): Promise<Pu30Symbol
   const result = await fetchJson<{ status: string; data: Pu30SymbolDetail }>(`/api/scan/rsi-pu30/${encodeURIComponent(symbol)}`);
   return result?.data ?? null;
 }
+
+export interface MostRsiSignal {
+  symbol: string;
+  signal_date: string;
+  signal_time: number;
+  signal_price: number;
+  last_close: number;
+  bars_since_signal: number;
+  rsi: number;
+  exmov: number;
+  most: number;
+  current_rsi: number;
+  current_exmov: number;
+  current_most: number;
+  current_trend: "BULL" | "BEAR";
+}
+
+export interface MostRsiScanResult {
+  signals: MostRsiSignal[];
+  errors: { symbol: string; error: string }[];
+  scanned: number;
+  matched: number;
+  interval: string;
+  engine: string;
+}
+
+export interface MostRsiBar {
+  time: number;
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  rsi: number | null;
+  exmov: number | null;
+  most: number | null;
+  trend: number;
+  bull: boolean;
+  bear: boolean;
+}
+
+export interface MostRsiDetail {
+  symbol: string;
+  interval: string;
+  bars: MostRsiBar[];
+  last_bull: {
+    index: number;
+    date: string;
+    time: number;
+    price: number;
+    bars_ago: number;
+    rsi: number;
+    exmov: number;
+    most: number;
+  } | null;
+  engine: string;
+}
+
+export async function getMostRsiScan(interval = "1h"): Promise<MostRsiScanResult | null> {
+  const result = await fetchJson<{ status: string; data: MostRsiScanResult }>(`/api/scan/most-rsi?interval=${interval}`, 120000);
+  return result?.data ?? null;
+}
+
+export async function getMostRsiSymbolDetail(symbol: string, interval = "1h"): Promise<MostRsiDetail | null> {
+  const result = await fetchJson<{ status: string; data: MostRsiDetail }>(`/api/scan/most-rsi/${encodeURIComponent(symbol)}?interval=${interval}`);
+  return result?.data ?? null;
+}
+

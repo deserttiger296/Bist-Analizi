@@ -33,9 +33,9 @@ class PU30Config:
     rsi_threshold: float = 30.0
     pivot_left_bars: int = 5
     pivot_right_bars: int = 2
-    min_gap_bars: int = 8
+    min_gap_bars: int = 5
     max_gap_bars: int = 60
-    min_bounce_pct: float = 3.0
+    min_bounce_pct: float = 1.0
     signal_lifetime_bars: int = 5
 
 
@@ -157,7 +157,7 @@ def detect_rsi_pu30(df: pd.DataFrame, cfg: PU30Config = DEFAULT_CONFIG, ignore_l
         d2_rsi = _dip_rsi(rsi, p, cfg.pivot_left_bars, cfg.pivot_right_bars)
         d2 = {"index": p, "price": float(lows[p]), "rsi": d2_rsi}
 
-        if not np.isnan(d2_rsi) and d2_rsi > cfg.rsi_threshold:
+        if not np.isnan(d2_rsi):
             for d1 in reversed(dips):
                 gap = d2["index"] - d1["index"]
                 if gap > cfg.max_gap_bars:

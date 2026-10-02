@@ -50,8 +50,6 @@ export default function RsiPu30Chart({ bars, signal }: Props) {
     });
     chartsRef.current = { price: priceChart, rsi: rsiChart };
 
-    const times = bars.map((b) => b.date as Time);
-
     // ── Price pane ──────────────────────────────────────────────────
     const candleSeries = priceChart.addSeries(CandlestickSeries, {
       upColor: "#10b981", downColor: "#f43f5e", borderVisible: false,
@@ -99,8 +97,8 @@ export default function RsiPu30Chart({ bars, signal }: Props) {
         { time: d2Time, value: signal.dip2.rsi },
       ]);
       createSeriesMarkers(rsiSeries, [
-        { time: d1Time, position: "below", color: "#f59e0b", shape: "circle", text: `${signal.dip1.rsi.toFixed(1)}` },
-        { time: d2Time, position: "above", color: "#f43f5e", shape: "circle", text: `${signal.dip2.rsi.toFixed(1)}` },
+        { time: d1Time, position: "belowBar", color: "#f59e0b", shape: "circle", text: `${signal.dip1.rsi.toFixed(1)}` },
+        { time: d2Time, position: "aboveBar", color: "#f43f5e", shape: "circle", text: `${signal.dip2.rsi.toFixed(1)}` },
       ]);
     }
 
@@ -109,7 +107,7 @@ export default function RsiPu30Chart({ bars, signal }: Props) {
 
     // ── Sync zoom/pan between the two panes ─────────────────────────
     let syncing = false;
-    const syncFrom = (source: IChartApi, target: IChartApi) => (range: any) => {
+    const syncFrom = (_source: IChartApi, target: IChartApi) => (range: any) => {
       if (syncing || !range) return;
       syncing = true;
       target.timeScale().setVisibleLogicalRange(range);

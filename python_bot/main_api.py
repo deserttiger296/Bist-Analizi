@@ -16,6 +16,7 @@ from engine.brain.finbert_sentiment import FinBertSentimentAnalyzer
 from engine.brain.meta_learning import MetaLearningCalibrationEngine
 from engine.journal.daily_history import get_history, resolve_pending_outcomes
 from engine.signals.rsi_pu30 import scan_universe_rsi_pu30, get_symbol_chart_data
+from engine.signals.most_rsi import scan_universe_most_rsi, get_most_rsi_chart_data
 import yfinance as yf
 import numpy as np
 
@@ -535,6 +536,42 @@ def get_rsi_pu30_symbol_detail(symbol: str, interval: str = "1d"):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/scan/most-rsi")
+def scan_most_rsi(interval: str = "1h"):
+    """
+    MOSTRSI (14, close, VAR 5, 9) Bull/Bear scanner.
+    Kıvanç Özbilgiç / Anıl Özekşi TradingView formülü.
+    interval: "1h" (varsayılan - TradingView 1s) veya "1d".
+    """
+    if interval not in ("1d", "1h"):
+        raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
+    try:
+        result = scan_universe_most_rsi(BIST100_SYMBOLS, interval=interval)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/scan/most-rsi/{symbol}")
+def get_most_rsi_detail(symbol: str, interval: str = "1h"):
+    """
+    Tek bir sembol için tam mum ve MOSTRSI (ExMOV, MOST stop seviyeleri) serisi.
+    interval: "1h" veya "1d".
+    """
+    if interval not in ("1d", "1h"):
+        raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
+    try:
+        result = get_most_rsi_chart_data(symbol.upper(), interval=interval)
+        if result is None:
+            raise HTTPException(status_code=404, detail=f"No data for {symbol}")
+        return {"status": "success", "data": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn
