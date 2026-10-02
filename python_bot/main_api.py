@@ -525,14 +525,25 @@ def scan_rsi_pu30(interval: str = "4h", signal_type: str = "all"):
 
 @app.get("/api/scan/rsi-pu30/{symbol}")
 def get_rsi_pu30_symbol_detail(symbol: str, interval: str = "4h"):
-    """Full price+RSI series and PU30 / NU70 divergence pairs. interval: '1d', '4h', or '1h'."""
+    """Full price+RSI series and PU30 / NU70 divergence pairs. interval: '1d', '4h', or '1h'.
+
+    Response includes:
+      data_status       — FRESH | STALE | INSUFFICIENT_HISTORY | ERROR
+      data_updated_at   — ISO timestamp of last successful fetch
+      history_limit_note — human-readable provider limit description
+    """
     if interval not in ("1d", "4h", "1h"):
         raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
     try:
         result = get_symbol_chart_data(symbol.upper(), interval=interval)
         if result is None:
             raise HTTPException(status_code=404, detail=f"No data for {symbol}")
-        return {"status": "success", "data": result}
+        # Ensure data quality fields are always present at top level
+        response_data = dict(result)
+        response_data.setdefault("data_status", "UNKNOWN")
+        response_data.setdefault("data_updated_at", None)
+        response_data.setdefault("history_limit_note", "")
+        return {"status": "success", "data": response_data}
     except HTTPException:
         raise
     except Exception as e:

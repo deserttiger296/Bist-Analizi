@@ -1,34 +1,48 @@
 # -*- coding: utf-8 -*-
 """
-RSI Uyumsuzluk Motoru:
+RSI Uyumsuzluk ve Çoklu Zaman Dilimi (Multi-Timeframe) Analiz Motoru:
   1. PU30 (Pozitif Uyumsuzluk -- Bullish Divergence / Yükseliş Sinyali)
   2. NU70 (Negatif Uyumsuzluk -- Bearish Divergence / Düşüş Sinyali)
 
-Semih Murat Ersoy Formülü:
-- PU30: Fiyat düşerken ilk RSI dibi 30 altında olur. Fiyat ara tepki sonrası düşmeye devam
+Semih Murat Ersoy Formülü & Metodolojisi:
+- PU30: Fiyat düşerken 1. dipte RSI 30 altında kalır. Fiyat ara tepki sonrası düşmeye devam
   edip yeni bir düşük dip yaparken, 2. RSI dibi 30 üzerinde ve 1. dipten yüksek kalır. -> Yükseliş Sinyali.
-- NU70: Fiyat yükselirken ilk RSI tepesi 70 üzerinde olur. Fiyat ara düzeltme sonrası yükselmeye devam
-  edip yeni bir yüksek tepe yaparken, 2. RSI tepesi 70 altında ve 1. tepeden alçak kalır. -> Düşüş Sinyali.
+- NU70: Fiyat yükselirken 1. tepede RSI 70 üzerinde oluşur. Fiyat ara düzeltme sonrası yükselmeye devam
+  edip yeni bir zirve yaparken, 2. RSI tepesi 70 altında ve 1. tepeden alçak kalır. -> Düşüş Sinyali.
 
-Zaman Dilimleri:
+Zaman Dilimleri (BIST Seans Uyumlu):
 - "1d": Günlük mumlar
-- "4h": 4 Saatlik mumlar (TradingView 4s)
+- "4h": 4 Saatlik mumlar (BIST seansına göre 10:00 ve 14:00 seans dilimleri)
 - "1h": 1 Saatlik mumlar (TradingView 1s)
+
+Look-Ahead Bias & Repainting Koruması:
+- Bir pivot noktası p, sağdaki `pivot_right_bars` mum KAPANDIKTAN sonra kesinleşir.
+- Sinyal kesinleşme anı (`confirm_time` / `knowable_at`) ile pivot oluşum anı (`pivot_time`)
+  ayrı alanlarda saklanır ve geriye dönük testlerde işlem girişi kesinlikle teyitten sonraki mumda yapılır.
 """
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
-from zoneinfo import ZoneInfo
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
+
+from python_bot.engine.data.provider import (
+    DataProvider,
+    DataResult,
+    DataStatus,
+    clean_symbol_display,
+    get_default_provider,
+    normalize_bist_symbol,
+)
 
 
 @dataclass(frozen=True)
 class PU30Config:
     rsi_length: int = 14
     rsi_threshold: float = 30.0
+    rsi2_above_threshold: bool = True  # 2. dipte RSI 30 üzerinde olmalı
+    require_higher_rsi: bool = True    # 2. dip RSI > 1. dip RSI
+    require_lower_price: bool = True   # 2. dip Fiyat < 1. dip Fiyat
     pivot_left_bars: int = 5
     pivot_right_bars: int = 2
     min_gap_bars: int = 4
@@ -41,6 +55,9 @@ class PU30Config:
 class NU70Config:
     rsi_length: int = 14
     rsi_threshold: float = 70.0
+    rsi2_below_threshold: bool = True  # 2. tepede RSI 70 altında olmalı
+    require_lower_rsi: bool = True    # 2. tepe RSI < 1. tepe RSI
+    require_higher_price: bool = True  # 2. tepe Fiyat > 1. tepe Fiyat
     pivot_left_bars: int = 5
     pivot_right_bars: int = 2
     min_gap_bars: int = 4
@@ -59,23 +76,24 @@ INTERVALS = {
 }
 
 _EPOCH = pd.Timestamp("1970-01-01")
-
-
-def _epoch_seconds(ts: Any) -> int:
-    """UTCTimestamp for lightweight-charts."""
-    ts = pd.Timestamp(ts)
-    if ts.tzinfo is not None:
-        ts = ts.tz_localize(None)
-    return int((ts - _EPOCH) / pd.Timedelta(seconds=1))
-
-
 MIN_BARS_REQUIRED = 25
 
 
+def _epoch_seconds(ts: Any) -> int:
+    """Lightweight-Charts için epoch saniyesi üretir."""
+    t = pd.Timestamp(ts)
+    if t.tzinfo is not None:
+        t = t.tz_localize(None)
+    return int((t - _EPOCH) / pd.Timedelta(seconds=1))
+
+
 def wilder_rsi(closes: np.ndarray, period: int = 14) -> np.ndarray:
-    """TradingView Wilder RSI (RMA)."""
+    """
+    J. Welles Wilder Jr. (1978) RMA tabanlı RSI formülü.
+    Sıfıra bölme ve flat fiyat (değişimsiz bar) durumları için matematiksel koruma içerir.
+    """
     n = len(closes)
-    rsi = np.full(n, np.nan)
+    rsi = np.full(n, np.nan, dtype=np.float64)
     if n < period + 1:
         return rsi
 
@@ -83,24 +101,53 @@ def wilder_rsi(closes: np.ndarray, period: int = 14) -> np.ndarray:
     gains = np.where(deltas > 0, deltas, 0.0)
     losses = np.where(deltas < 0, -deltas, 0.0)
 
-    avg_gain = gains[:period].mean()
-    avg_loss = losses[:period].mean()
-    rsi[period] = 100.0 if avg_loss == 0 else 100.0 - 100.0 / (1.0 + avg_gain / avg_loss)
+    avg_gain = float(gains[:period].mean())
+    avg_loss = float(losses[:period].mean())
+
+    if avg_gain + avg_loss == 0.0:
+        rsi[period] = 50.0
+    elif avg_loss == 0.0:
+        rsi[period] = 100.0
+    elif avg_gain == 0.0:
+        rsi[period] = 0.0
+    else:
+        rs = avg_gain / avg_loss
+        rsi[period] = 100.0 - 100.0 / (1.0 + rs)
 
     for i in range(period + 1, n):
         g = gains[i - 1]
         l = losses[i - 1]
         avg_gain = (avg_gain * (period - 1) + g) / period
         avg_loss = (avg_loss * (period - 1) + l) / period
-        rsi[i] = 100.0 if avg_loss == 0 else 100.0 - 100.0 / (1.0 + avg_gain / avg_loss)
+
+        if avg_gain + avg_loss == 0.0:
+            rsi[i] = 50.0
+        elif avg_loss == 0.0:
+            rsi[i] = 100.0
+        elif avg_gain == 0.0:
+            rsi[i] = 0.0
+        else:
+            rs = avg_gain / avg_loss
+            rsi[i] = 100.0 - 100.0 / (1.0 + rs)
 
     return rsi
 
 
-def find_confirmed_pivot_lows(lows: np.ndarray, lb: int, rb: int) -> List[int]:
+def find_confirmed_pivot_lows(
+    lows: np.ndarray, lb: int, rb: int, is_closed: Optional[np.ndarray] = None
+) -> List[int]:
+    """
+    Sol ve sağ mumlarla kesinleşmiş dip (local minima) pivotlarını bulur.
+    Look-ahead bias önlemi: Sağdaki rb adet mum kesinleşmeden pivot üretilmez.
+    """
     n = len(lows)
-    pivots = []
-    for p in range(lb, n - rb):
+    pivots: List[int] = []
+    max_p = n - rb
+    for p in range(lb, max_p):
+        if is_closed is not None:
+            # Sağ teyit barlarından herhangi biri kapanmamışsa bu pivot kesinleşmiş sayılamaz
+            if not np.all(is_closed[p + 1:p + rb + 1]):
+                continue
         left = lows[p - lb:p]
         right = lows[p + 1:p + rb + 1]
         if np.all(lows[p] < left) and np.all(lows[p] <= right):
@@ -108,10 +155,20 @@ def find_confirmed_pivot_lows(lows: np.ndarray, lb: int, rb: int) -> List[int]:
     return pivots
 
 
-def find_confirmed_pivot_highs(highs: np.ndarray, lb: int, rb: int) -> List[int]:
+def find_confirmed_pivot_highs(
+    highs: np.ndarray, lb: int, rb: int, is_closed: Optional[np.ndarray] = None
+) -> List[int]:
+    """
+    Sol ve sağ mumlarla kesinleşmiş tepe (local maxima) pivotlarını bulur.
+    Look-ahead bias önlemi: Sağdaki rb adet mum kesinleşmeden pivot üretilmez.
+    """
     n = len(highs)
-    pivots = []
-    for p in range(lb, n - rb):
+    pivots: List[int] = []
+    max_p = n - rb
+    for p in range(lb, max_p):
+        if is_closed is not None:
+            if not np.all(is_closed[p + 1:p + rb + 1]):
+                continue
         left = highs[p - lb:p]
         right = highs[p + 1:p + rb + 1]
         if np.all(highs[p] > left) and np.all(highs[p] >= right):
@@ -131,8 +188,16 @@ def _peak_rsi(rsi: np.ndarray, p: int, lb: int, rb: int) -> float:
     return float(window.max()) if len(window) else float("nan")
 
 
-def detect_rsi_pu30(df: pd.DataFrame, cfg: PU30Config = DEFAULT_PU30_CONFIG, ignore_lifetime: bool = False, interval: str = "4h") -> Optional[Dict[str, Any]]:
-    """PU30: Bullish Divergence."""
+def detect_rsi_pu30(
+    df: pd.DataFrame,
+    cfg: PU30Config = DEFAULT_PU30_CONFIG,
+    ignore_lifetime: bool = False,
+    interval: str = "4h",
+) -> Optional[Dict[str, Any]]:
+    """
+    PU30: Pozitif Uyumsuzluk (Boğa / Dip Dönüşü) Sinyal Tespiti.
+    Look-ahead bias ve repainting içermez; pivot oluşumu ile teyit zamanı ayrıştırılmıştır.
+    """
     n = len(df)
     if n < MIN_BARS_REQUIRED:
         return None
@@ -141,9 +206,10 @@ def detect_rsi_pu30(df: pd.DataFrame, cfg: PU30Config = DEFAULT_PU30_CONFIG, ign
     lows = df["low"].to_numpy(dtype=float)
     highs = df["high"].to_numpy(dtype=float)
     dates = df["date"].to_numpy()
+    is_closed_arr = df["is_closed"].to_numpy(dtype=bool) if "is_closed" in df.columns else None
 
     rsi = wilder_rsi(closes, cfg.rsi_length)
-    pivot_indices = find_confirmed_pivot_lows(lows, cfg.pivot_left_bars, cfg.pivot_right_bars)
+    pivot_indices = find_confirmed_pivot_lows(lows, cfg.pivot_left_bars, cfg.pivot_right_bars, is_closed_arr)
 
     dips: List[Dict[str, Any]] = []
     signal: Optional[Dict[str, Any]] = None
@@ -159,36 +225,51 @@ def detect_rsi_pu30(df: pd.DataFrame, cfg: PU30Config = DEFAULT_PU30_CONFIG, ign
                     break
                 if gap < cfg.min_gap_bars:
                     continue
-                # 1. Dip: RSI 30 altında olmalı
+
+                # 1. Dip: RSI aşırı satım eşiğinde veya altında olmalı
                 if np.isnan(d1["rsi"]) or d1["rsi"] >= (cfg.rsi_threshold + 2.0):
                     continue
-                # 2. Dip: Fiyat daha düşük olmalı
-                if d2["price"] >= d1["price"]:
+
+                # 2. Dip: Fiyat kuralı (cfg.require_lower_price ise daha düşük dip yapmalı)
+                if cfg.require_lower_price and d2["price"] >= d1["price"]:
                     continue
-                # 2. Dip RSI: 1. Dipten yüksek olmalı
-                if d2["rsi"] <= d1["rsi"]:
+
+                # 2. Dip RSI kuralı: 1. Dipten yüksek olmalı
+                if cfg.require_higher_rsi and d2["rsi"] <= d1["rsi"]:
+                    continue
+
+                # Semih Ersoy Kuralı: 2. Dip RSI 30 üzerinde olmalı
+                if cfg.rsi2_above_threshold and d2["rsi"] < cfg.rsi_threshold:
                     continue
 
                 between_lo = lows[d1["index"] + 1:d2["index"]]
                 between_hi = highs[d1["index"] + 1:d2["index"]]
                 if len(between_lo) == 0:
                     continue
+
                 min_between = float(between_lo.min())
                 max_between = float(between_hi.max())
                 bounce_pct = (max_between / d1["price"] - 1.0) * 100.0
 
                 if min_between >= (d1["price"] * 0.99) and bounce_pct >= cfg.min_bounce_pct:
                     confirm_index = d2["index"] + cfg.pivot_right_bars
+                    if confirm_index >= n:
+                        continue
+
                     bars_since = (n - 1) - confirm_index
                     date_fmt = INTERVALS.get(interval, ("1y", "%Y-%m-%d %H:%M", 60))[1]
+
                     d1_ts = pd.Timestamp(dates[d1["index"]])
                     d2_ts = pd.Timestamp(dates[d2["index"]])
+                    confirm_ts = pd.Timestamp(dates[confirm_index])
+
                     max_between_rel = int(np.argmax(between_hi))
                     max_between_idx = d1["index"] + 1 + max_between_rel
                     max_between_ts = pd.Timestamp(dates[max_between_idx])
 
                     lowest_dip = float(min(d1["price"], d2["price"]))
                     pu_diff = max_between - lowest_dip
+
                     fibonacci_levels = [
                         {"label": "Fibo 1.618 (Ana Hedef)", "level": 1.618, "price": round(lowest_dip + 1.618 * pu_diff, 2), "color": "#10b981"},
                         {"label": "Fibo 1.382 (Ara Hedef)", "level": 1.382, "price": round(lowest_dip + 1.382 * pu_diff, 2), "color": "#34d399"},
@@ -196,12 +277,24 @@ def detect_rsi_pu30(df: pd.DataFrame, cfg: PU30Config = DEFAULT_PU30_CONFIG, ign
                         {"label": "Fibo 0.618 (Altın Oran)", "level": 0.618, "price": round(lowest_dip + 0.618 * pu_diff, 2), "color": "#6ee7b7"},
                     ]
 
+                    explanation = (
+                        f"PU30 Pozitif Uyumsuzluk: 1. Dip {d1['price']:.2f} ₺ (RSI: {d1['rsi']:.1f}), "
+                        f"2. Dip {d2['price']:.2f} ₺ (RSI: {d2['rsi']:.1f}). "
+                        f"Sinyal {confirm_ts.strftime(date_fmt)} mum kapanışında teyit edildi."
+                    )
+
                     signal = {
                         "type": "PU30",
                         "trend": "BULL",
                         "label": "PU30 (Dip / Alis)",
                         "dip1": {**d1, "date": d1_ts.strftime(date_fmt), "time": _epoch_seconds(d1_ts)},
                         "dip2": {**d2, "date": d2_ts.strftime(date_fmt), "time": _epoch_seconds(d2_ts)},
+                        "pivot_time": _epoch_seconds(d2_ts),
+                        "pivot_date": d2_ts.strftime(date_fmt),
+                        "confirm_index": confirm_index,
+                        "confirm_time": _epoch_seconds(confirm_ts),
+                        "confirm_date": confirm_ts.strftime(date_fmt),
+                        "knowable_at": confirm_ts.strftime(date_fmt),
                         "guven_tazeleyen_tepe": {
                             "price": round(max_between, 2),
                             "date": max_between_ts.strftime(date_fmt),
@@ -211,6 +304,7 @@ def detect_rsi_pu30(df: pd.DataFrame, cfg: PU30Config = DEFAULT_PU30_CONFIG, ign
                         "bounce_pct": round(bounce_pct, 2),
                         "bars_since_confirm": bars_since,
                         "gap_bars": gap,
+                        "explanation": explanation,
                     }
                     break
 
@@ -221,8 +315,16 @@ def detect_rsi_pu30(df: pd.DataFrame, cfg: PU30Config = DEFAULT_PU30_CONFIG, ign
     return None
 
 
-def detect_rsi_nu70(df: pd.DataFrame, cfg: NU70Config = DEFAULT_NU70_CONFIG, ignore_lifetime: bool = False, interval: str = "4h") -> Optional[Dict[str, Any]]:
-    """NU70: Bearish Divergence (Semih Murat Ersoy kuralı)."""
+def detect_rsi_nu70(
+    df: pd.DataFrame,
+    cfg: NU70Config = DEFAULT_NU70_CONFIG,
+    ignore_lifetime: bool = False,
+    interval: str = "4h",
+) -> Optional[Dict[str, Any]]:
+    """
+    NU70: Negatif Uyumsuzluk (Ayı / Zirve Satış) Sinyal Tespiti.
+    Look-ahead bias ve repainting içermez; pivot oluşumu ile teyit zamanı ayrıştırılmıştır.
+    """
     n = len(df)
     if n < MIN_BARS_REQUIRED:
         return None
@@ -231,9 +333,10 @@ def detect_rsi_nu70(df: pd.DataFrame, cfg: NU70Config = DEFAULT_NU70_CONFIG, ign
     highs = df["high"].to_numpy(dtype=float)
     lows = df["low"].to_numpy(dtype=float)
     dates = df["date"].to_numpy()
+    is_closed_arr = df["is_closed"].to_numpy(dtype=bool) if "is_closed" in df.columns else None
 
     rsi = wilder_rsi(closes, cfg.rsi_length)
-    pivot_indices = find_confirmed_pivot_highs(highs, cfg.pivot_left_bars, cfg.pivot_right_bars)
+    pivot_indices = find_confirmed_pivot_highs(highs, cfg.pivot_left_bars, cfg.pivot_right_bars, is_closed_arr)
 
     peaks: List[Dict[str, Any]] = []
     signal: Optional[Dict[str, Any]] = None
@@ -249,37 +352,49 @@ def detect_rsi_nu70(df: pd.DataFrame, cfg: NU70Config = DEFAULT_NU70_CONFIG, ign
                     break
                 if gap < cfg.min_gap_bars:
                     continue
-                # 1. Tepe: RSI 70 üzerinde olmalı
+
+                # 1. Tepe: RSI aşırı alım eşiğinde veya üstünde olmalı
                 if np.isnan(t1["rsi"]) or t1["rsi"] < (cfg.rsi_threshold - 2.0):
                     continue
+
                 # 2. Tepe: Fiyat daha yüksek zirve yapmalı
-                if t2["price"] <= t1["price"]:
+                if cfg.require_higher_price and t2["price"] <= t1["price"]:
                     continue
+
                 # 2. Tepe: RSI daha düşük tepe yapmalı
-                if t2["rsi"] >= t1["rsi"]:
+                if cfg.require_lower_rsi and t2["rsi"] >= t1["rsi"]:
                     continue
-                # Semih Bey: "ve bir diğer tepe 70 altında oluyor"
-                if t2["rsi"] > (cfg.rsi_threshold + 2.0):
+
+                # Semih Ersoy Kuralı: 2. Tepe RSI 70 altında kalmalı
+                if cfg.rsi2_below_threshold and t2["rsi"] > (cfg.rsi_threshold + 2.0):
                     continue
 
                 between_lo = lows[t1["index"] + 1:t2["index"]]
                 if len(between_lo) == 0:
                     continue
+
                 min_between = float(between_lo.min())
                 pullback_pct = (1.0 - min_between / t1["price"]) * 100.0
 
                 if pullback_pct >= cfg.min_pullback_pct:
                     confirm_index = t2["index"] + cfg.pivot_right_bars
+                    if confirm_index >= n:
+                        continue
+
                     bars_since = (n - 1) - confirm_index
                     date_fmt = INTERVALS.get(interval, ("1y", "%Y-%m-%d %H:%M", 60))[1]
+
                     t1_ts = pd.Timestamp(dates[t1["index"]])
                     t2_ts = pd.Timestamp(dates[t2["index"]])
+                    confirm_ts = pd.Timestamp(dates[confirm_index])
+
                     min_between_rel = int(np.argmin(between_lo))
                     min_between_idx = t1["index"] + 1 + min_between_rel
                     min_between_ts = pd.Timestamp(dates[min_between_idx])
 
                     highest_peak = float(max(t1["price"], t2["price"]))
                     nu_diff = highest_peak - min_between
+
                     fibonacci_levels = [
                         {"label": "Fibo 1.618 (Düşüş Hedefi)", "level": 1.618, "price": round(highest_peak - 1.618 * nu_diff, 2), "color": "#f43f5e"},
                         {"label": "Fibo 1.382 (Düşüş Seviyesi)", "level": 1.382, "price": round(highest_peak - 1.382 * nu_diff, 2), "color": "#fb7185"},
@@ -288,15 +403,26 @@ def detect_rsi_nu70(df: pd.DataFrame, cfg: NU70Config = DEFAULT_NU70_CONFIG, ign
                         {"label": "Fibo 0.618 (Altın Düzeltme)", "level": 0.618, "price": round(highest_peak - 0.618 * nu_diff, 2), "color": "#e2e8f0"},
                     ]
 
+                    explanation = (
+                        f"NU70 Negatif Uyumsuzluk: 1. Tepe {t1['price']:.2f} ₺ (RSI: {t1['rsi']:.1f}), "
+                        f"2. Tepe {t2['price']:.2f} ₺ (RSI: {t2['rsi']:.1f}). "
+                        f"Sinyal {confirm_ts.strftime(date_fmt)} mum kapanışında teyit edildi."
+                    )
+
                     signal = {
                         "type": "NU70",
                         "trend": "BEAR",
                         "label": "NU70 (Tepe / Satis)",
                         "tepe1": {**t1, "date": t1_ts.strftime(date_fmt), "time": _epoch_seconds(t1_ts)},
                         "tepe2": {**t2, "date": t2_ts.strftime(date_fmt), "time": _epoch_seconds(t2_ts)},
-                        # Aliases for card rendering
                         "dip1": {**t1, "date": t1_ts.strftime(date_fmt), "time": _epoch_seconds(t1_ts)},
                         "dip2": {**t2, "date": t2_ts.strftime(date_fmt), "time": _epoch_seconds(t2_ts)},
+                        "pivot_time": _epoch_seconds(t2_ts),
+                        "pivot_date": t2_ts.strftime(date_fmt),
+                        "confirm_index": confirm_index,
+                        "confirm_time": _epoch_seconds(confirm_ts),
+                        "confirm_date": confirm_ts.strftime(date_fmt),
+                        "knowable_at": confirm_ts.strftime(date_fmt),
                         "guven_kiran_dip": {
                             "price": round(min_between, 2),
                             "date": min_between_ts.strftime(date_fmt),
@@ -307,6 +433,7 @@ def detect_rsi_nu70(df: pd.DataFrame, cfg: NU70Config = DEFAULT_NU70_CONFIG, ign
                         "bounce_pct": round(pullback_pct, 2),
                         "bars_since_confirm": bars_since,
                         "gap_bars": gap,
+                        "explanation": explanation,
                     }
                     break
 
@@ -318,66 +445,30 @@ def detect_rsi_nu70(df: pd.DataFrame, cfg: NU70Config = DEFAULT_NU70_CONFIG, ign
 
 
 def _normalize_symbol(symbol: str) -> str:
-    return symbol if symbol.endswith(".IS") else f"{symbol}.IS"
+    return normalize_bist_symbol(symbol)
 
 
-def _fetch_adjusted_bars(symbol: str, interval: str = "4h", period: Optional[str] = None) -> Optional[pd.DataFrame]:
-    """Adjusted bars for 1d, 4h, or 1h."""
-    if interval not in INTERVALS:
-        raise ValueError(f"Unsupported interval: {interval}")
-    default_period, _, bar_minutes = INTERVALS[interval]
-    period = period or default_period
-
-    if interval == "4h":
-        # yfinance doesn't provide 4h natively -- resample 1h to 4h
-        raw = yf.download(_normalize_symbol(symbol), period="730d", interval="1h", auto_adjust=True, progress=False)
-        if raw.empty:
-            return None
-        if isinstance(raw.columns, pd.MultiIndex):
-            raw.columns = raw.columns.droplevel(1)
-        resampled = raw.resample("4h").agg({
-            "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"
-        }).dropna()
-        df = resampled.reset_index()
-    else:
-        raw = yf.download(_normalize_symbol(symbol), period=period, interval=interval, auto_adjust=True, progress=False)
-        if raw.empty:
-            return None
-        if isinstance(raw.columns, pd.MultiIndex):
-            raw.columns = raw.columns.droplevel(1)
-        df = raw.reset_index()
-
-    date_col = "Datetime" if "Datetime" in df.columns else "Date"
-    df = df[[date_col, "Open", "High", "Low", "Close"]].copy()
-    df.columns = ["date", "open", "high", "low", "close"]
-    df = df.dropna(subset=["low", "high", "close"])
-    df = df[df["low"] > 0]
-
-    if len(df) > 0:
-        last_ts = pd.Timestamp(df["date"].iloc[-1])
-        last_ist = last_ts.tz_convert("Europe/Istanbul") if last_ts.tzinfo is not None else last_ts.tz_localize("Europe/Istanbul")
-        now_ist = datetime.now(ZoneInfo("Europe/Istanbul"))
-
-        if interval == "1d":
-            session_open = now_ist.weekday() < 5 and 10 <= now_ist.hour < 18
-            if session_open and last_ist.date() == now_ist.date():
-                df = df.iloc[:-1]
-        else:
-            bar_end = last_ist + timedelta(minutes=bar_minutes)
-            if now_ist < bar_end.to_pydatetime():
-                df = df.iloc[:-1]
-
-    min_bars = MIN_BARS_REQUIRED
-    return df.reset_index(drop=True) if len(df) >= min_bars else None
+def _fetch_adjusted_bars(
+    symbol: str, interval: str = "4h", period: Optional[str] = None
+) -> Tuple[Optional[pd.DataFrame], Optional[DataResult]]:
+    """DataProvider arayüzü üzerinden temizlenmiş ve BIST seansına hizalanmış veriyi getirir."""
+    provider = get_default_provider()
+    result = provider.fetch_ohlcv(symbol, interval=interval, period=period, include_forming_bar=False)
+    if result.status in (DataStatus.ERROR, DataStatus.DELISTED) or result.df is None:
+        return None, result
+    return result.df, result
 
 
 def scan_universe_rsi_pu30(
     symbols: List[str],
     max_workers: int = 4,
     interval: str = "4h",
-    signal_type: str = "all"  # "all", "pu30", "nu70"
+    signal_type: str = "all",  # "all", "pu30", "nu70"
 ) -> Dict[str, Any]:
-    """Scans symbols for PU30 (Alış) and NU70 (Satış/Tepe) uyumsuzlukları."""
+    """
+    Belirtilen sembol evrenini PU30 ve NU70 uyumsuzlukları için tarar.
+    Çoklu zaman dilimi (1s ve 4s) çapraz kontrolünü uygular.
+    """
     from concurrent.futures import ThreadPoolExecutor
 
     results: List[Dict[str, Any]] = []
@@ -385,30 +476,38 @@ def scan_universe_rsi_pu30(
 
     def _scan_one(symbol: str):
         try:
-            df = _fetch_adjusted_bars(symbol, interval=interval)
-            if df is None:
-                return symbol, [], "insufficient history"
+            df, data_res = _fetch_adjusted_bars(symbol, interval=interval)
+            if df is None or len(df) < MIN_BARS_REQUIRED:
+                err_msg = data_res.error_message if data_res else "insufficient history"
+                return symbol, [], err_msg
 
             found = []
             last_close = float(df["close"].iloc[-1])
+            data_updated_at = data_res.updated_at if data_res else None
+            data_status = data_res.status.value if data_res else "UNKNOWN"
 
-            # Prepare cross-check dataframe for confluence
-            df_cross = None
+            # Çapraz teyit için karşıt zaman dilimini hazırla
             cross_interval = "4h" if interval == "1h" else ("1h" if interval == "4h" else None)
+            df_cross = None
+            cross_data_status = None
             if cross_interval:
                 try:
-                    df_cross = _fetch_adjusted_bars(symbol, interval=cross_interval)
+                    df_cross, cross_res = _fetch_adjusted_bars(symbol, interval=cross_interval)
+                    cross_data_status = cross_res.status.value if cross_res else None
                 except Exception:
                     df_cross = None
 
             if signal_type in ("all", "pu30"):
                 sig_pu = detect_rsi_pu30(df, DEFAULT_PU30_CONFIG, interval=interval)
                 if sig_pu:
-                    sig_pu["symbol"] = symbol
+                    sig_pu["symbol"] = clean_symbol_display(symbol)
                     sig_pu["last_close"] = last_close
-                    # Multi-timeframe confluence check per Semih Murat Ersoy
+                    sig_pu["data_status"] = data_status
+                    sig_pu["data_updated_at"] = data_updated_at
+
+                    # Çoklu zaman dilimi (Multi-Timeframe) Çapraz Kontrolü
                     has_cross_pu = False
-                    if df_cross is not None:
+                    if df_cross is not None and cross_data_status == DataStatus.FRESH.value:
                         has_cross_pu = bool(detect_rsi_pu30(df_cross, DEFAULT_PU30_CONFIG, interval=cross_interval))
 
                     if has_cross_pu:
@@ -429,10 +528,13 @@ def scan_universe_rsi_pu30(
             if signal_type in ("all", "nu70"):
                 sig_nu = detect_rsi_nu70(df, DEFAULT_NU70_CONFIG, interval=interval)
                 if sig_nu:
-                    sig_nu["symbol"] = symbol
+                    sig_nu["symbol"] = clean_symbol_display(symbol)
                     sig_nu["last_close"] = last_close
+                    sig_nu["data_status"] = data_status
+                    sig_nu["data_updated_at"] = data_updated_at
+
                     has_cross_nu = False
-                    if df_cross is not None:
+                    if df_cross is not None and cross_data_status == DataStatus.FRESH.value:
                         has_cross_nu = bool(detect_rsi_nu70(df_cross, DEFAULT_NU70_CONFIG, interval=cross_interval))
 
                     if has_cross_nu:
@@ -459,9 +561,9 @@ def scan_universe_rsi_pu30(
             if sigs:
                 results.extend(sigs)
             elif err is not None:
-                errors.append({"symbol": symbol, "error": err})
+                errors.append({"symbol": clean_symbol_display(symbol), "error": err})
 
-    # Sort newest confirmation first
+    # En yeni teyit edilen sinyalleri başa yerleştir
     results.sort(key=lambda s: s.get("bars_since_confirm", 999))
 
     return {
@@ -474,13 +576,15 @@ def scan_universe_rsi_pu30(
     }
 
 
-def get_symbol_chart_data(symbol: str, interval: str = "4h", period: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """Full price + RSI bars and detected PU30/NU70 signals."""
+def get_symbol_chart_data(
+    symbol: str, interval: str = "4h", period: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """Sembol bazında mum, RSI serisi ve tespit edilen uyumsuzluk detaylarını getirir."""
     if interval not in INTERVALS:
         raise ValueError(f"Unsupported interval: {interval}")
     date_fmt = INTERVALS[interval][1]
 
-    df = _fetch_adjusted_bars(symbol, interval=interval, period=period)
+    df, data_res = _fetch_adjusted_bars(symbol, interval=interval, period=period)
     if df is None:
         return None
 
@@ -488,6 +592,7 @@ def get_symbol_chart_data(symbol: str, interval: str = "4h", period: Optional[st
     rsi = wilder_rsi(closes, 14)
     rsi_series = pd.Series(rsi)
     rsi_sma = rsi_series.rolling(14, min_periods=1).mean().to_numpy()
+
     sig_pu = detect_rsi_pu30(df, DEFAULT_PU30_CONFIG, ignore_lifetime=True, interval=interval)
     sig_nu = detect_rsi_nu70(df, DEFAULT_NU70_CONFIG, ignore_lifetime=True, interval=interval)
 
@@ -501,19 +606,25 @@ def get_symbol_chart_data(symbol: str, interval: str = "4h", period: Optional[st
             "high": float(df["high"].iloc[i]),
             "low": float(df["low"].iloc[i]),
             "close": float(df["close"].iloc[i]),
+            "volume": float(df["volume"].iloc[i]) if "volume" in df.columns else 0.0,
             "rsi": None if np.isnan(rsi[i]) else round(float(rsi[i]), 2),
             "rsi_sma": None if np.isnan(rsi_sma[i]) else round(float(rsi_sma[i]), 2),
+            "is_closed": bool(df["is_closed"].iloc[i]) if "is_closed" in df.columns else True,
         })
 
-    # Pick the most recent signal for primary display, but provide both
+    # En güncel teyit edilen sinyali birincil olarak seç
     if sig_pu and sig_nu:
         active_signal = sig_pu if sig_pu.get("bars_since_confirm", 999) <= sig_nu.get("bars_since_confirm", 999) else sig_nu
     else:
         active_signal = sig_pu or sig_nu
 
+    clean_sym = clean_symbol_display(symbol)
     return {
-        "symbol": symbol,
+        "symbol": clean_sym,
         "interval": interval,
+        "data_status": data_res.status.value if data_res else "UNKNOWN",
+        "data_updated_at": data_res.updated_at if data_res else None,
+        "history_limit_note": data_res.history_limit_note if data_res else "",
         "bars": bars,
         "signal": active_signal,
         "pu30_signal": sig_pu,
