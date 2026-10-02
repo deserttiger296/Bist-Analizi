@@ -161,21 +161,27 @@
             </div>
         </section>
 
-        <!-- RSI PU30 -->
+        <!-- RSI PU30 & NU70 -->
         <section id="rsipu30" class="view-section">
             <div class="section-header">
-                <h2>📉 RSI PU30 — Pozitif Uyumsuzluk Tarayıcı</h2>
-                <p>Fiyat daha düşük bir dip yaparken RSI daha yüksek bir dip yapıyorsa, satış baskısının zayıfladığı kabul edilir. Sniper motorunun RF/LSTM/sentiment hattından tamamen bağımsız, saf RSI tabanlı kural motoru — skorlama veya onaya katılmaz.</p>
+                <h2>📉 RSI Uyumsuzluk Radarı (PU30 & NU70)</h2>
+                <p><strong>Semih Murat Ersoy Formülü:</strong> Fiyat düşerken 1. dipte RSI &lt; 30, 2. dipte RSI &gt; 30 kalırsa <span style="color:#10b981; font-weight:bold;">🟢 PU30 (Yükseliş / Dip Sinyali)</span>. Fiyat yükselirken 1. tepede RSI &gt; 70, 2. tepede RSI &lt; 70 kalırsa <span style="color:#f43f5e; font-weight:bold;">🔴 NU70 (Düşüş / Tepe Satış Sinyali)</span>.</p>
             </div>
 
             <div style="display:flex; align-items:center; gap:1rem; margin-bottom: 2rem; flex-wrap: wrap;">
                 <button id="rsiPu30ScanBtn" class="btn-neon">
-                    <span class="btn-text">📡 TÜM BIST100'Ü TARA (RSI PU30)</span>
+                    <span class="btn-text">📡 BIST100 UYUMSUZLUKLARI TARA</span>
                     <div class="spinner hidden" id="rsiPu30Spinner"></div>
                 </button>
                 <div class="interval-toggle" id="rsiPu30IntervalToggle">
-                    <button type="button" class="interval-btn active" data-interval="1d">Günlük</button>
-                    <button type="button" class="interval-btn" data-interval="1h">Saatlik</button>
+                    <button type="button" class="interval-btn active" data-interval="4h">4 Saatlik (4s)</button>
+                    <button type="button" class="interval-btn" data-interval="1h">1 Saatlik (1s)</button>
+                    <button type="button" class="interval-btn" data-interval="1d">Günlük (1g)</button>
+                </div>
+                <div class="interval-toggle" id="rsiPu30TypeToggle">
+                    <button type="button" class="interval-btn active" data-type="all">Tümü</button>
+                    <button type="button" class="interval-btn" data-type="pu30">🟢 PU30 (Alış)</button>
+                    <button type="button" class="interval-btn" data-type="nu70">🔴 NU70 (Satış)</button>
                 </div>
             </div>
 

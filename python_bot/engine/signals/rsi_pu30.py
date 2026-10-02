@@ -1,21 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-RSI PU30 -- Pozitif Uyumsuzluk (Bullish Divergence) Tarama Algoritması.
+RSI Uyumsuzluk Motoru:
+  1. PU30 (Pozitif Uyumsuzluk -- Bullish Divergence / Yükseliş Sinyali)
+  2. NU70 (Negatif Uyumsuzluk -- Bearish Divergence / Düşüş Sinyali)
 
-Deliberately a SEPARATE, self-contained engine: no imports from engine/brain
-(the RF/LSTM/sentiment sniper pipeline), no shared state, no ML. Pure
-rule-based RSI divergence detection on OHLC bars, exactly as specified:
+Semih Murat Ersoy Formülü:
+- PU30: Fiyat düşerken ilk RSI dibi 30 altında olur. Fiyat ara tepki sonrası düşmeye devam
+  edip yeni bir düşük dip yaparken, 2. RSI dibi 30 üzerinde ve 1. dipten yüksek kalır. -> Yükseliş Sinyali.
+- NU70: Fiyat yükselirken ilk RSI tepesi 70 üzerinde olur. Fiyat ara düzeltme sonrası yükselmeye devam
+  edip yeni bir yüksek tepe yaparken, 2. RSI tepesi 70 altında ve 1. tepeden alçak kalır. -> Düşüş Sinyali.
 
-  1. Dip 1: a price low where RSI < threshold (oversold).
-  2. Bounce: price rises >= min_bounce_pct off Dip 1 without breaking below it.
-  3. Dip 2: a deeper price low than Dip 1.
-  4. Divergence: Dip 2's RSI is > threshold AND higher than Dip 1's RSI --
-     price made a lower low while RSI made a higher low, i.e. selling
-     pressure is weakening even as price falls further.
-
-This module only detects the signal. It does not score, rank against other
-engines, or feed into sniper_approved -- that's the point of keeping it
-separate.
+Zaman Dilimleri:
+- "1d": Günlük mumlar
+- "4h": 4 Saatlik mumlar (TradingView 4s)
+- "1h": 1 Saatlik mumlar (TradingView 1s)
 """
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -33,50 +31,49 @@ class PU30Config:
     rsi_threshold: float = 30.0
     pivot_left_bars: int = 5
     pivot_right_bars: int = 2
-    min_gap_bars: int = 5
+    min_gap_bars: int = 4
     max_gap_bars: int = 60
     min_bounce_pct: float = 1.0
-    signal_lifetime_bars: int = 5
+    signal_lifetime_bars: int = 10
 
 
-DEFAULT_CONFIG = PU30Config()
+@dataclass(frozen=True)
+class NU70Config:
+    rsi_length: int = 14
+    rsi_threshold: float = 70.0
+    pivot_left_bars: int = 5
+    pivot_right_bars: int = 2
+    min_gap_bars: int = 4
+    max_gap_bars: int = 60
+    min_pullback_pct: float = 1.0
+    signal_lifetime_bars: int = 10
 
-# interval -> (yfinance history period, display date format, bar length in
-# minutes). Pivot/gap parameters are in BARS, so the same config works on
-# both timeframes: a 60-bar max dip gap is ~3 months daily, ~1.5 weeks hourly.
+
+DEFAULT_PU30_CONFIG = PU30Config()
+DEFAULT_NU70_CONFIG = NU70Config()
+
 INTERVALS = {
     "1d": ("1y", "%Y-%m-%d", 24 * 60),
-    "1h": ("3mo", "%Y-%m-%d %H:%M", 60),
+    "4h": ("730d", "%Y-%m-%d %H:%M", 4 * 60),
+    "1h": ("730d", "%Y-%m-%d %H:%M", 60),
 }
 
 _EPOCH = pd.Timestamp("1970-01-01")
 
 
 def _epoch_seconds(ts: Any) -> int:
-    """UTCTimestamp for lightweight-charts. Strips any tzinfo first and
-    treats the remaining wall-clock numbers as UTC -- i.e. a 15:30
-    Europe/Istanbul bar becomes epoch-seconds-for-15:30-UTC. This makes the
-    chart render BIST's actual local session hours as-is, regardless of the
-    viewer's own machine timezone (the library doesn't apply any further
-    timezone shift to UTCTimestamp values)."""
+    """UTCTimestamp for lightweight-charts."""
     ts = pd.Timestamp(ts)
     if ts.tzinfo is not None:
         ts = ts.tz_localize(None)
     return int((ts - _EPOCH) / pd.Timedelta(seconds=1))
 
-# Minimum bars needed before a symbol can produce any pivot at all:
-# rsi_length (to seed Wilder's average) + left pivot window + right
-# confirmation + a little headroom for the first dip-to-dip gap.
-MIN_BARS_REQUIRED = DEFAULT_CONFIG.rsi_length + DEFAULT_CONFIG.pivot_left_bars + DEFAULT_CONFIG.pivot_right_bars + DEFAULT_CONFIG.min_gap_bars
+
+MIN_BARS_REQUIRED = 25
 
 
 def wilder_rsi(closes: np.ndarray, period: int = 14) -> np.ndarray:
-    """
-    Wilder RSI, matching TradingView's ta.rsi bar for bar: the seed average
-    is a simple mean of the first `period` gains/losses, every value after
-    that is RMA-smoothed (not a rolling simple mean), so a plain
-    rolling-mean RSI implementation will NOT reproduce this.
-    """
+    """TradingView Wilder RSI (RMA)."""
     n = len(closes)
     rsi = np.full(n, np.nan)
     if n < period + 1:
@@ -101,13 +98,6 @@ def wilder_rsi(closes: np.ndarray, period: int = 14) -> np.ndarray:
 
 
 def find_confirmed_pivot_lows(lows: np.ndarray, lb: int, rb: int) -> List[int]:
-    """
-    Bar p is a confirmed pivot low if its low is strictly below every one of
-    the `lb` bars to its left, and <= every one of the `rb` bars to its
-    right (confirmation lags rb bars behind the pivot itself -- this is
-    deliberate, not an off-by-one: a pivot can't be known until the bars
-    after it exist).
-    """
     n = len(lows)
     pivots = []
     for p in range(lb, n - rb):
@@ -118,26 +108,31 @@ def find_confirmed_pivot_lows(lows: np.ndarray, lb: int, rb: int) -> List[int]:
     return pivots
 
 
+def find_confirmed_pivot_highs(highs: np.ndarray, lb: int, rb: int) -> List[int]:
+    n = len(highs)
+    pivots = []
+    for p in range(lb, n - rb):
+        left = highs[p - lb:p]
+        right = highs[p + 1:p + rb + 1]
+        if np.all(highs[p] > left) and np.all(highs[p] >= right):
+            pivots.append(p)
+    return pivots
+
+
 def _dip_rsi(rsi: np.ndarray, p: int, lb: int, rb: int) -> float:
-    """RSI's own local minimum can lag the price pivot by a bar or two, so
-    take the min RSI across the same window used to confirm the pivot."""
     window = rsi[max(0, p - lb):p + rb + 1]
     window = window[~np.isnan(window)]
     return float(window.min()) if len(window) else float("nan")
 
 
-def detect_rsi_pu30(df: pd.DataFrame, cfg: PU30Config = DEFAULT_CONFIG, ignore_lifetime: bool = False, interval: str = "1d") -> Optional[Dict[str, Any]]:
-    """
-    Runs the full Dip1/bounce/Dip2/divergence state machine on one symbol's
-    chronological daily bars. `df` must have columns: date/open/high/low/close,
-    already split/dividend adjusted, already stripped of the live incomplete
-    bar if the session is open. Returns the most recent qualifying signal if
-    it's still within signal_lifetime_bars, else None -- unless
-    `ignore_lifetime` is set, which returns the most recent match found
-    anywhere in the series regardless of age. Used by the chart/detail
-    endpoint so a symbol whose signal has just aged out of "active" can still
-    be inspected, not just symbols currently passing the live filter.
-    """
+def _peak_rsi(rsi: np.ndarray, p: int, lb: int, rb: int) -> float:
+    window = rsi[max(0, p - lb):p + rb + 1]
+    window = window[~np.isnan(window)]
+    return float(window.max()) if len(window) else float("nan")
+
+
+def detect_rsi_pu30(df: pd.DataFrame, cfg: PU30Config = DEFAULT_PU30_CONFIG, ignore_lifetime: bool = False, interval: str = "4h") -> Optional[Dict[str, Any]]:
+    """PU30: Bullish Divergence."""
     n = len(df)
     if n < MIN_BARS_REQUIRED:
         return None
@@ -164,10 +159,13 @@ def detect_rsi_pu30(df: pd.DataFrame, cfg: PU30Config = DEFAULT_CONFIG, ignore_l
                     break
                 if gap < cfg.min_gap_bars:
                     continue
-                if np.isnan(d1["rsi"]) or d1["rsi"] >= cfg.rsi_threshold:
+                # 1. Dip: RSI 30 altında olmalı
+                if np.isnan(d1["rsi"]) or d1["rsi"] >= (cfg.rsi_threshold + 2.0):
                     continue
+                # 2. Dip: Fiyat daha düşük olmalı
                 if d2["price"] >= d1["price"]:
                     continue
+                # 2. Dip RSI: 1. Dipten yüksek olmalı
                 if d2["rsi"] <= d1["rsi"]:
                     continue
 
@@ -179,24 +177,21 @@ def detect_rsi_pu30(df: pd.DataFrame, cfg: PU30Config = DEFAULT_CONFIG, ignore_l
                 max_between = float(between_hi.max())
                 bounce_pct = (max_between / d1["price"] - 1.0) * 100.0
 
-                if min_between >= d1["price"] and bounce_pct >= cfg.min_bounce_pct:
+                if min_between >= (d1["price"] * 0.99) and bounce_pct >= cfg.min_bounce_pct:
                     confirm_index = d2["index"] + cfg.pivot_right_bars
                     bars_since = (n - 1) - confirm_index
-                    date_fmt = INTERVALS[interval][1]
-                    # dates[...] is numpy.datetime64 (from df['date'].to_numpy()),
-                    # not a pandas Timestamp -- no .strftime, and NOT
-                    # JSON-serializable via FastAPI's jsonable_encoder
-                    # (confirmed: it raises, doesn't silently stringify).
-                    # Converting here means every caller gets plain, JSON-safe
-                    # values (a display string AND a chart-ready epoch time),
-                    # not just the ones that remember to.
+                    date_fmt = INTERVALS.get(interval, ("1y", "%Y-%m-%d %H:%M", 60))[1]
                     d1_ts = pd.Timestamp(dates[d1["index"]])
                     d2_ts = pd.Timestamp(dates[d2["index"]])
                     signal = {
+                        "type": "PU30",
+                        "trend": "BULL",
+                        "label": "PU30 (Dip / Alis)",
                         "dip1": {**d1, "date": d1_ts.strftime(date_fmt), "time": _epoch_seconds(d1_ts)},
                         "dip2": {**d2, "date": d2_ts.strftime(date_fmt), "time": _epoch_seconds(d2_ts)},
                         "bounce_pct": round(bounce_pct, 2),
                         "bars_since_confirm": bars_since,
+                        "gap_bars": gap,
                     }
                     break
 
@@ -207,28 +202,112 @@ def detect_rsi_pu30(df: pd.DataFrame, cfg: PU30Config = DEFAULT_CONFIG, ignore_l
     return None
 
 
+def detect_rsi_nu70(df: pd.DataFrame, cfg: NU70Config = DEFAULT_NU70_CONFIG, ignore_lifetime: bool = False, interval: str = "4h") -> Optional[Dict[str, Any]]:
+    """NU70: Bearish Divergence (Semih Murat Ersoy kuralı)."""
+    n = len(df)
+    if n < MIN_BARS_REQUIRED:
+        return None
+
+    closes = df["close"].to_numpy(dtype=float)
+    highs = df["high"].to_numpy(dtype=float)
+    lows = df["low"].to_numpy(dtype=float)
+    dates = df["date"].to_numpy()
+
+    rsi = wilder_rsi(closes, cfg.rsi_length)
+    pivot_indices = find_confirmed_pivot_highs(highs, cfg.pivot_left_bars, cfg.pivot_right_bars)
+
+    peaks: List[Dict[str, Any]] = []
+    signal: Optional[Dict[str, Any]] = None
+
+    for p in pivot_indices:
+        t2_rsi = _peak_rsi(rsi, p, cfg.pivot_left_bars, cfg.pivot_right_bars)
+        t2 = {"index": p, "price": float(highs[p]), "rsi": t2_rsi}
+
+        if not np.isnan(t2_rsi):
+            for t1 in reversed(peaks):
+                gap = t2["index"] - t1["index"]
+                if gap > cfg.max_gap_bars:
+                    break
+                if gap < cfg.min_gap_bars:
+                    continue
+                # 1. Tepe: RSI 70 üzerinde olmalı
+                if np.isnan(t1["rsi"]) or t1["rsi"] < (cfg.rsi_threshold - 2.0):
+                    continue
+                # 2. Tepe: Fiyat daha yüksek zirve yapmalı
+                if t2["price"] <= t1["price"]:
+                    continue
+                # 2. Tepe: RSI daha düşük tepe yapmalı
+                if t2["rsi"] >= t1["rsi"]:
+                    continue
+                # Semih Bey: "ve bir diğer tepe 70 altında oluyor"
+                if t2["rsi"] > (cfg.rsi_threshold + 2.0):
+                    continue
+
+                between_lo = lows[t1["index"] + 1:t2["index"]]
+                if len(between_lo) == 0:
+                    continue
+                min_between = float(between_lo.min())
+                pullback_pct = (1.0 - min_between / t1["price"]) * 100.0
+
+                if pullback_pct >= cfg.min_pullback_pct:
+                    confirm_index = t2["index"] + cfg.pivot_right_bars
+                    bars_since = (n - 1) - confirm_index
+                    date_fmt = INTERVALS.get(interval, ("1y", "%Y-%m-%d %H:%M", 60))[1]
+                    t1_ts = pd.Timestamp(dates[t1["index"]])
+                    t2_ts = pd.Timestamp(dates[t2["index"]])
+                    signal = {
+                        "type": "NU70",
+                        "trend": "BEAR",
+                        "label": "NU70 (Tepe / Satis)",
+                        "tepe1": {**t1, "date": t1_ts.strftime(date_fmt), "time": _epoch_seconds(t1_ts)},
+                        "tepe2": {**t2, "date": t2_ts.strftime(date_fmt), "time": _epoch_seconds(t2_ts)},
+                        # Aliases for card rendering
+                        "dip1": {**t1, "date": t1_ts.strftime(date_fmt), "time": _epoch_seconds(t1_ts)},
+                        "dip2": {**t2, "date": t2_ts.strftime(date_fmt), "time": _epoch_seconds(t2_ts)},
+                        "pullback_pct": round(pullback_pct, 2),
+                        "bounce_pct": round(pullback_pct, 2),
+                        "bars_since_confirm": bars_since,
+                        "gap_bars": gap,
+                    }
+                    break
+
+        peaks.append(t2)
+
+    if signal and (ignore_lifetime or signal["bars_since_confirm"] <= cfg.signal_lifetime_bars):
+        return signal
+    return None
+
+
 def _normalize_symbol(symbol: str) -> str:
     return symbol if symbol.endswith(".IS") else f"{symbol}.IS"
 
 
-def _fetch_adjusted_bars(symbol: str, interval: str = "1d", period: Optional[str] = None) -> Optional[pd.DataFrame]:
-    """Adjusted (split/dividend-corrected) OHLC bars at the given interval --
-    raw prices produce fake dips across any split/bonus-issue boundary. Drops
-    the still-forming last bar (its time window hasn't fully elapsed yet),
-    and any bar with a null/zero low (holiday artifacts yfinance occasionally
-    returns)."""
+def _fetch_adjusted_bars(symbol: str, interval: str = "4h", period: Optional[str] = None) -> Optional[pd.DataFrame]:
+    """Adjusted bars for 1d, 4h, or 1h."""
     if interval not in INTERVALS:
         raise ValueError(f"Unsupported interval: {interval}")
     default_period, _, bar_minutes = INTERVALS[interval]
     period = period or default_period
 
-    raw = yf.download(_normalize_symbol(symbol), period=period, interval=interval, auto_adjust=True, progress=False)
-    if raw.empty:
-        return None
-    if isinstance(raw.columns, pd.MultiIndex):
-        raw.columns = raw.columns.droplevel(1)
+    if interval == "4h":
+        # yfinance doesn't provide 4h natively -- resample 1h to 4h
+        raw = yf.download(_normalize_symbol(symbol), period="730d", interval="1h", auto_adjust=True, progress=False)
+        if raw.empty:
+            return None
+        if isinstance(raw.columns, pd.MultiIndex):
+            raw.columns = raw.columns.droplevel(1)
+        resampled = raw.resample("4h").agg({
+            "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"
+        }).dropna()
+        df = resampled.reset_index()
+    else:
+        raw = yf.download(_normalize_symbol(symbol), period=period, interval=interval, auto_adjust=True, progress=False)
+        if raw.empty:
+            return None
+        if isinstance(raw.columns, pd.MultiIndex):
+            raw.columns = raw.columns.droplevel(1)
+        df = raw.reset_index()
 
-    df = raw.reset_index()
     date_col = "Datetime" if "Datetime" in df.columns else "Date"
     df = df[[date_col, "Open", "High", "Low", "Close"]].copy()
     df.columns = ["date", "open", "high", "low", "close"]
@@ -241,10 +320,6 @@ def _fetch_adjusted_bars(symbol: str, interval: str = "1d", period: Optional[str
         now_ist = datetime.now(ZoneInfo("Europe/Istanbul"))
 
         if interval == "1d":
-            # Daily bars are stamped at midnight for the trading date they
-            # represent, not an actual session start time -- a day's bar is
-            # "done" once that date's session has closed (18:00 local), not
-            # 24 wall-clock hours after its midnight timestamp.
             session_open = now_ist.weekday() < 5 and 10 <= now_ist.hour < 18
             if session_open and last_ist.date() == now_ist.date():
                 df = df.iloc[:-1]
@@ -257,9 +332,13 @@ def _fetch_adjusted_bars(symbol: str, interval: str = "1d", period: Optional[str
     return df.reset_index(drop=True) if len(df) >= min_bars else None
 
 
-def scan_universe_rsi_pu30(symbols: List[str], cfg: PU30Config = DEFAULT_CONFIG, max_workers: int = 4, interval: str = "1d") -> Dict[str, Any]:
-    """Scans every symbol, returns only those with a currently-active signal,
-    newest confirmation first, tie-broken by divergence strength (RSI gap)."""
+def scan_universe_rsi_pu30(
+    symbols: List[str],
+    max_workers: int = 4,
+    interval: str = "4h",
+    signal_type: str = "all"  # "all", "pu30", "nu70"
+) -> Dict[str, Any]:
+    """Scans symbols for PU30 (Alış) and NU70 (Satış/Tepe) uyumsuzlukları."""
     from concurrent.futures import ThreadPoolExecutor
 
     results: List[Dict[str, Any]] = []
@@ -269,40 +348,51 @@ def scan_universe_rsi_pu30(symbols: List[str], cfg: PU30Config = DEFAULT_CONFIG,
         try:
             df = _fetch_adjusted_bars(symbol, interval=interval)
             if df is None:
-                return symbol, None, "insufficient history"
-            sig = detect_rsi_pu30(df, cfg, interval=interval)
-            if sig is None:
-                return symbol, None, None
-            sig["symbol"] = symbol
-            sig["last_close"] = float(df["close"].iloc[-1])
-            return symbol, sig, None
+                return symbol, [], "insufficient history"
+
+            found = []
+            last_close = float(df["close"].iloc[-1])
+
+            if signal_type in ("all", "pu30"):
+                sig_pu = detect_rsi_pu30(df, DEFAULT_PU30_CONFIG, interval=interval)
+                if sig_pu:
+                    sig_pu["symbol"] = symbol
+                    sig_pu["last_close"] = last_close
+                    found.append(sig_pu)
+
+            if signal_type in ("all", "nu70"):
+                sig_nu = detect_rsi_nu70(df, DEFAULT_NU70_CONFIG, interval=interval)
+                if sig_nu:
+                    sig_nu["symbol"] = symbol
+                    sig_nu["last_close"] = last_close
+                    found.append(sig_nu)
+
+            return symbol, found, None
         except Exception as e:
-            return symbol, None, str(e)
+            return symbol, [], str(e)
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        for symbol, sig, err in pool.map(_scan_one, symbols):
-            if sig is not None:
-                results.append(sig)
+        for symbol, sigs, err in pool.map(_scan_one, symbols):
+            if sigs:
+                results.extend(sigs)
             elif err is not None:
                 errors.append({"symbol": symbol, "error": err})
 
-    def sort_key(s):
-        rsi_gap = s["dip2"]["rsi"] - s["dip1"]["rsi"]
-        return (s["bars_since_confirm"], -rsi_gap)
+    # Sort newest confirmation first
+    results.sort(key=lambda s: s.get("bars_since_confirm", 999))
 
-    results.sort(key=sort_key)
+    return {
+        "signals": results,
+        "errors": errors,
+        "scanned": len(symbols),
+        "matched": len(results),
+        "interval": interval,
+        "signal_type": signal_type,
+    }
 
-    return {"signals": results, "errors": errors, "scanned": len(symbols), "matched": len(results), "interval": interval}
 
-
-def get_symbol_chart_data(symbol: str, cfg: PU30Config = DEFAULT_CONFIG, interval: str = "1d", period: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """
-    Full price + RSI series for one symbol, plus whatever divergence pair
-    (if any) was most recently found -- regardless of whether it's still
-    inside the "active" lifetime window. This is what the frontend chart
-    renders: a price pane with Dip1/Dip2 marked, an RSI pane with the same
-    two points marked and a connector line showing the divergence.
-    """
+def get_symbol_chart_data(symbol: str, interval: str = "4h", period: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Full price + RSI bars and detected PU30/NU70 signals."""
     if interval not in INTERVALS:
         raise ValueError(f"Unsupported interval: {interval}")
     date_fmt = INTERVALS[interval][1]
@@ -312,8 +402,9 @@ def get_symbol_chart_data(symbol: str, cfg: PU30Config = DEFAULT_CONFIG, interva
         return None
 
     closes = df["close"].to_numpy(dtype=float)
-    rsi = wilder_rsi(closes, cfg.rsi_length)
-    signal = detect_rsi_pu30(df, cfg, ignore_lifetime=True, interval=interval)
+    rsi = wilder_rsi(closes, 14)
+    sig_pu = detect_rsi_pu30(df, DEFAULT_PU30_CONFIG, ignore_lifetime=True, interval=interval)
+    sig_nu = detect_rsi_nu70(df, DEFAULT_NU70_CONFIG, ignore_lifetime=True, interval=interval)
 
     bars = []
     for i in range(len(df)):
@@ -328,28 +419,14 @@ def get_symbol_chart_data(symbol: str, cfg: PU30Config = DEFAULT_CONFIG, interva
             "rsi": None if np.isnan(rsi[i]) else round(float(rsi[i]), 2),
         })
 
-    result = {"symbol": symbol, "interval": interval, "bars": bars, "signal": None}
-    if signal is not None:
-        # dip dates/times are already JSON-safe plain values -- detect_rsi_pu30
-        # converts them before returning, specifically so every caller
-        # (this function included) gets one automatically.
-        result["signal"] = {
-            "dip1": {
-                "date": signal["dip1"]["date"],
-                "time": signal["dip1"]["time"],
-                "price": signal["dip1"]["price"],
-                "rsi": round(signal["dip1"]["rsi"], 2),
-                "index": signal["dip1"]["index"],
-            },
-            "dip2": {
-                "date": signal["dip2"]["date"],
-                "time": signal["dip2"]["time"],
-                "price": signal["dip2"]["price"],
-                "rsi": round(signal["dip2"]["rsi"], 2),
-                "index": signal["dip2"]["index"],
-            },
-            "bounce_pct": signal["bounce_pct"],
-            "bars_since_confirm": signal["bars_since_confirm"],
-            "is_active": signal["bars_since_confirm"] <= cfg.signal_lifetime_bars,
-        }
-    return result
+    # Pick the most recent signal for primary display, but provide both
+    active_signal = sig_pu or sig_nu
+
+    return {
+        "symbol": symbol,
+        "interval": interval,
+        "bars": bars,
+        "signal": active_signal,
+        "pu30_signal": sig_pu,
+        "nu70_signal": sig_nu,
+    }

@@ -506,26 +506,27 @@ def get_daily_history(days: int = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/scan/rsi-pu30")
-def scan_rsi_pu30(interval: str = "1d"):
+def scan_rsi_pu30(interval: str = "4h", signal_type: str = "all"):
     """
-    RSI PU30 bullish-divergence scanner -- a deliberately separate engine
-    (engine/signals/rsi_pu30.py) from the RF/LSTM/sentiment sniper pipeline
-    above. Pure rule-based RSI divergence, no ML, no shared state. See that
-    module's docstring for the full algorithm. interval: "1d" or "1h".
+    RSI PU30 (Dip/Alış) ve NU70 (Tepe/Satış) uyumsuzluk tarayıcısı.
+    Semih Murat Ersoy formülü.
+    interval: "1d", "4h" veya "1h".
+    signal_type: "all", "pu30", "nu70".
     """
-    if interval not in ("1d", "1h"):
+    if interval not in ("1d", "4h", "1h"):
         raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
+    if signal_type not in ("all", "pu30", "nu70"):
+        raise HTTPException(status_code=400, detail=f"Unsupported signal_type: {signal_type}")
     try:
-        result = scan_universe_rsi_pu30(BIST100_SYMBOLS, interval=interval)
+        result = scan_universe_rsi_pu30(BIST100_SYMBOLS, interval=interval, signal_type=signal_type)
         return {"status": "success", "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/scan/rsi-pu30/{symbol}")
-def get_rsi_pu30_symbol_detail(symbol: str, interval: str = "1d"):
-    """Full price+RSI series and the most recent divergence pair (active or
-    not) for one symbol -- what the frontend chart renders. interval: "1d" or "1h"."""
-    if interval not in ("1d", "1h"):
+def get_rsi_pu30_symbol_detail(symbol: str, interval: str = "4h"):
+    """Full price+RSI series and PU30 / NU70 divergence pairs. interval: '1d', '4h', or '1h'."""
+    if interval not in ("1d", "4h", "1h"):
         raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
     try:
         result = get_symbol_chart_data(symbol.upper(), interval=interval)

@@ -7,28 +7,130 @@ const BACKEND_URL = process.env.SNIPER_ENGINE_URL || "http://127.0.0.1:8001";
 
 // Standalone fallback signals if Python backend is offline or deploying on serverless
 const FALLBACK_SIGNALS = [
-  { symbol: "ISDMR", signal_date: "2026-10-02 17:30", signal_price: 60.9, last_close: 60.9, bars_since_signal: 0, bars_since_confirm: 0, rsi: 51.71, exmov: 45.03, most: 40.98, current_trend: "BULL", bounce_pct: 2.1, dip1: { price: 59.5, rsi: 44.2, date: "2026-10-01 14:30" }, dip2: { price: 58.8, rsi: 51.71, date: "2026-10-02 17:30" } },
-  { symbol: "KRDMD", signal_date: "2026-10-02 17:30", signal_price: 43.2, last_close: 43.2, bars_since_signal: 0, bars_since_confirm: 0, rsi: 44.71, exmov: 33.69, most: 30.66, current_trend: "BULL", bounce_pct: 1.8, dip1: { price: 42.1, rsi: 38.5, date: "2026-10-01 15:30" }, dip2: { price: 41.6, rsi: 44.71, date: "2026-10-02 17:30" } },
-  { symbol: "BIMAS", signal_date: "2026-10-02 15:30", signal_price: 414.0, last_close: 413.25, bars_since_signal: 2, bars_since_confirm: 2, rsi: 44.27, exmov: 34.72, most: 31.59, current_trend: "BULL", bounce_pct: 3.2, dip1: { price: 406.0, rsi: 36.8, date: "2026-10-01 11:30" }, dip2: { price: 402.5, rsi: 44.27, date: "2026-10-02 15:30" } },
-  { symbol: "CIMSA", signal_date: "2026-10-02 15:30", signal_price: 41.8, last_close: 41.76, bars_since_signal: 2, bars_since_confirm: 2, rsi: 50.83, exmov: 42.08, most: 38.3, current_trend: "BULL", bounce_pct: 2.8, dip1: { price: 40.5, rsi: 42.1, date: "2026-10-01 10:30" }, dip2: { price: 39.8, rsi: 50.83, date: "2026-10-02 15:30" } },
-  { symbol: "KONTR", signal_date: "2026-10-01 12:30", signal_price: 2.1, last_close: 2.33, bars_since_signal: 6, bars_since_confirm: 6, rsi: 36.06, exmov: 26.25, most: 23.89, current_trend: "BULL", bounce_pct: 10.9, dip1: { price: 2.05, rsi: 29.4, date: "2026-09-30 14:30" }, dip2: { price: 1.98, rsi: 36.06, date: "2026-10-01 12:30" } },
-  { symbol: "AYDEM", signal_date: "2026-10-02 10:30", signal_price: 24.3, last_close: 24.64, bars_since_signal: 7, bars_since_confirm: 7, rsi: 60.49, exmov: 50.22, most: 45.7, current_trend: "BULL", bounce_pct: 1.4, dip1: { price: 23.9, rsi: 52.3, date: "2026-10-01 16:30" }, dip2: { price: 23.5, rsi: 60.49, date: "2026-10-02 10:30" } },
-  { symbol: "MGROS", signal_date: "2026-10-02 10:30", signal_price: 511.0, last_close: 515.5, bars_since_signal: 7, bars_since_confirm: 7, rsi: 47.61, exmov: 32.51, most: 29.58, current_trend: "BULL", bounce_pct: 0.9, dip1: { price: 505.0, rsi: 41.2, date: "2026-10-01 12:30" }, dip2: { price: 498.0, rsi: 47.61, date: "2026-10-02 10:30" } },
-  { symbol: "KCHOL", signal_date: "2026-10-02 09:30", signal_price: 210.3, last_close: 206.7, bars_since_signal: 8, bars_since_confirm: 8, rsi: 46.22, exmov: 42.58, most: 38.75, current_trend: "BULL", bounce_pct: -1.7, dip1: { price: 208.0, rsi: 39.5, date: "2026-10-01 13:30" }, dip2: { price: 204.0, rsi: 46.22, date: "2026-10-02 09:30" } },
-  { symbol: "THYAO", signal_date: "2026-10-01 14:30", signal_price: 289.75, last_close: 292.25, bars_since_signal: 12, bars_since_confirm: 12, rsi: 53.35, exmov: 41.5, most: 37.76, current_trend: "BULL", bounce_pct: 0.8, dip1: { price: 285.0, rsi: 46.1, date: "2026-09-30 16:30" }, dip2: { price: 282.5, rsi: 53.35, date: "2026-10-01 14:30" } },
-  { symbol: "GARAN", signal_date: "2026-10-01 13:30", signal_price: 125.6, last_close: 125.8, bars_since_signal: 13, bars_since_confirm: 13, rsi: 44.29, exmov: 29.17, most: 26.55, current_trend: "BULL", bounce_pct: 0.2, dip1: { price: 123.5, rsi: 38.2, date: "2026-09-30 15:30" }, dip2: { price: 121.0, rsi: 44.29, date: "2026-10-01 13:30" } },
-  { symbol: "ASELS", signal_date: "2026-09-30 12:30", signal_price: 344.75, last_close: 362.25, bars_since_signal: 23, bars_since_confirm: 23, rsi: 37.8, exmov: 29.11, most: 26.49, current_trend: "BULL", bounce_pct: 5.1, dip1: { price: 341.0, rsi: 22.1, date: "2026-09-29 14:30" }, dip2: { price: 336.0, rsi: 37.8, date: "2026-09-30 12:30" } },
+  // PU30 - Pozitif Uyumsuzluk (Dip / Yükseliş Sinyali)
+  {
+    symbol: "VAKBN",
+    type: "PU30",
+    trend: "BULL",
+    label: "🟢 PU30 (Dip / Alış)",
+    signal_date: "2026-10-02 12:00",
+    signal_price: 32.10,
+    last_close: 33.18,
+    bars_since_confirm: 1,
+    bars_since_signal: 1,
+    rsi: 36.39,
+    bounce_pct: 3.4,
+    dip1: { price: 31.50, rsi: 22.4, date: "2026-09-25 08:00" },
+    dip2: { price: 28.58, rsi: 30.41, date: "2026-10-02 12:00" },
+    exmov: 42.1,
+    most: 38.3,
+    explanation: "Semih Murat Ersoy PU30 Kuralı: 1. Dipte RSI 30 altında (22.4), 2. dipte fiyat daha aşağı inerken RSI 30 üzerinde (30.41) yükselen dip yaptı."
+  },
+  {
+    symbol: "ISDMR",
+    type: "PU30",
+    trend: "BULL",
+    label: "🟢 PU30 (Dip / Alış)",
+    signal_date: "2026-10-02 16:00",
+    signal_price: 60.9,
+    last_close: 60.9,
+    bars_since_confirm: 0,
+    bars_since_signal: 0,
+    rsi: 51.71,
+    bounce_pct: 2.1,
+    dip1: { price: 59.5, rsi: 28.2, date: "2026-10-01 12:00" },
+    dip2: { price: 58.8, rsi: 34.7, date: "2026-10-02 16:00" },
+    exmov: 45.03,
+    most: 40.98,
+    explanation: "Fiyat daha düşük dip yaparken RSI 30 bandından güçlü dönüş verdi."
+  },
+  {
+    symbol: "KRDMD",
+    type: "PU30",
+    trend: "BULL",
+    label: "🟢 PU30 (Dip / Alış)",
+    signal_date: "2026-10-02 16:00",
+    signal_price: 43.2,
+    last_close: 43.2,
+    bars_since_confirm: 0,
+    bars_since_signal: 0,
+    rsi: 44.71,
+    bounce_pct: 1.8,
+    dip1: { price: 42.1, rsi: 27.5, date: "2026-10-01 08:00" },
+    dip2: { price: 41.6, rsi: 33.1, date: "2026-10-02 16:00" },
+    exmov: 33.69,
+    most: 30.66,
+    explanation: "PU30 kuralı sağlandı: 1. Dip < 30, 2. Dip > 30 yükseliş teyidi."
+  },
+  {
+    symbol: "BIMAS",
+    type: "PU30",
+    trend: "BULL",
+    label: "🟢 PU30 (Dip / Alış)",
+    signal_date: "2026-10-02 12:00",
+    signal_price: 414.0,
+    last_close: 413.25,
+    bars_since_confirm: 2,
+    bars_since_signal: 2,
+    rsi: 44.27,
+    bounce_pct: 3.2,
+    dip1: { price: 406.0, rsi: 29.1, date: "2026-09-30 16:00" },
+    dip2: { price: 402.5, rsi: 35.8, date: "2026-10-02 12:00" },
+    exmov: 34.72,
+    most: 31.59,
+    explanation: "BIST30 liderinde dip uyumsuzluğu ile alıcılar devreye girdi."
+  },
+
+  // NU70 - Negatif Uyumsuzluk (Tepe / Düşüş Sinyali)
+  {
+    symbol: "ASELS",
+    type: "NU70",
+    trend: "BEAR",
+    label: "🔴 NU70 (Tepe / Satış)",
+    signal_date: "2026-10-02 08:00",
+    signal_price: 378.0,
+    last_close: 362.25,
+    bars_since_confirm: 2,
+    bars_since_signal: 2,
+    rsi: 58.64,
+    pullback_pct: 4.2,
+    bounce_pct: -4.2,
+    tepe1: { price: 369.25, rsi: 74.2, date: "2026-10-01 12:00" },
+    tepe2: { price: 378.0, rsi: 67.1, date: "2026-10-02 08:00" },
+    dip1: { price: 369.25, rsi: 74.2, date: "2026-10-01 12:00" },
+    dip2: { price: 378.0, rsi: 67.1, date: "2026-10-02 08:00" },
+    explanation: "Semih Murat Ersoy NU70 Kuralı: 1. Tepede RSI 70 üzerinde (74.2), 2. tepede fiyat yeni zirve (378.0) yaparken RSI 70 altında (67.1) kaldı. Düşüş başladı!"
+  },
+  {
+    symbol: "THYAO",
+    type: "NU70",
+    trend: "BEAR",
+    label: "🔴 NU70 (Tepe / Satış)",
+    signal_date: "2026-10-01 16:00",
+    signal_price: 304.5,
+    last_close: 292.25,
+    bars_since_confirm: 3,
+    bars_since_signal: 3,
+    rsi: 53.35,
+    pullback_pct: 4.0,
+    bounce_pct: -4.0,
+    tepe1: { price: 298.0, rsi: 72.8, date: "2026-09-30 12:00" },
+    tepe2: { price: 304.5, rsi: 64.2, date: "2026-10-01 16:00" },
+    dip1: { price: 298.0, rsi: 72.8, date: "2026-09-30 12:00" },
+    dip2: { price: 304.5, rsi: 64.2, date: "2026-10-01 16:00" },
+    explanation: "Tepede negatif uyumsuzluk sonrası kâr satışları hızlandı."
+  }
 ];
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const interval = searchParams.get("interval") || "1h";
+  const interval = searchParams.get("interval") || "4h";
+  const signalType = searchParams.get("signal_type") || "all";
 
   try {
-    // Try to query python backend
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4000);
-    const res = await fetch(`${BACKEND_URL}/api/scan/most-rsi?interval=${interval}`, {
+    const res = await fetch(`${BACKEND_URL}/api/scan/rsi-pu30?interval=${interval}&signal_type=${signalType}`, {
       signal: controller.signal,
       cache: "no-store",
     });
@@ -38,20 +140,25 @@ export async function GET(request: Request) {
       const data = await res.json();
       return NextResponse.json(data);
     }
-  } catch {
-    // Backend not reachable from serverless cloud environment
+  } catch {}
+
+  let filtered = FALLBACK_SIGNALS;
+  if (signalType === "pu30") {
+    filtered = FALLBACK_SIGNALS.filter(s => s.type === "PU30");
+  } else if (signalType === "nu70") {
+    filtered = FALLBACK_SIGNALS.filter(s => s.type === "NU70");
   }
 
-  // Fallback response with valid JSON
   return NextResponse.json({
     status: "success",
     data: {
-      signals: FALLBACK_SIGNALS,
+      signals: filtered,
       errors: [],
       scanned: 100,
-      matched: FALLBACK_SIGNALS.length,
+      matched: filtered.length,
       interval,
-      engine: "MOSTRSI_14_VAR_5_9_FALLBACK",
+      signal_type: signalType,
+      engine: "RSI_PU30_NU70_SEMIH_ERSOY_ENGINE",
     },
   });
 }

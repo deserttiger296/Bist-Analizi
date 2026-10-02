@@ -195,7 +195,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let rsiPu30RsiMarkers = null;
     let rsiPu30PriceConnector = null;
     let rsiPu30RsiConnector = null;
-    let rsiPu30Interval = '1d';
+    let rsiPu30Interval = '4h';
+    let rsiPu30Type = 'all';
+    let rsiPu30LastData = null;
     let rsiPu30OpenSymbol = null;
 
     function fmtTR(v, digits = 2) {
@@ -214,9 +216,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (next === rsiPu30Interval) return;
                 rsiPu30Interval = next;
                 rsiPu30IntervalToggle.querySelectorAll('.interval-btn').forEach((b) => b.classList.toggle('active', b === btn));
-                // Chart timeVisible/formatting depends on interval, so tear
-                // down and let ensureRsiPu30Charts() rebuild on next open
-                // rather than mutate options on a chart mid-life.
                 if (rsiPu30PriceChartInst) {
                     rsiPu30PriceChartInst.remove();
                     rsiPu30RsiChartInst.remove();
@@ -234,6 +233,21 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const rsiPu30TypeToggle = document.getElementById('rsiPu30TypeToggle');
+    if (rsiPu30TypeToggle) {
+        rsiPu30TypeToggle.querySelectorAll('.interval-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const next = btn.getAttribute('data-type');
+                if (next === rsiPu30Type) return;
+                rsiPu30Type = next;
+                rsiPu30TypeToggle.querySelectorAll('.interval-btn').forEach((b) => b.classList.toggle('active', b === btn));
+                if (rsiPu30LastData) {
+                    renderRsiPu30(rsiPu30LastData);
+                }
+            });
+        });
+    }
+
     if (rsiPu30ScanBtn) {
         rsiPu30ScanBtn.addEventListener('click', async () => {
             rsiPu30ErrorMsg.classList.add('hidden');
@@ -242,7 +256,7 @@ document.addEventListener('DOMContentLoaded', () => {
             rsiPu30ScanBtn.disabled = true;
 
             try {
-                const response = await fetch(`/api/scan/rsi-pu30?interval=${rsiPu30Interval}`);
+                const response = await fetch(`/api/scan/rsi-pu30?interval=${rsiPu30Interval}&signal_type=${rsiPu30Type}`);
                 const text = await response.text();
                 let json;
                 try {
@@ -264,74 +278,77 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderRsiPu30(data) {
         if (!data) return;
+        rsiPu30LastData = data;
+        let signals = data.signals || [];
+        if (rsiPu30Type === 'pu30') {
+            signals = signals.filter(s => s.type === 'PU30' || s.trend === 'BULL');
+        } else if (rsiPu30Type === 'nu70') {
+            signals = signals.filter(s => s.type === 'NU70' || s.trend === 'BEAR');
+        }
+
         rsiPu30Scanned.textContent = data.scanned != null ? data.scanned : 100;
-        rsiPu30Matched.textContent = data.matched != null ? data.matched : (data.signals ? data.signals.length : 0);
+        rsiPu30Matched.textContent = signals.length;
         rsiPu30Skipped.textContent = (!data.errors || data.errors.length === 0) ? '—' : data.errors.map(e => e.symbol).join(', ');
 
         rsiPu30Grid.innerHTML = '';
-        if (!data.signals || data.signals.length === 0) {
-            rsiPu30Grid.innerHTML = '<p style="color:var(--text-muted);">Şu anda aktif sinyal bulunamadı. Koşullar piyasa saatlerinde güncellenir.</p>';
+        if (signals.length === 0) {
+            rsiPu30Grid.innerHTML = `<p style="color:var(--text-muted); padding:2rem; text-align:center;">Seçili zaman diliminde (${rsiPu30Interval.toUpperCase()}) bu filtrede uyumsuzluk sinyali bulunamadı.</p>`;
         } else {
-            data.signals.forEach((s) => {
+            signals.forEach((s) => {
+                const isNU = s.type === 'NU70' || s.trend === 'BEAR';
                 const card = document.createElement('div');
                 card.className = 'card';
+                card.style.border = isNU ? '1px solid rgba(244, 63, 94, 0.4)' : '1px solid rgba(16, 185, 129, 0.4)';
 
-                if (s.dip1 && s.dip2) {
-                    const rsiGap = (s.dip2.rsi || 0) - (s.dip1.rsi || 0);
-                    card.innerHTML = `
-                        <div class="card-top">
-                            <div class="card-symbol">${s.symbol}</div>
-                            <div class="card-badge badge-violet">${s.bars_since_confirm || 0} BAR ÖNCE</div>
+                const badgeBg = isNU ? 'rgba(244, 63, 94, 0.15)' : 'rgba(16, 185, 129, 0.15)';
+                const badgeColor = isNU ? '#f43f5e' : '#10b981';
+                const badgeText = isNU ? '🔴 NU70 (DÜŞÜŞ)' : '🟢 PU30 (YÜKSELİŞ)';
+                const barsText = s.bars_since_confirm === 0 ? "BU BAR" : `${s.bars_since_confirm || 0} BAR ÖNCE`;
+
+                const p1 = s.tepe1 || s.dip1 || {};
+                const p2 = s.tepe2 || s.dip2 || {};
+                const p1Label = isNU ? "1. Tepe (RSI > 70)" : "1. Dip (RSI < 30)";
+                const p2Label = isNU ? "2. Tepe (RSI < 70)" : "2. Dip (RSI > 30)";
+
+                const rsiChange = (p2.rsi || 0) - (p1.rsi || 0);
+                const rsiChangeText = (rsiChange >= 0 ? '+' : '') + fmtTR(rsiChange, 1);
+                const rsiColor = isNU ? '#f43f5e' : '#10b981';
+
+                card.innerHTML = `
+                    <div class="card-top">
+                        <div class="card-symbol" style="font-size:1.25rem; font-weight:900;">${s.symbol}</div>
+                        <div style="display:flex; gap:0.5rem; align-items:center;">
+                            <span class="card-badge" style="background:${badgeBg}; color:${badgeColor}; font-weight:800; border:1px solid ${badgeColor}40;">
+                                ${badgeText}
+                            </span>
+                            <span class="card-badge badge-violet">${barsText}</span>
                         </div>
-                        <div class="target-val" style="margin-top:1rem;">${fmtTR(s.last_close)} ₺</div>
-                        <div class="dip-grid">
-                            <div class="target-item">
-                                <div class="target-label">Dip 1</div>
-                                <div class="target-val" style="font-size:1rem;">${fmtTR(s.dip1.price)} / RSI ${fmtTR(s.dip1.rsi, 1)}</div>
-                                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">${s.dip1.date || '-'}</div>
-                            </div>
-                            <div class="target-item">
-                                <div class="target-label">Dip 2</div>
-                                <div class="target-val" style="font-size:1rem; color:var(--neon-red);">${fmtTR(s.dip2.price)} / RSI ${fmtTR(s.dip2.rsi, 1)}</div>
-                                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">${s.dip2.date || '-'}</div>
-                            </div>
+                    </div>
+
+                    <div class="target-val" style="margin-top:1rem; font-size:1.4rem;">${fmtTR(s.last_close)} ₺</div>
+                    
+                    <div class="dip-grid" style="margin-top:0.75rem;">
+                        <div class="target-item">
+                            <div class="target-label" style="color:var(--text-muted); font-size:0.75rem;">${p1Label}</div>
+                            <div class="target-val" style="font-size:0.95rem;">${fmtTR(p1.price)} ₺ / RSI ${fmtTR(p1.rsi, 1)}</div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.2rem;">${p1.date || '-'}</div>
                         </div>
-                        <div style="display:flex; justify-content:space-between; margin-top:1rem; font-size:0.85rem;">
-                            <span style="color: var(--neon-green); font-weight:700;">↗ RSI +${fmtTR(rsiGap, 1)}</span>
-                            <span style="color: var(--accent); font-weight:700;">Tepki +%${fmtTR(s.bounce_pct, 1)}</span>
+                        <div class="target-item">
+                            <div class="target-label" style="color:var(--text-muted); font-size:0.75rem;">${p2Label}</div>
+                            <div class="target-val" style="font-size:0.95rem; color:${badgeColor};">${fmtTR(p2.price)} ₺ / RSI ${fmtTR(p2.rsi, 1)}</div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.2rem;">${p2.date || '-'}</div>
                         </div>
-                        <button class="btn-chart" data-symbol="${s.symbol}">📈 GRAFİĞİ GÖSTER</button>
-                    `;
-                } else {
-                    const changePct = s.signal_price ? (((s.last_close - s.signal_price) / s.signal_price) * 100) : 0;
-                    const barsText = s.bars_since_signal === 0 ? "BU SAAT" : `${s.bars_since_signal ?? 0} BAR ÖNCE`;
-                    card.innerHTML = `
-                        <div class="card-top">
-                            <div class="card-symbol">${s.symbol}</div>
-                            <div class="card-badge" style="background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.5); color: #10b981; font-weight: bold;">
-                                ${s.current_trend || 'BULL'}
-                            </div>
-                            <div class="card-badge badge-violet">${barsText}</div>
-                        </div>
-                        <div class="target-val" style="margin-top:0.75rem;">${fmtTR(s.last_close)} ₺</div>
-                        <div style="font-size:0.8rem; font-weight:600; color: ${changePct >= 0 ? 'var(--neon-green)' : 'var(--neon-red)'}; margin-top:0.2rem;">
-                            ${changePct >= 0 ? '+' : ''}${fmtTR(changePct, 2)}%
-                        </div>
-                        <div class="dip-grid" style="margin-top:0.75rem;">
-                            <div class="target-item">
-                                <div class="target-label">Kırılım Fiyatı</div>
-                                <div class="target-val" style="font-size:0.95rem;">${fmtTR(s.signal_price)} ₺</div>
-                                <div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.3rem;">${s.signal_date || '-'}</div>
-                            </div>
-                            <div class="target-item">
-                                <div class="target-label">MOSTRSI Seviyeleri</div>
-                                <div class="target-val" style="font-size:0.95rem; color:#a78bfa;">VAR ${fmtTR(s.exmov, 1)} / ${fmtTR(s.most, 1)}</div>
-                                <div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.3rem;">RSI: ${fmtTR(s.rsi || s.current_rsi, 1)}</div>
-                            </div>
-                        </div>
-                        <button class="btn-chart" data-symbol="${s.symbol}" style="margin-top:0.75rem;">📈 GRAFİĞİ GÖSTER</button>
-                    `;
-                }
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; margin-top:0.75rem; font-size:0.85rem; font-weight:700;">
+                        <span style="color:${rsiColor};">RSI: ${rsiChangeText}</span>
+                        <span style="color:var(--accent);">${isNU ? 'Düzeltme: -%' + fmtTR(s.pullback_pct, 1) : 'Tepki: +%' + fmtTR(s.bounce_pct, 1)}</span>
+                    </div>
+
+                    ${s.explanation ? `<div style="font-size:0.75rem; color:#94a3b8; margin-top:0.6rem; line-height:1.3; background:rgba(0,0,0,0.25); padding:0.4rem; border-radius:6px;">${s.explanation}</div>` : ''}
+
+                    <button class="btn-chart" data-symbol="${s.symbol}" style="margin-top:0.75rem; width:100%;">📈 GRAFİĞİ GÖSTER</button>
+                `;
 
                 const chartBtn = card.querySelector('.btn-chart');
                 if (chartBtn) {
@@ -429,24 +446,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (detail.signal && detail.signal.dip1 && detail.signal.dip2) {
                 const sig = detail.signal;
+                const isNU = sig.type === 'NU70' || sig.trend === 'BEAR';
+                const p1Label = isNU ? "1. Tepe (RSI > 70)" : "1. Dip (RSI < 30)";
+                const p2Label = isNU ? "2. Tepe (RSI < 70)" : "2. Dip (RSI > 30)";
+                const actionColor = isNU ? 'var(--neon-red)' : 'var(--neon-green)';
+                const actionLabel = isNU ? '🔴 NU70 Düşüş Uyarısı' : '🟢 PU30 Yükseliş Sinyali';
+                const changeVal = isNU ? `-%${fmtTR(sig.pullback_pct, 1)}` : `+%{fmtTR(sig.bounce_pct, 1)}`;
+
                 rsiPu30SignalInfo.innerHTML = `
                     <div class="target-item">
-                        <div class="target-label">Dip 1</div>
+                        <div class="target-label">${p1Label}</div>
                         <div class="target-val" style="font-size:1rem;">${fmtTR(sig.dip1.price)} ₺ / RSI ${fmtTR(sig.dip1.rsi, 1)}</div>
                         <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">${sig.dip1.date || '-'}</div>
                     </div>
                     <div class="target-item">
-                        <div class="target-label">Dip 2</div>
-                        <div class="target-val" style="font-size:1rem; color:var(--neon-red);">${fmtTR(sig.dip2.price)} ₺ / RSI ${fmtTR(sig.dip2.rsi, 1)}</div>
+                        <div class="target-label">${p2Label}</div>
+                        <div class="target-val" style="font-size:1rem; color:${actionColor};">${fmtTR(sig.dip2.price)} ₺ / RSI ${fmtTR(sig.dip2.rsi, 1)}</div>
                         <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">${sig.dip2.date || '-'}</div>
                     </div>
                     <div class="target-item">
-                        <div class="target-label">Tepki</div>
-                        <div class="target-val" style="font-size:1rem; color:var(--accent);">+%${fmtTR(sig.bounce_pct, 1)}</div>
+                        <div class="target-label">${isNU ? 'Düzeltme' : 'Tepki'}</div>
+                        <div class="target-val" style="font-size:1rem; color:var(--accent);">${changeVal}</div>
                     </div>
                     <div class="target-item">
-                        <div class="target-label">${sig.is_active ? '✓ Aktif Sinyal' : 'Geçmiş Sinyal'}</div>
-                        <div class="target-val" style="font-size:1rem; color: ${sig.is_active ? 'var(--neon-green)' : 'var(--text-muted)'};">${sig.bars_since_confirm || 0} bar önce</div>
+                        <div class="target-label">${actionLabel}</div>
+                        <div class="target-val" style="font-size:1rem; color:${actionColor};">${sig.bars_since_confirm || 0} bar önce</div>
                     </div>
                 `;
 
@@ -454,23 +478,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 const d2Time = sig.dip2.time;
 
                 if (d1Time && d2Time) {
+                    const lineColor = isNU ? '#f43f5e' : '#10b981';
+                    const markerShape = isNU ? 'arrowDown' : 'arrowUp';
+                    const markerPos = isNU ? 'aboveBar' : 'belowBar';
+                    const markerText = isNU ? 'NU70 Satış' : 'PU30 Alış';
+
                     rsiPu30PriceConnector = rsiPu30PriceChartInst.addSeries(LightweightCharts.LineSeries, {
-                        color: '#f43f5e', lineWidth: 2, lineStyle: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
+                        color: lineColor, lineWidth: 2, lineStyle: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
                     });
                     rsiPu30PriceConnector.setData([{ time: d1Time, value: sig.dip1.price }, { time: d2Time, value: sig.dip2.price }]);
                     rsiPu30PriceMarkers.setMarkers([
-                        { time: d1Time, position: 'belowBar', color: '#f59e0b', shape: 'circle', text: `D1 ${fmtTR(sig.dip1.price)}` },
-                        { time: d2Time, position: 'belowBar', color: '#f43f5e', shape: 'circle', text: `D2 ${fmtTR(sig.dip2.price)}` },
+                        { time: d1Time, position: markerPos, color: '#f59e0b', shape: 'circle', text: `T1 ${fmtTR(sig.dip1.price)}` },
+                        { time: d2Time, position: markerPos, color: lineColor, shape: markerShape, text: markerText },
                     ]);
 
                     rsiPu30RsiConnector = rsiPu30RsiChartInst.addSeries(LightweightCharts.LineSeries, {
-                        color: '#34d399', lineWidth: 2, lineStyle: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
+                        color: lineColor, lineWidth: 2, lineStyle: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
                     });
                     rsiPu30RsiConnector.setData([{ time: d1Time, value: sig.dip1.rsi }, { time: d2Time, value: sig.dip2.rsi }]);
                     rsiPu30RsiMarkers.setMarkers([
-                        { time: d1Time, position: 'below', color: '#f59e0b', shape: 'circle', text: `${fmtTR(sig.dip1.rsi, 1)}` },
-                        { time: d2Time, position: 'aboveBar', color: '#10b981', shape: 'arrowUp', text: 'Bull' },
-                        { time: d2Time, position: 'above', color: '#f43f5e', shape: 'circle', text: `${fmtTR(sig.dip2.rsi, 1)}` },
+                        { time: d1Time, position: isNU ? 'above' : 'below', color: '#f59e0b', shape: 'circle', text: `${fmtTR(sig.dip1.rsi, 1)}` },
+                        { time: d2Time, position: isNU ? 'above' : 'below', color: lineColor, shape: 'circle', text: `${fmtTR(sig.dip2.rsi, 1)}` },
                     ]);
                 }
             } else if (detail.last_bull) {
