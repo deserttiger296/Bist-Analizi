@@ -10,7 +10,7 @@ const inter = Inter({
 import { ClientNavigation } from "@/components/ClientNavigation";
 
 export const metadata: Metadata = {
-  title: "BIST Analyst - Kazananlar Kulübü",
+  title: "BIST Quantum Sniper v2.0",
   description: "AI-powered BIST stock analysis and trading signals",
 };
 

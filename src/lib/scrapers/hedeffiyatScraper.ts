@@ -87,7 +87,11 @@ export async function fetchConsensusTargetPrice(symbol: string): Promise<Consens
     });
 
     if (!res.ok) {
-      console.error(`[Hedef Fiyat Scraper] HTTP ${res.status} for ${cleanSym}`);
+      // hedeffiyat.com/hisse/{symbol} currently 404s for every symbol tested --
+      // the site's URL structure appears to have changed. This is an expected,
+      // gracefully-handled failure mode (callers already treat null as
+      // "no consensus data"), not an exceptional one worth an error-level log.
+      console.warn(`[Hedef Fiyat Scraper] HTTP ${res.status} for ${cleanSym}`);
       return null;
     }
 

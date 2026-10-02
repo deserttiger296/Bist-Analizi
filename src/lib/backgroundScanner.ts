@@ -4,7 +4,8 @@ import { scanBistSymbols, TrackerParams } from "@/lib/bist";
 import { BIST_SYMBOLS } from "@/lib/bist100";
 import type { TrackerResult } from "@/lib/bist";
 import { Cache } from "./cache";
-import { upsertStock, upsertScanResult } from "@/lib/db";
+import { upsertStock, upsertScanResult, isPostgresAvailable } from "@/lib/db";
+import { getSniperScanAll } from "@/lib/sniperEngine";
 
 // Global store for results (server‑side only)
 interface ScannerStore {
@@ -38,6 +39,11 @@ const params: TrackerParams = {
 // Persist scan results to the local Postgres `stocks` / `scan_results` tables.
 // Replaces the old dual Firestore + Firebase Data Connect (cloud Postgres) sync.
 async function persistResultsToPostgres(results: TrackerResult[]) {
+  if (!isPostgresAvailable()) {
+    console.warn(`[BackgroundScanner] Postgres unavailable, skipping persistence for ${results.length} results (will retry once the connection recovers)`);
+    return;
+  }
+
   const asOf = new Date().toISOString().split("T")[0];
   const CHUNK_SIZE = 30;
   let successCount = 0;
@@ -74,7 +80,7 @@ async function persistResultsToPostgres(results: TrackerResult[]) {
 
 export async function forceRunScan() {
   try {
-    const results = await scanBistSymbols(BIST_SYMBOLS, params);
+    const results = await mergeSniperResults(await scanBistSymbols(BIST_SYMBOLS, params));
     globalStore.results = results;
     globalStore.lastRun = Date.now();
 
@@ -93,6 +99,44 @@ export async function forceRunScan() {
     console.error("[BackgroundScanner] forced scan error", err);
     throw err;
   }
+}
+
+// Merges the sniper engine's own full-universe scan (RF + LSTM + sentiment
+// confluence, run server-side in Python, parallelized) into the JS-scored
+// results by symbol. The JS composite score stays the fast first-pass filter
+// across the whole symbol list; this attaches the sniper's real verdict onto
+// whichever of those symbols it also approved, so "ONAYLI AL" cards can show
+// genuine ML confirmation instead of only the technical score. Best-effort:
+// if the sniper engine isn't running, results are returned unchanged.
+async function mergeSniperResults(results: TrackerResult[]): Promise<TrackerResult[]> {
+  const sniperScan = await getSniperScanAll().catch(() => null);
+  if (!sniperScan || sniperScan.data.length === 0) return results;
+
+  const sniperBySymbol = new Map(sniperScan.data.map(p => [p.symbol, p]));
+  let matched = 0;
+
+  for (const result of results) {
+    const sniperPrediction = sniperBySymbol.get(result.symbol);
+    if (!sniperPrediction) continue;
+    result.quote.sniper = sniperPrediction;
+    matched++;
+    // Sniper confirmation upgrades an already-decent technical score to a
+    // firm "AL" status rather than overriding a weak one outright -- the
+    // sniper's own threshold gating already happened server-side, so this
+    // is about surfacing agreement, not letting one engine invent a signal
+    // the other found no support for at all.
+    if (sniperPrediction.sniper_approved && result.confluenceScore >= 45 && result.status !== "AL") {
+      result.status = "AL";
+      result.alert = true;
+      result.reasons = [
+        `🎯 Sniper Motoru Onayı: ${sniperPrediction.sniper_label} (${sniperPrediction.confluence_label})`,
+        ...result.reasons,
+      ];
+    }
+  }
+
+  console.log(`[BackgroundScanner] Sniper engine confirmed ${matched}/${results.length} scanned symbols (${sniperScan.data.length} total sniper approvals)`);
+  return results;
 }
 
 export async function runBackgroundScan(index: string = "all") {
@@ -120,7 +164,7 @@ export async function runBackgroundScan(index: string = "all") {
     }
     console.log(`[BackgroundScanner] Sliced target symbols size: ${targetSymbols.length}`);
 
-    const results = await scanBistSymbols(targetSymbols, params);
+    const results = await mergeSniperResults(await scanBistSymbols(targetSymbols, params));
 
     // Merge into globalStore
     if (globalStore.results.length === 0) {

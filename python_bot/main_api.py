@@ -3,6 +3,7 @@ import sys
 import time
 import json
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -13,11 +14,14 @@ from engine.brain.deep_model import predict_lstm
 from engine.brain.logger import log_prediction
 from engine.brain.finbert_sentiment import FinBertSentimentAnalyzer
 from engine.brain.meta_learning import MetaLearningCalibrationEngine
+from engine.journal.daily_history import get_history, resolve_pending_outcomes
+from engine.signals.rsi_pu30 import scan_universe_rsi_pu30, get_symbol_chart_data
 import yfinance as yf
 import numpy as np
 
 # --- SHAP (optional, graceful fallback) ---
 _shap_explainer = None
+_shap_model_classes = None
 _shap_available = False
 try:
     import shap
@@ -54,12 +58,16 @@ meta_engine = MetaLearningCalibrationEngine(lookback_days=14)
 
 def _init_shap_explainer():
     """Lazy-load SHAP TreeExplainer once the RF model is available."""
-    global _shap_explainer
+    global _shap_explainer, _shap_model_classes
     if _shap_available and _shap_explainer is None:
         try:
             if MODEL_PATH.exists():
                 payload = joblib.load(MODEL_PATH)
                 model = payload["model"]
+                # shap.TreeExplainer wraps the model in an internal TreeEnsemble
+                # that has no .classes_ -- capture it from the real sklearn model
+                # here, before wrapping, rather than reading it off the explainer.
+                _shap_model_classes = list(model.classes_)
                 _shap_explainer = shap.TreeExplainer(model)
                 print("[SHAP] TreeExplainer initialized successfully.")
         except Exception as e:
@@ -118,6 +126,8 @@ SHAP_FEATURE_LABELS = {
     "atr_14": ("ATR (Volatilite)", "14 günlük ortalama fiyat değişim aralığını ölçer"),
     "regime_code": ("HMM Rejim Kodu", "Saklı Markov Modeli piyasa rejimini sınıflandırır"),
     "regime_confidence": ("Rejim Güveni", "Piyasa rejim sınıflandırmasının güven skoru"),
+    "rel_return_5d": ("Göreceli Güç (5G)", "Hissenin son 5 günde XU100 endeksine göre relatif performansı"),
+    "rel_return_20d": ("Göreceli Güç (20G)", "Hissenin son 20 günde XU100 endeksine göre relatif performansı"),
 }
 
 
@@ -137,11 +147,15 @@ def _compute_shap_explanation(result: dict) -> dict:
         shap_values = _shap_explainer.shap_values(feature_vector)
 
         # For multi-class (UP/DOWN/FLAT), get the UP class SHAP values
-        classes = list(_shap_explainer.model.classes_)
+        classes = _shap_model_classes or []
         up_idx = classes.index("UP") if "UP" in classes else 0
 
         if isinstance(shap_values, list):
+            # Older SHAP: list of (n_samples, n_features) arrays, one per class.
             sv = shap_values[up_idx][0]  # shape: (n_features,)
+        elif shap_values.ndim == 3:
+            # Newer SHAP: single (n_samples, n_features, n_classes) array.
+            sv = shap_values[0, :, up_idx]  # shape: (n_features,)
         else:
             sv = shap_values[0]
 
@@ -367,22 +381,29 @@ def predict_symbol(req: PredictionRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+SCAN_ALL_MAX_WORKERS = 10
+
+def _scan_one(sym: str):
+    try:
+        raw_result = predict_rf(sym)
+        result = _process_prediction(raw_result, sym)
+        return result if result["sniper_approved"] else None
+    except Exception as e:
+        print(f"Skipping {sym}: {e}")
+        return None
+
 @app.get("/api/scan_all")
 def scan_all_symbols():
+    # yfinance/HTTP calls are I/O-bound and release the GIL, so a thread pool
+    # gives a real wall-clock speedup here without needing an async rewrite of
+    # predict_rf/predict_lstm (which are also called individually by
+    # /api/predict and /api/shap, so their sync contract stays as-is).
     approved_list = []
-    
-    for sym in BIST100_SYMBOLS:
-        try:
-            raw_result = predict_rf(sym)
-            result = _process_prediction(raw_result, sym)
-            
-            # Sadece Sniper Onayı Alanları Filtrele
-            if result["sniper_approved"]:
+    with ThreadPoolExecutor(max_workers=SCAN_ALL_MAX_WORKERS) as pool:
+        for result in pool.map(_scan_one, BIST100_SYMBOLS):
+            if result is not None:
                 approved_list.append(result)
-        except Exception as e:
-            print(f"Skipping {sym}: {e}")
-            continue
-            
+
     # Güven skoruna göre büyükten küçüğe sırala
     approved_list.sort(key=lambda x: x["class_probabilities"].get("UP", 0), reverse=True)
     return {"status": "success", "count": len(approved_list), "data": approved_list}
@@ -465,6 +486,53 @@ def run_meta_calibration():
     try:
         result = meta_engine.run_calibration()
         return {"status": "success", "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/history")
+def get_daily_history(days: int = None):
+    """
+    Daily scan history: every symbol logged by run_daily_scan.py, with
+    actual outcomes filled in once old enough to resolve. Resolves any
+    newly-eligible pending rows on each call, so viewing this page also
+    keeps it up to date without needing the scheduled script to have run
+    since a prediction became resolvable.
+    """
+    try:
+        resolve_pending_outcomes()
+        return {"status": "success", "data": get_history(limit_days=days)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/scan/rsi-pu30")
+def scan_rsi_pu30(interval: str = "1d"):
+    """
+    RSI PU30 bullish-divergence scanner -- a deliberately separate engine
+    (engine/signals/rsi_pu30.py) from the RF/LSTM/sentiment sniper pipeline
+    above. Pure rule-based RSI divergence, no ML, no shared state. See that
+    module's docstring for the full algorithm. interval: "1d" or "1h".
+    """
+    if interval not in ("1d", "1h"):
+        raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
+    try:
+        result = scan_universe_rsi_pu30(BIST100_SYMBOLS, interval=interval)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/scan/rsi-pu30/{symbol}")
+def get_rsi_pu30_symbol_detail(symbol: str, interval: str = "1d"):
+    """Full price+RSI series and the most recent divergence pair (active or
+    not) for one symbol -- what the frontend chart renders. interval: "1d" or "1h"."""
+    if interval not in ("1d", "1h"):
+        raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
+    try:
+        result = get_symbol_chart_data(symbol.upper(), interval=interval)
+        if result is None:
+            raise HTTPException(status_code=404, detail=f"No data for {symbol}")
+        return {"status": "success", "data": result}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

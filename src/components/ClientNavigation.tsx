@@ -36,7 +36,7 @@ export function ClientNavigation({ children }: { children: React.ReactNode }) {
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-cyan-400">
               <rect x="4" y="4" width="16" height="16" />
               <rect x="4" y="4" width="16" height="16" transform="rotate(45 12 12)" />
-            </svg> Kazananlar Kulübü
+            </svg> BIST Quantum Sniper v2.0
           </Link>
           <button 
             className="md:hidden text-slate-400 hover:text-white"
@@ -56,6 +56,7 @@ export function ClientNavigation({ children }: { children: React.ReactNode }) {
           <SidebarLink href="/news" icon="📰" label="Haberler" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
           <SidebarLink href="/premium-dashboard" icon="🔔" label="Alarmlar" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
           <SidebarLink href="/history" icon="📜" label="Sistem Logları" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
+          <SidebarLink href="/rsi-pu30" icon="📉" label="RSI PU30 (Ayrı Motor)" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
           
           <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-8 mb-3 px-2">Araçlar</div>
           <SidebarLink href="/tracker" icon="📈" label="Takipçi" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
@@ -96,7 +97,7 @@ export function ClientNavigation({ children }: { children: React.ReactNode }) {
                 <line x1="3" y1="18" x2="21" y2="18"></line>
               </svg>
             </button>
-            <span className="font-bold text-white text-sm">Kazananlar Kulübü</span>
+            <span className="font-bold text-white text-sm">BIST Quantum Sniper v2.0</span>
           </div>
 
           {/* Status Badges */}

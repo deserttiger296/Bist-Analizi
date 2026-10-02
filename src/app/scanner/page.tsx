@@ -1,7 +1,7 @@
 import BistScanner from "@/components/BistScanner";
 
 export const metadata = {
-  title: "Tarayıcı — Kazananlar Kulübü",
+  title: "Tarayıcı — BIST Quantum Sniper v2.0",
   description: "BIST geneli trend/momentum/hacim confluans tarayıcısı",
 };
 

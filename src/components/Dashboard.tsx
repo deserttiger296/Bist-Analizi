@@ -21,7 +21,7 @@ const LightweightChartWidget = dynamic(
 
 export default function Dashboard() {
   const [activeAlarms, setActiveAlarms] = useState<AlarmRecord[]>([]);
-  const [logs, setLogs] = useState<{ id: number; type: string; msg: string; time: string }[]>([]);
+  const [logs, setLogs] = useState<{ id: string; type: string; msg: string; time: string }[]>([]);
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const [livePriceUsd, setLivePriceUsd] = useState<number | null>(null);
   const [currency, setCurrency] = useState<'try' | 'usd'>('try');
@@ -93,7 +93,11 @@ export default function Dashboard() {
 
   const addLog = (type: string, msg: string) => {
     setLogs(prev => {
-      const newLogs = [{ id: Date.now(), type, msg, time: new Date().toLocaleTimeString("tr-TR") }, ...prev];
+      // Date.now() alone can collide when two log lines land in the same
+      // millisecond, producing a duplicate React key -- append a random
+      // suffix so each entry's id is unique regardless of timing.
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const newLogs = [{ id, type, msg, time: new Date().toLocaleTimeString("tr-TR") }, ...prev];
       return newLogs.slice(0, 50); // keep last 50
     });
   };

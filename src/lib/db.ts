@@ -10,8 +10,29 @@ const pool = new Pool({
   connectionTimeoutMillis: 10000,
 });
 
+// Circuit breaker: when Postgres is unreachable (e.g. not running locally),
+// every symbol in a 100-symbol scan would otherwise retry the connection and
+// log a full stack trace on its own failure -- 100+ duplicate traces per
+// scan. Once a connection error is seen, skip straight to a fast rejection
+// for a cooldown window and log one warning instead, so callers still see
+// their persistence calls fail (and their own catch blocks still run) but
+// the console stops being flooded. Automatically retries after the cooldown
+// in case Postgres comes up later.
+const CONNECTION_ERROR_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT']);
+const COOLDOWN_MS = 60_000;
+let unavailableUntil = 0;
+let warnedThisCooldown = false;
+
+export function isPostgresAvailable(): boolean {
+  return Date.now() >= unavailableUntil;
+}
+
 // Helper for single queries
 export const query = async (text: string, params?: any[]) => {
+  if (Date.now() < unavailableUntil) {
+    throw new Error('Postgres unavailable (circuit breaker cooldown active)');
+  }
+
   const start = Date.now();
   try {
     const res = await pool.query(text, params);
@@ -19,9 +40,19 @@ export const query = async (text: string, params?: any[]) => {
     if (process.env.NODE_ENV === 'development') {
       console.log('Executed query', { text, duration, rows: res.rowCount });
     }
+    unavailableUntil = 0;
+    warnedThisCooldown = false;
     return res;
-  } catch (error) {
-    console.error('Error executing query', { text, error });
+  } catch (error: any) {
+    if (CONNECTION_ERROR_CODES.has(error?.code)) {
+      unavailableUntil = Date.now() + COOLDOWN_MS;
+      if (!warnedThisCooldown) {
+        console.warn(`[db] Postgres unreachable (${error.code}) -- suppressing further connection errors for ${COOLDOWN_MS / 1000}s`);
+        warnedThisCooldown = true;
+      }
+    } else {
+      console.error('Error executing query', { text, error });
+    }
     throw error;
   }
 };

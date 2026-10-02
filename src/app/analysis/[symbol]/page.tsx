@@ -41,30 +41,10 @@ const indicatorDescriptions: Record<string, string> = {
   "RSI": "Göreceli Güç Endeksi — 70 üzeri aşırı alım, 30 altı aşırı satım.",
   "MACD": "Trend dönüş sinyali — sinyal üstü kesişim al sinyali.",
   "MACD Histogram": "Pozitif = yükseliş ivmesi, negatif = düşüş baskısı.",
-  "Stochastic %K": "80 üzeri aşırı alım, 20 altı aşırı satım bölgesi.",
-  "CCI": "100 üzeri güçlü momentum, -100 altı aşırı satım.",
   "EMA 5 / EMA 20": "Kısa ve uzun vadeli trend karşılaştırması.",
   "CMF 20": "Chaikin Para Akışı — pozitif ise alım baskısı.",
-  "ADX": "Trend gücü — 25 üzeri güçlü trend mevcut.",
-  "Supertrend": "Volatilite tabanlı trend takip göstergesi.",
-  "SAR": "Parabolic SAR — trend yönü ve stop-loss referansı.",
-  "Bollinger Üst / Alt": "20 günlük SMA ± 2σ bant sınırları.",
-  "Bollinger Sıkışma": "Bantların daralması — kırılım beklentisi.",
-  "VWAP": "Hacim Ağırlıklı Ort. Fiyat — kurumsal referans.",
-  "Ichimoku": "Bulut üstü = boğa, altı = ayı.",
-  "Tenkan / Kijun": "Tenkan > Kijun = kısa vadeli yükseliş.",
-  "+DI / -DI": "Yönsel güç: +DI > -DI = alıcı baskın.",
-  "EMA 21 (2D)": "2 günlük periyotta trend yönü.",
-  "Fib 0.382 (2D)": "2 günlük periyotta Fibonacci 0.382 düzeltme seviyesi.",
-  "Fib 0.500 (2D)": "2 günlük periyotta Fibonacci 0.500 orta nokta seviyesi.",
-  "Fib 0.618 (2D)": "2 günlük periyotta Altın Oran destek/direnç seviyesi.",
-  "Fib 0.382 (3D)": "3 günlük periyotta Fibonacci 0.382 düzeltme seviyesi.",
-  "Fib 0.500 (3D)": "3 günlük periyotta Fibonacci 0.500 orta nokta seviyesi.",
-  "Fib 0.618 (3D)": "3 günlük periyotta Altın Oran destek/direnç seviyesi.",
-  "Haftalık EMA26": "Haftalık periyotta 26 haftalık Üstel Hareketli Ortalama değeri.",
-  "Haftalık Trend": "Haftalık periyotta EMA26 ortalamasının üzerinde (Boğa) veya altında (Ayı) olma durumu.",
-  "RSI Uyumsuzluk": "Fiyat ve RSI göstergesi arasındaki uyuşmazlık (reversal sinyali).",
-  "MACD Uyumsuzluk": "Fiyat ve MACD göstergesi arasındaki uyuşmazlık (reversal sinyali).",
+  "Hacim Onay": "Son 10 günlük hacim/fiyat trend uyumu.",
+  "Piyasa Rejimi": "HMM tabanlı piyasa rejimi sınıflandırması.",
   "R/R Oranı": "Risk Ödül Oranı — potansiyel kazancın riske edilen tutara oranı.",
   "Güven Skoru": "Ağırlıklı confluans puanı (Kurumsal & Teknik uyum).",
 };
@@ -73,7 +53,10 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
   const { symbol: rawSymbol } = await params;
   const symbol = rawSymbol.toUpperCase();
   
-  const quote = await fetchBistLiveQuote(symbol);
+  // includeSniper=true: this is a single-symbol deep-dive view, so it's
+  // worth the extra seconds to run the full sniper engine (RF+LSTM+sentiment
+  // confluence, SHAP explanation) as the primary AI verdict for this stock.
+  const quote = await fetchBistLiveQuote(symbol, false, undefined, undefined, undefined, true);
   
   // Fetch symbol specific news
   const symbolNews = await fetchNewsForSymbol(symbol);
@@ -97,40 +80,24 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
   else if (evaluation.status === "ZAYIF") signal = "SELL";
   
   // Indicator table data
+  // Only real, actually-computed indicators. Stochastic, CCI, ADX/+DI-DI,
+  // Supertrend, SAR, Bollinger (bands + squeeze), VWAP, Ichimoku, EMA Ribbon,
+  // Fibonacci (2D/3D), RSI/MACD divergence, and weekly EMA26 trend were all
+  // hardcoded placeholder values in fetchBistLiveQuote (bist.ts) -- some to
+  // 0, some to a fixed non-neutral verdict (Supertrend/SAR/Ichimoku always
+  // showed bearish, weekly trend always showed bullish, regardless of the
+  // actual stock). That's not a rounding gap, it's a constant lie dressed up
+  // as a live indicator -- removed rather than left to mislead a real trade
+  // decision. The underlying math still exists in ./indicators for anyone
+  // who wants to wire a real computation back in later.
   const indicators = [
     { label: "RSI", value: formatTR(quote.rsi, 1), status: quote.rsi > 70 ? "danger" : quote.rsi < 30 ? "success" : "neutral" },
     { label: "MACD", value: formatTR(quote.macd, 3), status: (quote.macd ?? 0) > (quote.macdSignal ?? 0) ? "success" : "danger" },
     { label: "MACD Histogram", value: formatTR(quote.macdHistogram, 3), status: (quote.macdHistogram ?? 0) > 0 ? "success" : "danger" },
-    { label: "Stochastic %K", value: formatTR(quote.stochK, 1), status: (quote.stochK ?? 0) > 80 ? "danger" : (quote.stochK ?? 0) < 20 ? "success" : "neutral" },
-    { label: "CCI", value: formatTR(quote.cci, 1), status: (quote.cci ?? 0) > 100 ? "warning" : (quote.cci ?? 0) < -100 ? "success" : "neutral" },
     { label: "EMA 5 / EMA 20", value: `${formatTR(quote.ema5)} / ${formatTR(quote.ema20)}`, status: quote.ema5 > quote.ema20 ? "success" : "danger" },
     { label: "CMF 20", value: formatTR(quote.cmf20, 4), status: quote.cmf20 > 0 ? "success" : "danger" },
-    { label: "ADX", value: formatTR(quote.adxValue, 1), status: quote.adxValue > 25 ? "success" : "neutral" },
-    { label: "Supertrend", value: quote.supertrendUp ? "▲ Yükseliş" : "▼ Düşüş", status: quote.supertrendUp ? "success" : "danger" },
-    { label: "SAR", value: quote.sarBullish ? "Boğa" : "Ayı", status: quote.sarBullish ? "success" : "danger" },
-    // New indicators
-    { label: "Bollinger Üst / Alt", value: `${formatTR(quote.bollUpper)} / ${formatTR(quote.bollLower)}`, status: quote.lastClose > quote.bollUpper ? "danger" : quote.lastClose < quote.bollLower ? "success" : "neutral" },
-    { label: "Bollinger Sıkışma", value: quote.bollSqueeze ? "⚠ Sıkışma" : "Normal", status: quote.bollSqueeze ? "warning" : "neutral" },
-    { label: "VWAP", value: formatTR(quote.vwapValue), status: quote.lastClose > quote.vwapValue ? "success" : "danger" },
-    { label: "Ichimoku", value: quote.ichimokuBullish ? "Bulut Üstü (Boğa)" : "Bulut İçi/Altı", status: quote.ichimokuBullish ? "success" : "danger" },
-    { label: "Tenkan / Kijun", value: `${formatTR(quote.ichimokuTenkan)} / ${formatTR(quote.ichimokuKijun)}`, status: quote.ichimokuTenkan > quote.ichimokuKijun ? "success" : "danger" },
-    { label: "+DI / -DI", value: `${formatTR(quote.adxPlus, 1)} / ${formatTR(quote.adxMinus, 1)}`, status: quote.adxPlus > quote.adxMinus ? "success" : "danger" },
-    { label: "EMA Ribbon", value: `${quote.emaRibbon}/3`, status: quote.emaRibbon >= 2 ? "success" : quote.emaRibbon === 1 ? "warning" : "danger" },
     { label: "Hacim Onay", value: `%${quote.volumeConfirm}`, status: quote.volumeConfirm >= 60 ? "success" : "danger" },
     { label: "Piyasa Rejimi", value: quote.marketRegime === 'TRENDING' ? '📈 TREND' : quote.marketRegime === 'RANGING' ? '📊 YATAY' : '⚡ VOLATİL', status: quote.marketRegime === 'TRENDING' ? "success" : "warning" },
-    { label: "EMA 21 (2D)", value: formatTR(quote.ema21_2d), status: quote.lastClose > (quote.ema21_2d || 0) ? "success" : "danger" },
-    // Fibonacci 2D
-    { label: "Fib 0.382 (2D)", value: formatTR(quote.fib382_2d), status: Math.abs(quote.lastClose - (quote.fib382_2d || 0)) / quote.lastClose < 0.015 ? "warning" : "neutral" },
-    { label: "Fib 0.500 (2D)", value: formatTR(quote.fib500_2d), status: Math.abs(quote.lastClose - (quote.fib500_2d || 0)) / quote.lastClose < 0.015 ? "warning" : "neutral" },
-    { label: "Fib 0.618 (2D)", value: formatTR(quote.fib618_2d), status: Math.abs(quote.lastClose - (quote.fib618_2d || 0)) / quote.lastClose < 0.015 ? "success" : "neutral" },
-    // Fibonacci 3D
-    { label: "Fib 0.382 (3D)", value: formatTR(quote.fib382_3d), status: Math.abs(quote.lastClose - (quote.fib382_3d || 0)) / quote.lastClose < 0.015 ? "warning" : "neutral" },
-    { label: "Fib 0.500 (3D)", value: formatTR(quote.fib500_3d), status: Math.abs(quote.lastClose - (quote.fib500_3d || 0)) / quote.lastClose < 0.015 ? "warning" : "neutral" },
-    { label: "Fib 0.618 (3D)", value: formatTR(quote.fib618_3d), status: Math.abs(quote.lastClose - (quote.fib618_3d || 0)) / quote.lastClose < 0.015 ? "success" : "neutral" },
-    { label: "RSI Uyumsuzluk", value: quote.rsiDivBullish ? '⭐ Boğa' : quote.rsiDivBearish ? '⚠ Ayı' : 'Yok', status: quote.rsiDivBullish ? "success" : quote.rsiDivBearish ? "danger" : "neutral" },
-    { label: "MACD Uyumsuzluk", value: quote.macdDivBullish ? '⭐ Boğa' : quote.macdDivBearish ? '⚠ Ayı' : 'Yok', status: quote.macdDivBullish ? "success" : quote.macdDivBearish ? "danger" : "neutral" },
-    { label: "Haftalık EMA26", value: formatTR(quote.weeklyEma26), status: "neutral" },
-    { label: "Haftalık Trend", value: quote.isWeeklyEma26Bullish ? "Boğa (EMA26 Üstü) ↗️" : "Ayı (EMA26 Altı) ↘️", status: quote.isWeeklyEma26Bullish ? "success" : "danger" },
     { label: "R/R Oranı", value: `${quote.riskRewardRatio}:1`, status: quote.riskRewardRatio >= 2 ? "success" : quote.riskRewardRatio >= 1 ? "warning" : "danger" },
     { label: "Güven Skoru", value: `${quote.confidence}%`, status: quote.confidence >= 65 ? "success" : quote.confidence >= 45 ? "warning" : "danger" },
   ];
@@ -328,10 +295,47 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
               </div>
             </div>
 
-            {/* Why? — Signal Reasons */}
+            {/* AI Sniper Verdict — primary engine (RF + LSTM + sentiment confluence) */}
+            <div className="card p-6 print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4 border-cyan-700/40">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-white print:text-black">🎯 AI Sniper Verdict</h2>
+                <span className="text-sm text-cyan-300 print:text-cyan-700">RF + LSTM + Sentiment</span>
+              </div>
+              {quote.sniper?.explanation ? (
+                <>
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <span className={`px-3 py-1.5 rounded-lg text-sm font-black uppercase tracking-wide ${quote.sniper.sniper_approved ? 'bg-emerald-950/60 border border-emerald-500/40 text-emerald-400' : 'bg-slate-800/60 border border-slate-600/40 text-slate-300'}`}>
+                      {quote.sniper.sniper_label ?? '—'}
+                    </span>
+                    <span className="text-xs text-slate-400">{quote.sniper.confluence_label ?? ''}</span>
+                    <span className="text-xs text-slate-500 ml-auto">
+                      UP %{Math.round((quote.sniper.class_probabilities?.UP ?? 0) * 100)} · DOWN %{Math.round((quote.sniper.class_probabilities?.DOWN ?? 0) * 100)} · FLAT %{Math.round((quote.sniper.class_probabilities?.FLAT ?? 0) * 100)}
+                    </span>
+                  </div>
+                  <ul className="mt-5 space-y-3 text-gray-300 print:text-gray-800 print:mt-2">
+                    {(quote.sniper.explanation?.length ?? 0) === 0 ? (
+                      <li className="text-slate-500 text-sm">Sniper motoru için aktif gerekçe bulunamadı.</li>
+                    ) : (
+                      quote.sniper.explanation.map((item, i) => (
+                        <li key={i} className="flex gap-3 rounded-2xl border border-cyan-800/40 bg-slate-950/60 p-4 print:border-none print:border-b print:border-gray-200 print:bg-transparent print:p-2">
+                          <span className="mt-1 h-2.5 w-2.5 rounded-full bg-cyan-400 shrink-0 print:bg-cyan-600 print:mt-1.5" />
+                          <span className="text-sm">{item}</span>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </>
+              ) : (
+                <p className="mt-4 text-sm text-slate-500">
+                  Sniper motoruna ulaşılamadı (main_api.py port 8001&apos;de çalışmıyor olabilir) veya model henüz eğitilmemiş. Aşağıdaki teknik confluans analizi ikincil sinyal olarak gösteriliyor.
+                </p>
+              )}
+            </div>
+
+            {/* Why? — Signal Reasons (secondary, JS-native technical confluence) */}
             <div className="card p-6 print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-white print:text-black">Neden Bu Sinyal?</h2>
+                <h2 className="text-xl font-semibold text-white print:text-black">Teknik Confluans (İkincil)</h2>
                 <span className="text-sm text-cyan-300 print:text-cyan-700">Confluans Analizi</span>
               </div>
               <p className="mt-2 text-xs text-slate-500 print:text-gray-500">Aktif olan teknik sinyallerin birleşimi ile oluşturulan confluans puanı.</p>

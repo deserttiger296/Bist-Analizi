@@ -3,7 +3,7 @@ import ReportGeneratorForm from "@/components/ReportGeneratorForm";
 // Unused import removed
 
 export const metadata = {
-  title: "Rapor Oluştur — Kazananlar Kulübü",
+  title: "Rapor Oluştur — BIST Quantum Sniper v2.0",
   description: "BIST hisseleri için detaylı teknik analiz raporu oluşturun.",
 };
 

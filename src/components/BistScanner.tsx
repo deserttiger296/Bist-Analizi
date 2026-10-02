@@ -212,34 +212,22 @@ function StockCard({ item }: { item: TrackerResult }) {
                   {fmt(item.quote?.cmf20, 2)}
                 </span>
               </div>
-              <div className="text-[9px] text-slate-500">
-                ADX <span className="font-bold text-slate-300">{fmt(item.quote?.adxValue, 0)}</span>
-              </div>
             </div>
           </div>
 
-          {/* Signal chips */}
+          {/* Signal chips -- ADX/Supertrend/SAR/weekly-EMA26/RSI-div/MACD-div/squeeze
+              chips removed: fetchBistLiveQuote hardcodes those fields (some
+              constant-false, isWeeklyEma26Bullish constant-true) rather than
+              computing them, so they were either permanently invisible or,
+              for the weekly-EMA26 chip, wrong on every single card. */}
           <div className="flex flex-wrap gap-1 mt-3">
             {item.quote?.stopLossBroken && (
               <span className="px-1.5 py-0.5 rounded bg-red-900/50 border border-red-700/45 text-[8px] text-red-200 font-bold animate-pulse">STOP↑</span>
             )}
-            {item.quote?.supertrendUp && (
-              <span className="px-1.5 py-0.5 rounded bg-emerald-900/40 border border-emerald-700/30 text-[8px] text-emerald-400 font-bold">ST↑</span>
-            )}
-            {item.quote?.sarBullish && (
-              <span className="px-1.5 py-0.5 rounded bg-cyan-900/40 border border-cyan-700/30 text-[8px] text-cyan-400 font-bold">SAR↑</span>
-            )}
-            {item.quote?.isWeeklyEma26Bullish && (
-              <span className="px-1.5 py-0.5 rounded bg-blue-900/40 border border-blue-700/30 text-[8px] text-blue-400 font-bold">W-EMA↑</span>
-            )}
-            {item.quote?.rsiDivBullish && (
-              <span className="px-1.5 py-0.5 rounded bg-yellow-900/40 border border-yellow-700/30 text-[8px] text-yellow-400 font-bold animate-pulse">RSI DIV</span>
-            )}
-            {item.quote?.macdDivBullish && (
-              <span className="px-1.5 py-0.5 rounded bg-amber-900/40 border border-amber-700/30 text-[8px] text-amber-400 font-bold animate-pulse">MACD DIV</span>
-            )}
-            {item.quote?.inSqueeze && (
-              <span className="px-1.5 py-0.5 rounded bg-purple-900/40 border border-purple-700/30 text-[8px] text-purple-400 font-bold">SQUEEZE</span>
+            {item.quote?.sniper?.sniper_approved && (
+              <span className="px-1.5 py-0.5 rounded bg-cyan-900/50 border border-cyan-600/40 text-[8px] text-cyan-300 font-bold">
+                🎯 SNIPER ONAYI
+              </span>
             )}
             {(item.quote?.volumeMultiple ?? 0) > 2 && (
               <span className="px-1.5 py-0.5 rounded bg-orange-900/40 border border-orange-700/30 text-[8px] text-orange-400 font-bold">

@@ -22,6 +22,7 @@
             <li class="active"><a href="#dashboard">📊 Piyasa Radarı</a></li>
             <li><a href="#architecture">🧠 Sistem Mimarisi</a></li>
             <li><a href="#weights">⚖️ AI Ağırlıkları</a></li>
+            <li><a href="#rsipu30">📉 RSI PU30 (Ayrı Motor)</a></li>
         </ul>
         
         <div class="system-status">
@@ -83,7 +84,7 @@
                 <div class="arch-card">
                     <h3>Scikit-Learn (Yapay Zeka)</h3>
                     <p><code>RandomForestClassifier</code></p>
-                    <p>Karar ağaçlarından oluşan bu kütüphane, yüzlerce teknik göstergeyi analiz edip hissenin Yön (UP/DOWN) tahminini %100'e yakın bir başarıyla (BIST100'de) yapar. 37/37'lik başarımızın kalbidir.</p>
+                    <p>Karar ağaçlarından oluşan bu kütüphane, teknik göstergeleri ve XU100 relatif momentum özelliklerini analiz ederek hissenin Yön (UP/DOWN/FLAT) tahminini yapar. Walk-forward doğrulamalı gerçek başarı oranı ~%39 (rastgele tahmin ~%33) — küçük ama ölçülebilir bir edge; sürekli iyileştirme aşamasında.</p>
                 </div>
                 <div class="arch-card">
                     <h3>PyTorch (Derin Öğrenme)</h3>
@@ -158,6 +159,49 @@
                 <p class="disclaimer">* Sonuçlar THYAO hissesinin geçmiş 5 yıllık verisiyle hesaplanan Model Feature Importance çıktısıdır.</p>
             </div>
         </section>
+
+        <!-- RSI PU30 -->
+        <section id="rsipu30" class="view-section">
+            <div class="section-header">
+                <h2>📉 RSI PU30 — Pozitif Uyumsuzluk Tarayıcı</h2>
+                <p>Fiyat daha düşük bir dip yaparken RSI daha yüksek bir dip yapıyorsa, satış baskısının zayıfladığı kabul edilir. Sniper motorunun RF/LSTM/sentiment hattından tamamen bağımsız, saf RSI tabanlı kural motoru — skorlama veya onaya katılmaz.</p>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:1rem; margin-bottom: 2rem; flex-wrap: wrap;">
+                <button id="rsiPu30ScanBtn" class="btn-neon">
+                    <span class="btn-text">📡 TÜM BIST100'Ü TARA (RSI PU30)</span>
+                    <div class="spinner hidden" id="rsiPu30Spinner"></div>
+                </button>
+                <div class="interval-toggle" id="rsiPu30IntervalToggle">
+                    <button type="button" class="interval-btn active" data-interval="1d">Günlük</button>
+                    <button type="button" class="interval-btn" data-interval="1h">Saatlik</button>
+                </div>
+            </div>
+
+            <div id="rsiPu30Status" class="alert-box hidden">
+                <div class="loader"></div>
+                <p>RSI PU30 motoru BIST100'deki tüm hisseleri tarıyor...</p>
+            </div>
+            <div id="rsiPu30ErrorMsg" class="error hidden"></div>
+
+            <div id="rsiPu30Results" class="hidden">
+                <div class="target-grid" style="margin-top: 0; margin-bottom: 2rem;">
+                    <div class="target-item">
+                        <div class="target-label">Taranan</div>
+                        <div class="target-val" id="rsiPu30Scanned">-</div>
+                    </div>
+                    <div class="target-item">
+                        <div class="target-label">Aktif Sinyal</div>
+                        <div class="target-val" style="color:#a78bfa;" id="rsiPu30Matched">-</div>
+                    </div>
+                    <div class="target-item">
+                        <div class="target-label">Atlanan</div>
+                        <div class="target-val" style="font-size:0.85rem; color: var(--text-muted);" id="rsiPu30Skipped">-</div>
+                    </div>
+                </div>
+                <div id="rsiPu30Grid" class="cards-grid"></div>
+            </div>
+        </section>
     </main>
 
     <!-- Chart Modal -->
@@ -168,6 +212,19 @@
                 <button id="closeModal" class="close-btn">&times;</button>
             </div>
             <div id="tvchart" style="width: 100%; height: 500px;"></div>
+        </div>
+    </div>
+
+    <!-- RSI PU30 Chart Modal -->
+    <div id="rsiPu30Modal" class="modal hidden">
+        <div class="modal-content" style="max-width: 1100px;">
+            <div class="modal-header">
+                <h3 id="rsiPu30ChartTitle">RSI PU30 Uyumsuzluk Grafiği</h3>
+                <button id="rsiPu30CloseModal" class="close-btn">&times;</button>
+            </div>
+            <div id="rsiPu30SignalInfo" class="dip-grid" style="margin-top: 0; margin-bottom: 1.5rem;"></div>
+            <div id="rsiPu30PriceChart" style="width: 100%; height: 320px;"></div>
+            <div id="rsiPu30RsiChart" style="width: 100%; height: 160px; margin-top: 4px;"></div>
         </div>
     </div>
 

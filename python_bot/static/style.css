@@ -157,6 +157,26 @@ button {
 .val-green { color: var(--neon-green); }
 .val-blue { color: var(--accent); }
 
+.dip-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    background: #000;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-top: 1.5rem;
+    border: 1px solid #1f2937;
+}
+.badge-violet { background: rgba(167, 139, 250, 0.15); color: #a78bfa; border: 1px solid rgba(167, 139, 250, 0.3); }
+
+.interval-toggle { display: flex; background: #000; border: 1px solid var(--border-color); border-radius: 8px; padding: 3px; }
+.interval-btn {
+    background: transparent; color: var(--text-muted); border: none; padding: 0.5rem 1rem;
+    border-radius: 6px; font-size: 0.85rem; font-weight: 600;
+}
+.interval-btn.active { background: rgba(167, 139, 250, 0.2); color: #a78bfa; }
+.interval-btn:hover:not(.active) { color: var(--text-main); }
+
 .reasons-list { margin-top: 1.5rem; list-style-type: none;}
 .reasons-list li { margin-bottom: 0.5rem; color: #d4d4d8; font-size: 0.9rem; position: relative; padding-left: 1.5rem;}
 .reasons-list li::before { content: '✓'; position: absolute; left: 0; color: var(--neon-green);}

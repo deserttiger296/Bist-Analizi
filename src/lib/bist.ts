@@ -1,4 +1,6 @@
 import { fetchBiQuoteTick, fetchBiQuoteOhlc } from "./biquote";
+import { getSniperPrediction, SniperPrediction } from "./sniperEngine";
+import { smoothPrices } from "./quant/kalman";
 // NOTE: Ichimoku, CCI, Stochastic, SAR, ADX+DI, Bollinger squeeze, VWAP, EMA
 // ribbon scoring and pivot/Fibonacci targets have been proven statistically
 // meaningless for the live decision engine below (see project memory / audit
@@ -129,7 +131,16 @@ export async function fetchYahooRaw(symbol: string, interval = '1d', range = '1y
       if (interval === '1d') {
         const missingVolCount = bars.filter((b: any) => b.volume === 0).length;
         if (missingVolCount > bars.length * 0.1) {
-             throw new Error("Too much missing volume data");
+          // Previously threw here, discarding otherwise-good OHLC price data
+          // over incomplete volume. Every fallback behind this call is
+          // currently non-functional for real BIST symbols (İş Yatırım's
+          // endpoint no longer returns JSON, Twelve Data has no API key
+          // configured, and BiQuote is skipped for anything in
+          // BIST_SYMBOLS) -- so throwing meant the chart got nothing at all
+          // instead of price data with a few volume gaps. Price is what the
+          // chart itself needs most; volume-derived indicators degrade
+          // gracefully with some zero bars, an empty chart does not.
+          console.warn(`fetchYahooRaw: ${missingVolCount}/${bars.length} bars missing volume for ${symbolIs}, proceeding anyway`);
         }
       }
       return bars;
@@ -445,6 +456,12 @@ export interface BistLiveQuote {
   stopLossBroken: boolean;
   ruleResults?: any[];
   ruleSignal?: string;
+  // Primary ML engine: RF + LSTM + FinBERT sentiment confluence, SHAP
+  // explainability, meta-learning calibrated threshold (main_api.py sniper
+  // engine). Only populated when fetchBistLiveQuote is called with
+  // includeSniper=true (single-symbol analysis view) -- the full confluence
+  // prediction is too slow to run per-symbol inside a bulk scan.
+  sniper?: SniperPrediction | null;
 }
 
 export interface ConfluenceWeights {
@@ -464,14 +481,21 @@ export async function fetchBistLiveQuote(
     usdTryHourly: BistBar[];
     usdTryWeekly: BistBar[];
     usdtry: number;
-  }
+  },
+  // The sniper engine's full RF+LSTM+sentiment+SHAP confluence prediction
+  // takes several seconds per symbol -- fine for a single-symbol analysis
+  // view, far too slow to run inside a 100-symbol bulk scan. Bulk callers
+  // (scanBistSymbols/fetchBulkLiveQuotes) leave this false.
+  includeSniper = false
 ): Promise<BistLiveQuote> {
   try {
-    // Fetch fundamentals, AKD and Sentiment in parallel / early
-    const [fundamentals, akdData, sentimentData] = await Promise.all([
+    // Fetch fundamentals, AKD, Sentiment, and (optionally) the sniper engine's
+    // own prediction in parallel / early
+    const [fundamentals, akdData, sentimentData, sniperPrediction] = await Promise.all([
       fetchFundamentalMetrics(symbol).catch(() => null),
       fetchAkdData(symbol).catch(() => null),
-      fetchSocialSentiment(symbol).catch(() => null)
+      fetchSocialSentiment(symbol).catch(() => null),
+      includeSniper ? getSniperPrediction(symbol).catch(() => null) : Promise.resolve(null)
     ]);
 
     // Try to get live tick from BiQuote or spark API
@@ -568,6 +592,14 @@ export async function fetchBistLiveQuote(
     const safeRsi = closes.length >= 14 ? rsiVals[rsiVals.length - 1] || 50 : 50;
 
     const priceUsd = lastClose / usdtry;
+
+    // Adaptive Kalman-filtered price: smooths raw closes with volatility-scaled
+    // process noise, so a single noisy tick doesn't whipsaw the "smoothed"
+    // reference price the way a raw last-close would. Falls back to the raw
+    // price when there isn't enough history to filter meaningfully.
+    const closesUsd = dailyUsd.map(b => b.close);
+    const kalmanPriceTry = closesTry.length >= 5 ? smoothPrices(closesTry)[closesTry.length - 1] : lastClose;
+    const kalmanPriceUsd = closesUsd.length >= 5 ? smoothPrices(closesUsd)[closesUsd.length - 1] : priceUsd;
 
     const sma20Vals = sma(closes, 20);
     const safeSMA20 = closes.length >= 20 ? sma20Vals[sma20Vals.length - 1] || priceUsd : priceUsd;
@@ -725,26 +757,21 @@ export async function fetchBistLiveQuote(
       recommendation = `🔴 KAÇIN: Confluans çok düşük (${adjustedConfidence}%). Trend olumsuz, yeni pozisyon açılmamalı.`;
     }
 
-    // ─── HMM VOLATILITY REGIME DETECTION (kept — theoretically sound) ─────
+    // ─── HMM VOLATILITY REGIME DETECTION ───────────────────────────────
+    // Previously called main.py's /api/regime (port 8000, the old engine)
+    // with a JS fallback. main.py is no longer part of the active system —
+    // the sniper engine (main_api.py) is primary now, and when it's
+    // available (single-symbol analysis views, includeSniper=true) its own
+    // regime classification is used directly instead of making a second
+    // network round-trip. Bulk scans (includeSniper=false) always use the
+    // native TS implementation, which has no external dependency at all.
+    const REGIME_CODE_TO_STATE: Record<number, 'TREND' | 'YATAY' | 'KRİZ'> = { 0: 'YATAY', 1: 'TREND', 2: 'KRİZ' };
     let hmmRegimeState: 'TREND' | 'YATAY' | 'KRİZ' = 'YATAY';
     let hmmRegimeConfidence = 50;
-    try {
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), 600);
-      const pythonRegimeRes = await fetch(`http://127.0.0.1:8000/api/regime?symbol=${symbol}`, {
-        signal: controller.signal,
-        cache: 'no-store'
-      });
-      clearTimeout(id);
-
-      if (pythonRegimeRes.ok) {
-        const pythonRegime = await pythonRegimeRes.json();
-        hmmRegimeState = pythonRegime.regime;
-        hmmRegimeConfidence = Math.round(pythonRegime.confidence * 100);
-      } else {
-        throw new Error("FastAPI server returned non-OK status");
-      }
-    } catch (rErr) {
+    if (sniperPrediction?.features?.regime_code != null) {
+      hmmRegimeState = REGIME_CODE_TO_STATE[Math.round(sniperPrediction.features.regime_code)] ?? 'YATAY';
+      hmmRegimeConfidence = Math.round((sniperPrediction.features.regime_confidence ?? 0.5) * 100);
+    } else {
       try {
         const { detectMarketRegime } = await import("./quant/regime");
         const rollingClosesUsd = dailyUsd.map(b => b.close);
@@ -752,7 +779,7 @@ export async function fetchBistLiveQuote(
         hmmRegimeState = regimeResult.regime;
         hmmRegimeConfidence = Math.round(regimeResult.confidence * 100);
       } catch (tsErr) {
-        console.warn("[bist.ts] Fallback TS HMM regime detection failed:", tsErr);
+        console.warn("[bist.ts] TS HMM regime detection failed:", tsErr);
       }
     }
     const marketRegime: 'TRENDING' | 'RANGING' | 'VOLATILE' =
@@ -888,14 +915,15 @@ export async function fetchBistLiveQuote(
       sector: fundamentals?.sector,
       akdData,
       sentimentData,
-      kalmanPriceTry: lastClose,
-      kalmanPriceUsd: priceUsd,
+      kalmanPriceTry: kalmanPriceTry,
+      kalmanPriceUsd: kalmanPriceUsd,
       kellyRecommendedSize,
       hmmRegimeState,
       hmmRegimeConfidence,
       shadowFilters,
       ruleResults: [],
       ruleSignal: 'WEAK',
+      sniper: sniperPrediction,
     };
   } catch (err) {
     console.error(`[bist.ts] Error in fetchBistLiveQuote for ${symbol}:`, err);

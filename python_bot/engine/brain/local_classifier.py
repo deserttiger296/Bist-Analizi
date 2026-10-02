@@ -34,18 +34,20 @@ it is the one part of the old scoring stack with an actual theoretical basis
 (time-series-aware latent-state regime detection vs. i.i.d. clustering).
 
 Note on regime features during *training*: `classify_regime_hmm` fits the
-HMM on a symbol's full available return/volatility history and reports only
-the *current* (most recent) regime -- it does not expose a full historical
-state path, and re-fitting a fresh HMM at every single historical bar to get
-a "regime as of that day" feature would defeat the "trains in well under a
-minute" requirement for what is meant to be a lightweight pipeline. So for
-training, each symbol's regime is computed once from its full history and
-applied as a constant contextual feature across that symbol's training rows.
-This is a deliberate simplification (documented here rather than hidden):
-it gives the model a coarse "what kind of market has this symbol recently
-been in" signal rather than a perfectly time-aligned per-bar regime label.
-At prediction time this is a non-issue -- `predict()` computes the regime
-once, for "as of today", which is exactly what's needed.
+HMM on whatever series it's given and reports only the *current* (most
+recent) regime. An earlier version of this pipeline called it once on each
+symbol's full 3-year history and broadcast that single value as a constant
+across every training row -- which is look-ahead leakage (a row from 3 years
+ago would be labeled with a regime informed by prices 3 years in its
+future), not just a coarse approximation. `_rolling_regime_features` fixes
+this: it refits every REGIME_REFIT_EVERY bars on an *expanding* window that
+never extends past that row, and forward-fills between refits. Refitting on
+every single bar would be the theoretically purest version but would defeat
+the "trains in well under a minute" requirement; periodic refitting is the
+practical middle ground while staying strictly backward-looking. At
+prediction time this is a non-issue -- `predict()` computes the regime once,
+for "as of today", which is exactly what's needed and involves no future
+data by construction.
 
 Label: forward-return direction over N=5 trading days (~1 trading week),
 a horizon short enough to be evaluated frequently but long enough to smooth
@@ -64,7 +66,6 @@ import pandas as pd
 import yfinance as yf
 import joblib
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 
 from engine.brain.regime_hmm import classify_regime_hmm
@@ -90,9 +91,19 @@ FEATURE_COLUMNS: List[str] = [
     "atr_14",
     "regime_code",
     "regime_confidence",
+    "rel_return_5d",
+    "rel_return_20d",
 ]
 
 REGIME_CODE_MAP = {"YATAY": 0, "TREND": 1, "KRİZ": 2}
+
+BENCHMARK_TICKER = "XU100.IS"
+
+# How many ATR-implied-volatility units of forward move counts as a genuine
+# UP/DOWN call vs. FLAT (see `_label_forward_return` for why this replaced a
+# flat +/-2% threshold). Tunable; not backtested/optimized yet -- a starting
+# point, not a calibrated constant.
+ATR_LABEL_MULTIPLIER = 0.5
 
 MODELS_DIR = Path(__file__).resolve().parent.parent.parent / "models"
 MODEL_PATH = MODELS_DIR / "local_classifier.joblib"
@@ -113,6 +124,41 @@ def _fetch_history(symbol: str, period: str = "3y") -> pd.DataFrame:
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.droplevel(1)
     return df
+
+
+def _fetch_benchmark_close(period: str = "3y") -> pd.Series:
+    """Fetch the XU100 index close series used for relative-momentum features."""
+    df = yf.download(BENCHMARK_TICKER, period=period, progress=False)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.droplevel(1)
+    return df["Close"]
+
+
+def _relative_momentum_features(close: pd.Series, benchmark_close: pd.Series) -> pd.DataFrame:
+    """
+    Cross-sectional features: this stock's N-day return minus the XU100
+    index's N-day return over the same window ("is this stock beating the
+    market, not just moving"). Single-stock technicals (RSI, MACD, etc.) are
+    usually weak signal on their own in a reasonably efficient market --
+    relative/cross-sectional strength tends to carry more information than
+    absolute technicals.
+
+    `benchmark_close` is reindexed onto `close`'s dates with forward-fill,
+    since the two tickers' trading calendars can differ by a handful of
+    holidays -- this only ever fills from the benchmark's own past, so it
+    does not introduce any forward-looking information.
+    """
+    bench_aligned = benchmark_close.reindex(close.index).ffill()
+
+    stock_ret_5d = close.pct_change(5)
+    stock_ret_20d = close.pct_change(20)
+    bench_ret_5d = bench_aligned.pct_change(5)
+    bench_ret_20d = bench_aligned.pct_change(20)
+
+    return pd.DataFrame({
+        "rel_return_5d": stock_ret_5d - bench_ret_5d,
+        "rel_return_20d": stock_ret_20d - bench_ret_20d,
+    }, index=close.index)
 
 
 def _engineer_base_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -152,9 +198,11 @@ def _engineer_base_features(df: pd.DataFrame) -> pd.DataFrame:
 
 def _regime_features_for_symbol(close: pd.Series) -> Dict[str, float]:
     """
-    Fits the HMM once on the full close series for this symbol and returns a
-    constant (regime_code, regime_confidence) pair -- see module docstring
-    for why this is computed once per symbol rather than per bar.
+    Fits the HMM on the full close series and returns the *current* (most
+    recent) regime as of the last bar. Used at prediction time, where "the
+    full series" genuinely means "everything available as of today" -- there
+    is no future to leak. Do NOT use this for training-row features (see
+    `_rolling_regime_features` for why).
     """
     try:
         result = classify_regime_hmm(close, n_states=3)
@@ -165,7 +213,79 @@ def _regime_features_for_symbol(close: pd.Series) -> Dict[str, float]:
         return {"regime_code": 0.0, "regime_confidence": 0.0}
 
 
-def _build_training_rows(symbol: str) -> Optional[pd.DataFrame]:
+REGIME_MIN_HISTORY = 150
+REGIME_REFIT_EVERY = 20
+
+
+def _rolling_regime_features(close: pd.Series) -> pd.DataFrame:
+    """
+    Time-safe regime features for training rows.
+
+    `_regime_features_for_symbol` fits on the whole series handed to it and
+    reports only the *last* bar's regime -- fine for live prediction ("as of
+    today"), but if you call it once on a symbol's full 3-year history and
+    broadcast that single value across every training row, a row from 3
+    years ago ends up labeled with a regime that was computed using prices
+    from 3 years in its future. That is look-ahead leakage, not just a
+    coarse approximation.
+
+    This instead refits the HMM every REGIME_REFIT_EVERY bars using only an
+    *expanding* window up to and including that point (never beyond it), and
+    forward-fills the classification until the next refit. Refitting every
+    single bar would be the theoretically cleanest version but is far too
+    slow for a "trains in well under a minute" pipeline; refitting
+    periodically is the practical middle ground -- still strictly
+    backward-looking, just piecewise-constant between refits instead of
+    updated daily.
+    """
+    n = len(close)
+    codes = pd.Series(np.nan, index=close.index)
+    confidences = pd.Series(np.nan, index=close.index)
+
+    i = REGIME_MIN_HISTORY
+    while i < n:
+        window = close.iloc[: i + 1]
+        try:
+            result = classify_regime_hmm(window, n_states=3)
+            code = float(REGIME_CODE_MAP.get(result["regime"], 0))
+            conf = float(result["confidence"])
+        except Exception as e:
+            logger.warning(f"Rolling HMM regime fit failed at row {i}, defaulting to neutral: {e}")
+            code, conf = 0.0, 0.0
+        end = min(i + REGIME_REFIT_EVERY, n)
+        codes.iloc[i:end] = code
+        confidences.iloc[i:end] = conf
+        i += REGIME_REFIT_EVERY
+
+    return pd.DataFrame({"regime_code": codes, "regime_confidence": confidences}, index=close.index)
+
+
+def _label_forward_return(feat: pd.DataFrame) -> pd.Series:
+    """
+    UP / DOWN / FLAT label from the forward FORWARD_HORIZON_DAYS return,
+    judged against a threshold scaled by the symbol's OWN recent volatility
+    (ATR as a fraction of price) rather than a flat +/-2% for every stock.
+
+    A flat threshold means a quiet bank stock and a volatile small-cap need
+    the same size move to count as "UP" -- so FLAT ends up overrepresented
+    for calm stocks and underrepresented for volatile ones, and the model
+    partly just learns "which stock is this" instead of "did it move".
+    Scaling the bar by ATR_14 (already a legitimate, backward-looking
+    feature known at prediction time -- see FEATURE_COLUMNS) makes the label
+    threshold adapt per symbol without using any future information.
+    """
+    atr_pct = (feat["atr_14"] / feat["Close"]).clip(lower=1e-6)
+    vol_threshold = ATR_LABEL_MULTIPLIER * atr_pct * np.sqrt(FORWARD_HORIZON_DAYS)
+
+    fwd_return = feat["Close"].shift(-FORWARD_HORIZON_DAYS) / feat["Close"] - 1.0
+    return pd.Series(
+        np.where(fwd_return > vol_threshold, "UP",
+                 np.where(fwd_return < -vol_threshold, "DOWN", "FLAT")),
+        index=feat.index,
+    )
+
+
+def _build_training_rows(symbol: str, benchmark_close: Optional[pd.Series] = None) -> Optional[pd.DataFrame]:
     df = _fetch_history(symbol, period="3y")
     if df.empty or len(df) < 120:
         logger.warning(f"Not enough history for {symbol}, skipping.")
@@ -173,16 +293,17 @@ def _build_training_rows(symbol: str) -> Optional[pd.DataFrame]:
 
     feat = _engineer_base_features(df)
 
-    regime = _regime_features_for_symbol(df["Close"])
+    regime = _rolling_regime_features(df["Close"])
     feat["regime_code"] = regime["regime_code"]
     feat["regime_confidence"] = regime["regime_confidence"]
 
-    # Forward N-day return -> UP / DOWN / FLAT label
-    fwd_return = feat["Close"].shift(-FORWARD_HORIZON_DAYS) / feat["Close"] - 1.0
-    label = pd.Series(np.where(fwd_return > UP_THRESHOLD, "UP",
-                       np.where(fwd_return < DOWN_THRESHOLD, "DOWN", "FLAT")),
-                       index=feat.index)
-    feat["label"] = label
+    if benchmark_close is None:
+        benchmark_close = _fetch_benchmark_close(period="3y")
+    rel_mom = _relative_momentum_features(df["Close"], benchmark_close)
+    feat["rel_return_5d"] = rel_mom["rel_return_5d"]
+    feat["rel_return_20d"] = rel_mom["rel_return_20d"]
+
+    feat["label"] = _label_forward_return(feat)
     feat["symbol"] = symbol
 
     feat = feat.dropna(subset=FEATURE_COLUMNS)
@@ -192,6 +313,29 @@ def _build_training_rows(symbol: str) -> Optional[pd.DataFrame]:
     return feat[FEATURE_COLUMNS + ["label", "symbol"]]
 
 
+WALKFORWARD_TRAIN_FRACTION = 0.75
+
+
+def _walkforward_split(rows: pd.DataFrame) -> "tuple[pd.DataFrame, pd.DataFrame]":
+    """
+    Chronological train/test split for one symbol's (already time-ordered)
+    feature rows: the first WALKFORWARD_TRAIN_FRACTION of rows are train, the
+    rest are test, with a FORWARD_HORIZON_DAYS purge gap dropped between them.
+
+    A plain `sklearn.train_test_split` shuffles rows randomly, which for daily
+    bars with a 5-day forward-return label leaks adjacent, autocorrelated days
+    across the train/test boundary and inflates the reported accuracy -- this
+    project's own CLAUDE.md requires walk-forward validation for time series,
+    which is what this purged, chronological split provides instead. The
+    purge gap additionally prevents a training row's forward-return label
+    from being computed using prices that fall inside the test window.
+    """
+    n = len(rows)
+    split_idx = int(n * WALKFORWARD_TRAIN_FRACTION)
+    train_end = max(split_idx - FORWARD_HORIZON_DAYS, 0)
+    return rows.iloc[:train_end], rows.iloc[split_idx:]
+
+
 def train_and_save(symbols: List[str]) -> None:
     """
     Fetches history for `symbols` via yfinance, engineers features, labels
@@ -199,32 +343,33 @@ def train_and_save(symbols: List[str]) -> None:
     and saves it (plus feature/label metadata) to models/local_classifier.joblib.
     """
     logger.info(f"Training local classifier on {len(symbols)} symbols: {symbols}")
-    frames = []
+    benchmark_close = _fetch_benchmark_close(period="3y")  # fetch once, shared across all symbols
+    train_frames = []
+    test_frames = []
     for symbol in symbols:
         try:
-            rows = _build_training_rows(symbol)
+            rows = _build_training_rows(symbol, benchmark_close=benchmark_close)
             if rows is not None and not rows.empty:
-                frames.append(rows)
+                train_rows, test_rows = _walkforward_split(rows)
+                if not train_rows.empty:
+                    train_frames.append(train_rows)
+                if not test_rows.empty:
+                    test_frames.append(test_rows)
         except Exception as e:
             logger.error(f"Failed to build training rows for {symbol}: {e}")
 
-    if not frames:
+    if not train_frames:
         raise RuntimeError("No training data could be built for any symbol.")
 
-    data = pd.concat(frames, axis=0, ignore_index=True)
-    logger.info(f"Assembled {len(data)} training rows across {len(frames)} symbols.")
-    logger.info(f"Label distribution:\n{data['label'].value_counts()}")
+    train_data = pd.concat(train_frames, axis=0, ignore_index=True)
+    logger.info(f"Assembled {len(train_data)} training rows across {len(train_frames)} symbols.")
+    logger.info(f"Label distribution:\n{train_data['label'].value_counts()}")
 
-    X = data[FEATURE_COLUMNS].astype(float).to_numpy()
-    y = data["label"].astype(str).to_numpy()
+    X_train = train_data[FEATURE_COLUMNS].astype(float).to_numpy()
+    y_train = train_data["label"].astype(str).to_numpy()
 
-    if len(np.unique(y)) < 2:
+    if len(np.unique(y_train)) < 2:
         raise RuntimeError("Training data collapsed to a single class; cannot fit a classifier.")
-
-    stratify = y if min(pd.Series(y).value_counts()) >= 2 else None
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.25, random_state=42, stratify=stratify
-    )
 
     model = RandomForestClassifier(
         n_estimators=200,
@@ -236,8 +381,39 @@ def train_and_save(symbols: List[str]) -> None:
     )
     model.fit(X_train, y_train)
 
-    test_acc = accuracy_score(y_test, model.predict(X_test))
-    logger.info(f"Holdout accuracy: {test_acc:.3f} (naive baseline would be ~{1/len(np.unique(y)):.3f} for {len(np.unique(y))} balanced classes)")
+    if test_frames:
+        test_data = pd.concat(test_frames, axis=0, ignore_index=True)
+        X_test = test_data[FEATURE_COLUMNS].astype(float).to_numpy()
+        y_test = test_data["label"].astype(str).to_numpy()
+        test_acc = float(accuracy_score(y_test, model.predict(X_test)))
+        n_classes = len(np.unique(y_train))
+        logger.info(f"Walk-forward holdout accuracy: {test_acc:.3f} on {len(test_data)} rows (naive baseline would be ~{1/n_classes:.3f} for {n_classes} balanced classes)")
+
+        # Raw multiclass accuracy across ALL rows doesn't tell you whether the
+        # model's high-confidence calls are trustworthy -- and the "AL"
+        # signal in main_api.py only fires when P(UP) clears a threshold
+        # (0.60 by default, see engine/brain/meta_learning.py). So also
+        # report precision specifically among rows that would have cleared
+        # that threshold: this is the number that actually matters for a
+        # real buy decision, not the average over every row including ones
+        # the system would never have acted on.
+        up_idx = list(model.classes_).index("UP") if "UP" in model.classes_ else None
+        threshold_precision = {}
+        if up_idx is not None:
+            proba_up = model.predict_proba(X_test)[:, up_idx]
+            for threshold in (0.5, 0.6, 0.7):
+                mask = proba_up >= threshold
+                support = int(mask.sum())
+                if support > 0:
+                    precision = float((y_test[mask] == "UP").mean())
+                else:
+                    precision = None
+                threshold_precision[threshold] = {"precision": precision, "support": support}
+                logger.info(f"  P(UP)>={threshold}: precision={precision if precision is None else f'{precision:.3f}'}, support={support}")
+    else:
+        test_acc = None
+        threshold_precision = {}
+        logger.warning("No walk-forward test rows available (symbol history too short); holdout_accuracy is unset.")
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -246,7 +422,9 @@ def train_and_save(symbols: List[str]) -> None:
         "model_version": MODEL_VERSION,
         "forward_horizon_days": FORWARD_HORIZON_DAYS,
         "trained_on_symbols": symbols,
-        "holdout_accuracy": float(test_acc),
+        "holdout_accuracy": test_acc,
+        "validation_method": "walk_forward_purged",
+        "up_precision_by_threshold": threshold_precision,
     }
     joblib.dump(payload, MODEL_PATH)
     logger.info(f"Saved model to {MODEL_PATH}")
@@ -274,6 +452,11 @@ def predict(symbol: str) -> Dict[str, Any]:
     regime = _regime_features_for_symbol(df["Close"])
     feat["regime_code"] = regime["regime_code"]
     feat["regime_confidence"] = regime["regime_confidence"]
+
+    benchmark_close = _fetch_benchmark_close(period="1y")
+    rel_mom = _relative_momentum_features(df["Close"], benchmark_close)
+    feat["rel_return_5d"] = rel_mom["rel_return_5d"]
+    feat["rel_return_20d"] = rel_mom["rel_return_20d"]
 
     latest = feat.dropna(subset=feature_columns).iloc[-1]
     x = latest[feature_columns].values.reshape(1, -1)
