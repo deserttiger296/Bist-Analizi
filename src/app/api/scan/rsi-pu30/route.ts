@@ -129,7 +129,7 @@ export async function GET(request: Request) {
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4000);
+    const timeout = setTimeout(() => controller.abort(), 25000);
     const res = await fetch(`${BACKEND_URL}/api/scan/rsi-pu30?interval=${interval}&signal_type=${signalType}`, {
       signal: controller.signal,
       cache: "no-store",
