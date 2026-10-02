@@ -258,44 +258,80 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderRsiPu30(data) {
-        rsiPu30Scanned.textContent = data.scanned;
-        rsiPu30Matched.textContent = data.matched;
+        if (!data) return;
+        rsiPu30Scanned.textContent = data.scanned != null ? data.scanned : 100;
+        rsiPu30Matched.textContent = data.matched != null ? data.matched : (data.signals ? data.signals.length : 0);
         rsiPu30Skipped.textContent = (!data.errors || data.errors.length === 0) ? '—' : data.errors.map(e => e.symbol).join(', ');
 
         rsiPu30Grid.innerHTML = '';
         if (!data.signals || data.signals.length === 0) {
-            rsiPu30Grid.innerHTML = '<p style="color:var(--text-muted);">Şu anda aktif pozitif uyumsuzluk sinyali yok. Sinyal ömrü 5 bar — koşullar her gün yeniden değerlendirilir.</p>';
+            rsiPu30Grid.innerHTML = '<p style="color:var(--text-muted);">Şu anda aktif sinyal bulunamadı. Koşullar piyasa saatlerinde güncellenir.</p>';
         } else {
             data.signals.forEach((s) => {
-                const rsiGap = s.dip2.rsi - s.dip1.rsi;
                 const card = document.createElement('div');
                 card.className = 'card';
-                card.innerHTML = `
-                    <div class="card-top">
-                        <div class="card-symbol">${s.symbol}</div>
-                        <div class="card-badge badge-violet">${s.bars_since_confirm} BAR ÖNCE</div>
-                    </div>
-                    <div class="target-val" style="margin-top:1rem;">${fmtTR(s.last_close)} ₺</div>
-                    <div class="dip-grid">
-                        <div class="target-item">
-                            <div class="target-label">Dip 1</div>
-                            <div class="target-val" style="font-size:1rem;">${fmtTR(s.dip1.price)} / RSI ${fmtTR(s.dip1.rsi, 1)}</div>
-                            <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">${s.dip1.date}</div>
+
+                if (s.dip1 && s.dip2) {
+                    const rsiGap = (s.dip2.rsi || 0) - (s.dip1.rsi || 0);
+                    card.innerHTML = `
+                        <div class="card-top">
+                            <div class="card-symbol">${s.symbol}</div>
+                            <div class="card-badge badge-violet">${s.bars_since_confirm || 0} BAR ÖNCE</div>
                         </div>
-                        <div class="target-item">
-                            <div class="target-label">Dip 2</div>
-                            <div class="target-val" style="font-size:1rem; color:var(--neon-red);">${fmtTR(s.dip2.price)} / RSI ${fmtTR(s.dip2.rsi, 1)}</div>
-                            <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">${s.dip2.date}</div>
+                        <div class="target-val" style="margin-top:1rem;">${fmtTR(s.last_close)} ₺</div>
+                        <div class="dip-grid">
+                            <div class="target-item">
+                                <div class="target-label">Dip 1</div>
+                                <div class="target-val" style="font-size:1rem;">${fmtTR(s.dip1.price)} / RSI ${fmtTR(s.dip1.rsi, 1)}</div>
+                                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">${s.dip1.date || '-'}</div>
+                            </div>
+                            <div class="target-item">
+                                <div class="target-label">Dip 2</div>
+                                <div class="target-val" style="font-size:1rem; color:var(--neon-red);">${fmtTR(s.dip2.price)} / RSI ${fmtTR(s.dip2.rsi, 1)}</div>
+                                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">${s.dip2.date || '-'}</div>
+                            </div>
                         </div>
-                    </div>
-                    <div style="display:flex; justify-content:space-between; margin-top:1rem; font-size:0.85rem;">
-                        <span style="color: var(--neon-green); font-weight:700;">↗ RSI +${fmtTR(rsiGap, 1)}</span>
-                        <span style="color: var(--accent); font-weight:700;">Tepki +%${fmtTR(s.bounce_pct, 1)}</span>
-                    </div>
-                    <button class="btn-chart" data-symbol="${s.symbol}">📈 GRAFİĞİ GÖSTER</button>
-                `;
+                        <div style="display:flex; justify-content:space-between; margin-top:1rem; font-size:0.85rem;">
+                            <span style="color: var(--neon-green); font-weight:700;">↗ RSI +${fmtTR(rsiGap, 1)}</span>
+                            <span style="color: var(--accent); font-weight:700;">Tepki +%${fmtTR(s.bounce_pct, 1)}</span>
+                        </div>
+                        <button class="btn-chart" data-symbol="${s.symbol}">📈 GRAFİĞİ GÖSTER</button>
+                    `;
+                } else {
+                    const changePct = s.signal_price ? (((s.last_close - s.signal_price) / s.signal_price) * 100) : 0;
+                    const barsText = s.bars_since_signal === 0 ? "BU SAAT" : `${s.bars_since_signal ?? 0} BAR ÖNCE`;
+                    card.innerHTML = `
+                        <div class="card-top">
+                            <div class="card-symbol">${s.symbol}</div>
+                            <div class="card-badge" style="background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.5); color: #10b981; font-weight: bold;">
+                                ${s.current_trend || 'BULL'}
+                            </div>
+                            <div class="card-badge badge-violet">${barsText}</div>
+                        </div>
+                        <div class="target-val" style="margin-top:0.75rem;">${fmtTR(s.last_close)} ₺</div>
+                        <div style="font-size:0.8rem; font-weight:600; color: ${changePct >= 0 ? 'var(--neon-green)' : 'var(--neon-red)'}; margin-top:0.2rem;">
+                            ${changePct >= 0 ? '+' : ''}${fmtTR(changePct, 2)}%
+                        </div>
+                        <div class="dip-grid" style="margin-top:0.75rem;">
+                            <div class="target-item">
+                                <div class="target-label">Kırılım Fiyatı</div>
+                                <div class="target-val" style="font-size:0.95rem;">${fmtTR(s.signal_price)} ₺</div>
+                                <div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.3rem;">${s.signal_date || '-'}</div>
+                            </div>
+                            <div class="target-item">
+                                <div class="target-label">MOSTRSI Seviyeleri</div>
+                                <div class="target-val" style="font-size:0.95rem; color:#a78bfa;">VAR ${fmtTR(s.exmov, 1)} / ${fmtTR(s.most, 1)}</div>
+                                <div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.3rem;">RSI: ${fmtTR(s.rsi || s.current_rsi, 1)}</div>
+                            </div>
+                        </div>
+                        <button class="btn-chart" data-symbol="${s.symbol}" style="margin-top:0.75rem;">📈 GRAFİĞİ GÖSTER</button>
+                    `;
+                }
+
                 const chartBtn = card.querySelector('.btn-chart');
-                chartBtn.addEventListener('click', () => openRsiPu30Chart(s.symbol));
+                if (chartBtn) {
+                    chartBtn.addEventListener('click', () => openRsiPu30Chart(s.symbol));
+                }
                 rsiPu30Grid.appendChild(card);
             });
         }
@@ -386,52 +422,73 @@ document.addEventListener('DOMContentLoaded', () => {
             rsiPu30CandleSeries.setData(cData);
             rsiPu30RsiSeries.setData(rData);
 
-            if (detail.signal) {
+            if (detail.signal && detail.signal.dip1 && detail.signal.dip2) {
                 const sig = detail.signal;
                 rsiPu30SignalInfo.innerHTML = `
                     <div class="target-item">
                         <div class="target-label">Dip 1</div>
                         <div class="target-val" style="font-size:1rem;">${fmtTR(sig.dip1.price)} ₺ / RSI ${fmtTR(sig.dip1.rsi, 1)}</div>
-                        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">${sig.dip1.date}</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">${sig.dip1.date || '-'}</div>
                     </div>
                     <div class="target-item">
                         <div class="target-label">Dip 2</div>
                         <div class="target-val" style="font-size:1rem; color:var(--neon-red);">${fmtTR(sig.dip2.price)} ₺ / RSI ${fmtTR(sig.dip2.rsi, 1)}</div>
-                        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">${sig.dip2.date}</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">${sig.dip2.date || '-'}</div>
                     </div>
                     <div class="target-item">
                         <div class="target-label">Tepki</div>
                         <div class="target-val" style="font-size:1rem; color:var(--accent);">+%${fmtTR(sig.bounce_pct, 1)}</div>
                     </div>
                     <div class="target-item">
-                        <div class="target-label">${sig.is_active ? '✓ Aktif Sinyal' : 'Geçmiş Sinyal (süresi doldu)'}</div>
-                        <div class="target-val" style="font-size:1rem; color: ${sig.is_active ? 'var(--neon-green)' : 'var(--text-muted)'};">${sig.bars_since_confirm} bar önce</div>
+                        <div class="target-label">${sig.is_active ? '✓ Aktif Sinyal' : 'Geçmiş Sinyal'}</div>
+                        <div class="target-val" style="font-size:1rem; color: ${sig.is_active ? 'var(--neon-green)' : 'var(--text-muted)'};">${sig.bars_since_confirm || 0} bar önce</div>
                     </div>
                 `;
 
                 const d1Time = sig.dip1.time;
                 const d2Time = sig.dip2.time;
 
-                rsiPu30PriceConnector = rsiPu30PriceChartInst.addSeries(LightweightCharts.LineSeries, {
-                    color: '#f43f5e', lineWidth: 2, lineStyle: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
-                });
-                rsiPu30PriceConnector.setData([{ time: d1Time, value: sig.dip1.price }, { time: d2Time, value: sig.dip2.price }]);
-                rsiPu30PriceMarkers.setMarkers([
-                    { time: d1Time, position: 'belowBar', color: '#f59e0b', shape: 'circle', text: `D1 ${fmtTR(sig.dip1.price)}` },
-                    { time: d2Time, position: 'belowBar', color: '#f43f5e', shape: 'circle', text: `D2 ${fmtTR(sig.dip2.price)}` },
-                ]);
+                if (d1Time && d2Time) {
+                    rsiPu30PriceConnector = rsiPu30PriceChartInst.addSeries(LightweightCharts.LineSeries, {
+                        color: '#f43f5e', lineWidth: 2, lineStyle: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
+                    });
+                    rsiPu30PriceConnector.setData([{ time: d1Time, value: sig.dip1.price }, { time: d2Time, value: sig.dip2.price }]);
+                    rsiPu30PriceMarkers.setMarkers([
+                        { time: d1Time, position: 'belowBar', color: '#f59e0b', shape: 'circle', text: `D1 ${fmtTR(sig.dip1.price)}` },
+                        { time: d2Time, position: 'belowBar', color: '#f43f5e', shape: 'circle', text: `D2 ${fmtTR(sig.dip2.price)}` },
+                    ]);
 
-                rsiPu30RsiConnector = rsiPu30RsiChartInst.addSeries(LightweightCharts.LineSeries, {
-                    color: '#34d399', lineWidth: 2, lineStyle: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
-                });
-                rsiPu30RsiConnector.setData([{ time: d1Time, value: sig.dip1.rsi }, { time: d2Time, value: sig.dip2.rsi }]);
-                rsiPu30RsiMarkers.setMarkers([
-                    { time: d1Time, position: 'below', color: '#f59e0b', shape: 'circle', text: `${fmtTR(sig.dip1.rsi, 1)}` },
-                    { time: d2Time, position: 'aboveBar', color: '#10b981', shape: 'arrowUp', text: 'Bull' },
-                    { time: d2Time, position: 'above', color: '#f43f5e', shape: 'circle', text: `${fmtTR(sig.dip2.rsi, 1)}` },
-                ]);
+                    rsiPu30RsiConnector = rsiPu30RsiChartInst.addSeries(LightweightCharts.LineSeries, {
+                        color: '#34d399', lineWidth: 2, lineStyle: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
+                    });
+                    rsiPu30RsiConnector.setData([{ time: d1Time, value: sig.dip1.rsi }, { time: d2Time, value: sig.dip2.rsi }]);
+                    rsiPu30RsiMarkers.setMarkers([
+                        { time: d1Time, position: 'below', color: '#f59e0b', shape: 'circle', text: `${fmtTR(sig.dip1.rsi, 1)}` },
+                        { time: d2Time, position: 'aboveBar', color: '#10b981', shape: 'arrowUp', text: 'Bull' },
+                        { time: d2Time, position: 'above', color: '#f43f5e', shape: 'circle', text: `${fmtTR(sig.dip2.rsi, 1)}` },
+                    ]);
+                }
+            } else if (detail.last_bull) {
+                const b = detail.last_bull;
+                rsiPu30SignalInfo.innerHTML = `
+                    <div class="target-item">
+                        <div class="target-label">Son Kırılım</div>
+                        <div class="target-val" style="font-size:1rem; color:var(--neon-green);">${fmtTR(b.price)} ₺</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">${b.date || '-'}</div>
+                    </div>
+                    <div class="target-item">
+                        <div class="target-label">MOSTRSI Seviyeleri</div>
+                        <div class="target-val" style="font-size:1rem; color:#a78bfa;">VAR ${fmtTR(b.exmov, 1)} / ${fmtTR(b.most, 1)}</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">RSI: ${fmtTR(b.rsi, 1)}</div>
+                    </div>
+                    <div class="target-item">
+                        <div class="target-label">Durum</div>
+                        <div class="target-val" style="font-size:1rem; color:var(--neon-green);">BULL AL</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">${b.bars_ago || 0} bar önce</div>
+                    </div>
+                `;
             } else {
-                rsiPu30SignalInfo.innerHTML = '<p style="color:var(--text-muted);">Seçili zaman diliminde uyumsuzluk koşullarını sağlayan bir dip çifti bulunamadı.</p>';
+                rsiPu30SignalInfo.innerHTML = '<p style="color:var(--text-muted);">Seçili zaman diliminde sinyal detayı bulunamadı.</p>';
             }
 
             rsiPu30PriceChartInst.timeScale().fitContent();
