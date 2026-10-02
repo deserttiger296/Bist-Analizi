@@ -406,10 +406,17 @@ document.addEventListener('DOMContentLoaded', () => {
         rsiPu30RsiSeries = rsiPu30RsiChartInst.addSeries(LightweightCharts.LineSeries, {
             color: '#a78bfa', lineWidth: 2, lastValueVisible: true, priceLineVisible: false,
         });
-        rsiPu30RsiSeries.createPriceLine({ price: 30, color: '#f59e0b', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'RSI 30' });
-        // autoScale must stay true (the default) for autoscaleInfoProvider to be
-        // consulted -- setting autoScale:false silently falls back to the
-        // chart's own range instead of the fixed 0-100 window.
+
+        // Sarı RSI Hareketli Ortalaması (SMA 14 - Fotoğraftaki Sarı Sinyal Çizgisi)
+        rsiPu30RsiMaSeries = rsiPu30RsiChartInst.addSeries(LightweightCharts.LineSeries, {
+            color: '#facc15', lineWidth: 1.5, lastValueVisible: true, priceLineVisible: false,
+        });
+
+        // 70, 50, 30 Eşik Çizgileri
+        rsiPu30RsiSeries.createPriceLine({ price: 70, color: '#f43f5e', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '70 Aşırı Alım' });
+        rsiPu30RsiSeries.createPriceLine({ price: 50, color: '#71717a', lineWidth: 1, lineStyle: 3, axisLabelVisible: false, title: '50 Nötr' });
+        rsiPu30RsiSeries.createPriceLine({ price: 30, color: '#10b981', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '30 Aşırı Satım' });
+
         rsiPu30RsiChartInst.priceScale('right').applyOptions({ scaleMargins: { top: 0.08, bottom: 0.08 } });
         rsiPu30RsiSeries.applyOptions({ autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) });
         rsiPu30RsiMarkers = LightweightCharts.createSeriesMarkers(rsiPu30RsiSeries, []);
@@ -434,12 +441,23 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    let rsiPu30PriceLines = [];
+
     async function openRsiPu30Chart(symbol) {
         rsiPu30OpenSymbol = symbol;
-        rsiPu30ChartTitle.textContent = `${symbol} — RSI PU30 Uyumsuzluk Grafiği (${rsiPu30Interval === '1h' ? 'Saatlik' : 'Günlük'})`;
+        const intervalLabel = rsiPu30Interval === '1h' ? '1 Saatlik (1s)' : (rsiPu30Interval === '4h' ? '4 Saatlik (4s)' : 'Günlük (1g)');
+        rsiPu30ChartTitle.textContent = `${symbol} — Semih Ersoy Uyumsuzluk & Formasyon Çizgileri (${intervalLabel})`;
         rsiPu30SignalInfo.innerHTML = '<p style="color:var(--text-muted);">Yükleniyor...</p>';
         rsiPu30Modal.classList.remove('hidden');
         ensureRsiPu30Charts();
+
+        // Önceki yatay seviye çizgilerini temizle
+        if (rsiPu30PriceLines.length > 0) {
+            rsiPu30PriceLines.forEach(pl => {
+                try { rsiPu30CandleSeries.removePriceLine(pl); } catch (e) {}
+            });
+            rsiPu30PriceLines = [];
+        }
 
         if (rsiPu30PriceConnector) { rsiPu30PriceChartInst.removeSeries(rsiPu30PriceConnector); rsiPu30PriceConnector = null; }
         if (rsiPu30RsiConnector) { rsiPu30RsiChartInst.removeSeries(rsiPu30RsiConnector); rsiPu30RsiConnector = null; }
@@ -452,41 +470,56 @@ document.addEventListener('DOMContentLoaded', () => {
             if (json.status !== 'success' || !json.data) throw new Error(json.detail || 'Veri alınamadı');
             const detail = json.data;
 
-            // "time" is the UTCTimestamp (epoch seconds) rsi_pu30.py emits;
-            // using it instead of the display "date" string is what lets
-            // the hourly timeframe show actual hour-of-day on the x-axis.
             const cData = detail.bars.map(b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close }));
             const rData = detail.bars.filter(b => b.rsi != null).map(b => ({ time: b.time, value: b.rsi }));
+            const rMaData = detail.bars.filter(b => b.rsi_sma != null).map(b => ({ time: b.time, value: b.rsi_sma }));
+
             rsiPu30CandleSeries.setData(cData);
             rsiPu30RsiSeries.setData(rData);
+            if (rsiPu30RsiMaSeries) rsiPu30RsiMaSeries.setData(rMaData);
 
             if (detail.signal && detail.signal.dip1 && detail.signal.dip2) {
                 const sig = detail.signal;
                 const isNU = sig.type === 'NU70' || sig.trend === 'BEAR';
-                const p1Label = isNU ? "1. Tepe (RSI > 70)" : "1. Dip (RSI < 30)";
-                const p2Label = isNU ? "2. Tepe (RSI < 70)" : "2. Dip (RSI > 30)";
-                const actionColor = isNU ? 'var(--neon-red)' : 'var(--neon-green)';
-                const actionLabel = isNU ? '🔴 NU70 Düşüş Uyarısı' : '🟢 PU30 Yükseliş Sinyali';
-                const changeVal = isNU ? `-%${fmtTR(sig.pullback_pct, 1)}` : `+%{fmtTR(sig.bounce_pct, 1)}`;
+                const actionColor = isNU ? '#f43f5e' : '#10b981';
+                const actionLabel = isNU ? '🔴 NU70 Zirve Düşüşü' : '🟢 PU30 Dip Yükselişi';
+                const changeVal = isNU ? `-%${fmtTR(sig.pullback_pct, 1)}` : `+%${fmtTR(sig.bounce_pct, 1)}`;
+
+                let extraInfoHtml = '';
+                if (isNU && sig.guven_kiran_dip) {
+                    extraInfoHtml = `
+                        <div class="target-item" style="border: 1px solid #ef4444; background: rgba(239, 68, 68, 0.12);">
+                            <div class="target-label" style="color:#fca5a5;">⚠️ Güven Kıran Dip</div>
+                            <div class="target-val" style="font-size:1.1rem; color:#ef4444; font-weight:800;">${fmtTR(sig.guven_kiran_dip.price)} ₺</div>
+                            <div style="font-size:0.75rem; color:#fca5a5; margin-top:0.3rem;">Kırılınca Sat / Stop</div>
+                        </div>
+                    `;
+                } else if (!isNU && sig.guven_tazeleyen_tepe) {
+                    extraInfoHtml = `
+                        <div class="target-item" style="border: 1px solid #10b981; background: rgba(16, 185, 129, 0.12);">
+                            <div class="target-label" style="color:#6ee7b7;">🎯 Güven Tazeleyen Direnç</div>
+                            <div class="target-val" style="font-size:1.1rem; color:#10b981; font-weight:800;">${fmtTR(sig.guven_tazeleyen_tepe.price)} ₺</div>
+                            <div style="font-size:0.75rem; color:#6ee7b7; margin-top:0.3rem;">Aşılınca Alış Tetik</div>
+                        </div>
+                    `;
+                }
 
                 rsiPu30SignalInfo.innerHTML = `
                     <div class="target-item">
-                        <div class="target-label">${p1Label}</div>
+                        <div class="target-label">${isNU ? '🟣 1. Zirve (RSI > 70)' : '🔵 1. Dip (RSI < 30)'}</div>
                         <div class="target-val" style="font-size:1rem;">${fmtTR(sig.dip1.price)} ₺ / RSI ${fmtTR(sig.dip1.rsi, 1)}</div>
                         <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">${sig.dip1.date || '-'}</div>
                     </div>
                     <div class="target-item">
-                        <div class="target-label">${p2Label}</div>
+                        <div class="target-label">${isNU ? '🟣 2. Zirve (RSI < 70)' : '🟢 2. Dip (RSI > 30)'}</div>
                         <div class="target-val" style="font-size:1rem; color:${actionColor};">${fmtTR(sig.dip2.price)} ₺ / RSI ${fmtTR(sig.dip2.rsi, 1)}</div>
                         <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">${sig.dip2.date || '-'}</div>
                     </div>
-                    <div class="target-item">
-                        <div class="target-label">${isNU ? 'Düzeltme' : 'Tepki'}</div>
-                        <div class="target-val" style="font-size:1rem; color:var(--accent);">${changeVal}</div>
-                    </div>
+                    ${extraInfoHtml}
                     <div class="target-item">
                         <div class="target-label">${actionLabel}</div>
                         <div class="target-val" style="font-size:1rem; color:${actionColor};">${sig.bars_since_confirm || 0} bar önce</div>
+                        <div style="font-size:0.75rem; color:var(--accent); margin-top:0.3rem;">${isNU ? 'Düzeltme: ' : 'Tepki: '}${changeVal}</div>
                     </div>
                 `;
 
@@ -497,24 +530,106 @@ document.addEventListener('DOMContentLoaded', () => {
                     const lineColor = isNU ? '#f43f5e' : '#10b981';
                     const markerShape = isNU ? 'arrowDown' : 'arrowUp';
                     const markerPos = isNU ? 'aboveBar' : 'belowBar';
-                    const markerText = isNU ? 'NU70 Satış' : 'PU30 Alış';
+                    const markerText = isNU ? `NU70 Satış (${fmtTR(sig.dip2.price)} ₺)` : `PU30 Alış (${fmtTR(sig.dip2.price)} ₺)`;
 
+                    // 1. Fiyat Uyumsuzluk Çizgisi (Fotoğraftaki Kalın Eğik Çizgi)
                     rsiPu30PriceConnector = rsiPu30PriceChartInst.addSeries(LightweightCharts.LineSeries, {
-                        color: lineColor, lineWidth: 2, lineStyle: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
+                        color: lineColor, lineWidth: 3, lineStyle: LightweightCharts.LineStyle.Solid,
+                        crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
                     });
                     rsiPu30PriceConnector.setData([{ time: d1Time, value: sig.dip1.price }, { time: d2Time, value: sig.dip2.price }]);
+
+                    // 2. Fiyat İşaretçileri (Fotoğraftaki Baloncuklar)
                     rsiPu30PriceMarkers.setMarkers([
-                        { time: d1Time, position: markerPos, color: '#f59e0b', shape: 'circle', text: `T1 ${fmtTR(sig.dip1.price)}` },
+                        { time: d1Time, position: markerPos, color: '#a855f7', shape: 'circle', text: `${isNU ? 'Zirve' : '1. Dip'}: ${fmtTR(sig.dip1.price)} ₺` },
                         { time: d2Time, position: markerPos, color: lineColor, shape: markerShape, text: markerText },
                     ]);
 
+                    // 3. Fiyatta Semih Ersoy Yatay Çizgileri (Fotoğraftaki Mor ve Kırmızı Çizgiler)
+                    if (isNU) {
+                        // Mor Zirve Çizgisi
+                        rsiPu30PriceLines.push(rsiPu30CandleSeries.createPriceLine({
+                            price: sig.dip1.price,
+                            color: '#a855f7',
+                            lineWidth: 2,
+                            lineStyle: LightweightCharts.LineStyle.Solid,
+                            axisLabelVisible: true,
+                            title: `🟣 Zirve: ${fmtTR(sig.dip1.price)} ₺`
+                        }));
+                        // Zirveyi Geçemeyen Tepe Çizgisi
+                        rsiPu30PriceLines.push(rsiPu30CandleSeries.createPriceLine({
+                            price: sig.dip2.price,
+                            color: '#c084fc',
+                            lineWidth: 2,
+                            lineStyle: LightweightCharts.LineStyle.Dashed,
+                            axisLabelVisible: true,
+                            title: `🟣 Zirveyi Geçemeyen Tepe: ${fmtTR(sig.dip2.price)} ₺`
+                        }));
+                        // Kırmızı Güven Kıran Dip Çizgisi!
+                        if (sig.guven_kiran_dip) {
+                            rsiPu30PriceLines.push(rsiPu30CandleSeries.createPriceLine({
+                                price: sig.guven_kiran_dip.price,
+                                color: '#ef4444',
+                                lineWidth: 3,
+                                lineStyle: LightweightCharts.LineStyle.Solid,
+                                axisLabelVisible: true,
+                                title: `🔴 Güven Kıran Dip: ${fmtTR(sig.guven_kiran_dip.price)} ₺ [SAT/STOP]`
+                            }));
+                        }
+                    } else {
+                        // PU30: 1. Dip ve 2. Dip Yatay Çizgileri
+                        rsiPu30PriceLines.push(rsiPu30CandleSeries.createPriceLine({
+                            price: sig.dip1.price,
+                            color: '#06b6d4',
+                            lineWidth: 2,
+                            lineStyle: LightweightCharts.LineStyle.Solid,
+                            axisLabelVisible: true,
+                            title: `🔵 1. Dip: ${fmtTR(sig.dip1.price)} ₺`
+                        }));
+                        rsiPu30PriceLines.push(rsiPu30CandleSeries.createPriceLine({
+                            price: sig.dip2.price,
+                            color: '#10b981',
+                            lineWidth: 2,
+                            lineStyle: LightweightCharts.LineStyle.Dashed,
+                            axisLabelVisible: true,
+                            title: `🟢 2. Dip: ${fmtTR(sig.dip2.price)} ₺`
+                        }));
+                        // Yeşil Güven Tazeleyen Tepe / Direnç
+                        if (sig.guven_tazeleyen_tepe) {
+                            rsiPu30PriceLines.push(rsiPu30CandleSeries.createPriceLine({
+                                price: sig.guven_tazeleyen_tepe.price,
+                                color: '#10b981',
+                                lineWidth: 3,
+                                lineStyle: LightweightCharts.LineStyle.Solid,
+                                axisLabelVisible: true,
+                                title: `🎯 Güven Tazeleyen Direnç: ${fmtTR(sig.guven_tazeleyen_tepe.price)} ₺ [ALIŞ]`
+                            }));
+                        }
+                    }
+
+                    // 4. Fibonacci Seviyeleri (Fotoğraftaki Bordo/Kırmızı Çizgiler)
+                    if (sig.fibonacci_levels && sig.fibonacci_levels.length > 0) {
+                        sig.fibonacci_levels.forEach(fibo => {
+                            rsiPu30PriceLines.push(rsiPu30CandleSeries.createPriceLine({
+                                price: fibo.price,
+                                color: fibo.color || (isNU ? 'rgba(244,63,94,0.65)' : 'rgba(16,185,129,0.65)'),
+                                lineWidth: 1,
+                                lineStyle: LightweightCharts.LineStyle.SparseDotted,
+                                axisLabelVisible: true,
+                                title: `${fibo.label}: ${fmtTR(fibo.price)} ₺`
+                            }));
+                        });
+                    }
+
+                    // 5. RSI Uyumsuzluk Çizgisi (Fotoğraftaki Kırmızı/Mavi Eğik Çizgi)
                     rsiPu30RsiConnector = rsiPu30RsiChartInst.addSeries(LightweightCharts.LineSeries, {
-                        color: lineColor, lineWidth: 2, lineStyle: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
+                        color: lineColor, lineWidth: 3, lineStyle: LightweightCharts.LineStyle.Solid,
+                        crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
                     });
                     rsiPu30RsiConnector.setData([{ time: d1Time, value: sig.dip1.rsi }, { time: d2Time, value: sig.dip2.rsi }]);
                     rsiPu30RsiMarkers.setMarkers([
-                        { time: d1Time, position: isNU ? 'above' : 'below', color: '#f59e0b', shape: 'circle', text: `${fmtTR(sig.dip1.rsi, 1)}` },
-                        { time: d2Time, position: isNU ? 'above' : 'below', color: lineColor, shape: 'circle', text: `${fmtTR(sig.dip2.rsi, 1)}` },
+                        { time: d1Time, position: isNU ? 'above' : 'below', color: '#a855f7', shape: 'circle', text: `RSI ${fmtTR(sig.dip1.rsi, 1)}` },
+                        { time: d2Time, position: isNU ? 'above' : 'below', color: lineColor, shape: 'circle', text: `RSI ${fmtTR(sig.dip2.rsi, 1)}` },
                     ]);
                 }
             } else if (detail.last_bull) {

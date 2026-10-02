@@ -183,12 +183,31 @@ def detect_rsi_pu30(df: pd.DataFrame, cfg: PU30Config = DEFAULT_PU30_CONFIG, ign
                     date_fmt = INTERVALS.get(interval, ("1y", "%Y-%m-%d %H:%M", 60))[1]
                     d1_ts = pd.Timestamp(dates[d1["index"]])
                     d2_ts = pd.Timestamp(dates[d2["index"]])
+                    max_between_rel = int(np.argmax(between_hi))
+                    max_between_idx = d1["index"] + 1 + max_between_rel
+                    max_between_ts = pd.Timestamp(dates[max_between_idx])
+
+                    lowest_dip = float(min(d1["price"], d2["price"]))
+                    pu_diff = max_between - lowest_dip
+                    fibonacci_levels = [
+                        {"label": "Fibo 1.618 (Ana Hedef)", "level": 1.618, "price": round(lowest_dip + 1.618 * pu_diff, 2), "color": "#10b981"},
+                        {"label": "Fibo 1.382 (Ara Hedef)", "level": 1.382, "price": round(lowest_dip + 1.382 * pu_diff, 2), "color": "#34d399"},
+                        {"label": "Fibo 1.000 (Direnç Kırılım)", "level": 1.000, "price": round(max_between, 2), "color": "#10b981"},
+                        {"label": "Fibo 0.618 (Altın Oran)", "level": 0.618, "price": round(lowest_dip + 0.618 * pu_diff, 2), "color": "#6ee7b7"},
+                    ]
+
                     signal = {
                         "type": "PU30",
                         "trend": "BULL",
                         "label": "PU30 (Dip / Alis)",
                         "dip1": {**d1, "date": d1_ts.strftime(date_fmt), "time": _epoch_seconds(d1_ts)},
                         "dip2": {**d2, "date": d2_ts.strftime(date_fmt), "time": _epoch_seconds(d2_ts)},
+                        "guven_tazeleyen_tepe": {
+                            "price": round(max_between, 2),
+                            "date": max_between_ts.strftime(date_fmt),
+                            "time": _epoch_seconds(max_between_ts),
+                        },
+                        "fibonacci_levels": fibonacci_levels,
                         "bounce_pct": round(bounce_pct, 2),
                         "bars_since_confirm": bars_since,
                         "gap_bars": gap,
@@ -255,6 +274,20 @@ def detect_rsi_nu70(df: pd.DataFrame, cfg: NU70Config = DEFAULT_NU70_CONFIG, ign
                     date_fmt = INTERVALS.get(interval, ("1y", "%Y-%m-%d %H:%M", 60))[1]
                     t1_ts = pd.Timestamp(dates[t1["index"]])
                     t2_ts = pd.Timestamp(dates[t2["index"]])
+                    min_between_rel = int(np.argmin(between_lo))
+                    min_between_idx = t1["index"] + 1 + min_between_rel
+                    min_between_ts = pd.Timestamp(dates[min_between_idx])
+
+                    highest_peak = float(max(t1["price"], t2["price"]))
+                    nu_diff = highest_peak - min_between
+                    fibonacci_levels = [
+                        {"label": "Fibo 1.618 (Düşüş Hedefi)", "level": 1.618, "price": round(highest_peak - 1.618 * nu_diff, 2), "color": "#f43f5e"},
+                        {"label": "Fibo 1.382 (Düşüş Seviyesi)", "level": 1.382, "price": round(highest_peak - 1.382 * nu_diff, 2), "color": "#fb7185"},
+                        {"label": "Fibo 1.000 (Güven Kıran Dip)", "level": 1.000, "price": round(min_between, 2), "color": "#ef4444"},
+                        {"label": "Fibo 0.786 (Kritik Destek)", "level": 0.786, "price": round(highest_peak - 0.786 * nu_diff, 2), "color": "#cbd5e1"},
+                        {"label": "Fibo 0.618 (Altın Düzeltme)", "level": 0.618, "price": round(highest_peak - 0.618 * nu_diff, 2), "color": "#e2e8f0"},
+                    ]
+
                     signal = {
                         "type": "NU70",
                         "trend": "BEAR",
@@ -264,6 +297,12 @@ def detect_rsi_nu70(df: pd.DataFrame, cfg: NU70Config = DEFAULT_NU70_CONFIG, ign
                         # Aliases for card rendering
                         "dip1": {**t1, "date": t1_ts.strftime(date_fmt), "time": _epoch_seconds(t1_ts)},
                         "dip2": {**t2, "date": t2_ts.strftime(date_fmt), "time": _epoch_seconds(t2_ts)},
+                        "guven_kiran_dip": {
+                            "price": round(min_between, 2),
+                            "date": min_between_ts.strftime(date_fmt),
+                            "time": _epoch_seconds(min_between_ts),
+                        },
+                        "fibonacci_levels": fibonacci_levels,
                         "pullback_pct": round(pullback_pct, 2),
                         "bounce_pct": round(pullback_pct, 2),
                         "bars_since_confirm": bars_since,
@@ -447,6 +486,8 @@ def get_symbol_chart_data(symbol: str, interval: str = "4h", period: Optional[st
 
     closes = df["close"].to_numpy(dtype=float)
     rsi = wilder_rsi(closes, 14)
+    rsi_series = pd.Series(rsi)
+    rsi_sma = rsi_series.rolling(14, min_periods=1).mean().to_numpy()
     sig_pu = detect_rsi_pu30(df, DEFAULT_PU30_CONFIG, ignore_lifetime=True, interval=interval)
     sig_nu = detect_rsi_nu70(df, DEFAULT_NU70_CONFIG, ignore_lifetime=True, interval=interval)
 
@@ -461,10 +502,14 @@ def get_symbol_chart_data(symbol: str, interval: str = "4h", period: Optional[st
             "low": float(df["low"].iloc[i]),
             "close": float(df["close"].iloc[i]),
             "rsi": None if np.isnan(rsi[i]) else round(float(rsi[i]), 2),
+            "rsi_sma": None if np.isnan(rsi_sma[i]) else round(float(rsi_sma[i]), 2),
         })
 
     # Pick the most recent signal for primary display, but provide both
-    active_signal = sig_pu or sig_nu
+    if sig_pu and sig_nu:
+        active_signal = sig_pu if sig_pu.get("bars_since_confirm", 999) <= sig_nu.get("bars_since_confirm", 999) else sig_nu
+    else:
+        active_signal = sig_pu or sig_nu
 
     return {
         "symbol": symbol,
