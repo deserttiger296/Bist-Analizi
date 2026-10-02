@@ -38,6 +38,8 @@ export async function POST(request: Request) {
         sniper_label: "AL (GÜÇLÜ YÜKSELİŞ)",
         class_probabilities: { UP: 0.65, DOWN: 0.2, FLAT: 0.15 },
         target_price_tl: 389.75,
+        target_price_usd: 11.14,
+        usd_rate: 35.0,
         potential_roi: 7.4,
         confluence_label: "İKİLİ ONAY ✅✅",
         explanation: [

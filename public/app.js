@@ -82,6 +82,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     badgeHtml = `<div class="card-badge" style="background: rgba(59, 130, 246, 0.1); color: var(--accent);">RF Skor: %${upProb}</div>`;
                 }
 
+                const usdRate = stock.usd_rate || 35.0;
+                const targetUsd = (stock.target_price_usd != null && stock.target_price_usd > 0)
+                    ? stock.target_price_usd
+                    : (stock.target_price_tl ? (stock.target_price_tl / usdRate) : null);
+
                 const card = document.createElement('div');
                 card.className = 'card';
                 card.innerHTML = `
@@ -101,7 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                         <div class="target-item">
                             <div class="target-label">Hedef Fiyat (USD)</div>
-                            <div class="target-val val-green">💵 $${stock.target_price_usd ? stock.target_price_usd.toFixed(2) : '-'}</div>
+                            <div class="target-val val-green">💵 $${targetUsd ? targetUsd.toFixed(2) : '-'}</div>
                         </div>
                     </div>
                     

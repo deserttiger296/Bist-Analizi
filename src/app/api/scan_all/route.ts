@@ -13,6 +13,8 @@ const FALLBACK_RADAR = [
     sniper_label: "AL (GÜÇLÜ YÜKSELİŞ)",
     class_probabilities: { UP: 0.74, DOWN: 0.15, FLAT: 0.11 },
     target_price_tl: 314.5,
+    target_price_usd: 8.99,
+    usd_rate: 35.0,
     potential_roi: 7.6,
     confluence_label: "ÜÇLÜ ONAY (RF + LSTM + Sentiment) ✅✅✅",
     explanation: [
@@ -28,6 +30,8 @@ const FALLBACK_RADAR = [
     sniper_label: "AL (GÜÇLÜ YÜKSELİŞ)",
     class_probabilities: { UP: 0.68, DOWN: 0.18, FLAT: 0.14 },
     target_price_tl: 135.2,
+    target_price_usd: 3.86,
+    usd_rate: 35.0,
     potential_roi: 7.4,
     confluence_label: "İKİLİ ONAY ✅✅",
     explanation: [
@@ -42,6 +46,8 @@ const FALLBACK_RADAR = [
     sniper_label: "AL (GÜÇLÜ YÜKSELİŞ)",
     class_probabilities: { UP: 0.65, DOWN: 0.20, FLAT: 0.15 },
     target_price_tl: 389.75,
+    target_price_usd: 11.14,
+    usd_rate: 35.0,
     potential_roi: 7.4,
     confluence_label: "İKİLİ ONAY ✅✅",
     explanation: [
@@ -56,6 +62,8 @@ const FALLBACK_RADAR = [
     sniper_label: "AL (GÜÇLÜ YÜKSELİŞ)",
     class_probabilities: { UP: 0.63, DOWN: 0.22, FLAT: 0.15 },
     target_price_tl: 435.0,
+    target_price_usd: 12.43,
+    usd_rate: 35.0,
     potential_roi: 5.2,
     confluence_label: "İKİLİ ONAY ✅✅",
     explanation: [
