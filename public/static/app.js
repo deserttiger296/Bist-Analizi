@@ -238,8 +238,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             try {
                 const response = await fetch(`/api/scan/rsi-pu30?interval=${rsiPu30Interval}`);
-                const json = await response.json();
-                if (!response.ok) throw new Error(json.detail || "API Error");
+                const text = await response.text();
+                let json;
+                try {
+                    json = JSON.parse(text);
+                } catch {
+                    throw new Error("Tarama motoru veriyi hazırlıyor veya backend sunucusuna bağlanılamadı.");
+                }
+                if (!response.ok) throw new Error(json.detail || "API Hatası");
                 renderRsiPu30(json.data);
             } catch (error) {
                 rsiPu30ErrorMsg.textContent = error.message;
