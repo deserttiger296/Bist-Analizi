@@ -320,6 +320,18 @@ document.addEventListener('DOMContentLoaded', () => {
                        </div>`
                     : '';
 
+                let dataStatusHtml = '';
+                if (s.data_status) {
+                    const st = String(s.data_status).toUpperCase();
+                    if (st === 'STALE') {
+                        dataStatusHtml = `<div style="font-size:0.7rem; color:#f59e0b; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.3); border-radius:4px; padding:0.25rem 0.5rem; margin-top:0.4rem;">⚠️ Veri Güncel Değil (STALE) ${s.data_updated_at ? '· ' + s.data_updated_at.substring(0, 16) : ''}</div>`;
+                    } else if (st === 'ERROR' || st === 'INSUFFICIENT_HISTORY') {
+                        dataStatusHtml = `<div style="font-size:0.7rem; color:#f43f5e; background:rgba(244,63,94,0.12); border:1px solid rgba(244,63,94,0.3); border-radius:4px; padding:0.25rem 0.5rem; margin-top:0.4rem;">⚠️ Veri Durumu: ${st}</div>`;
+                    } else if (st === 'FRESH' && s.data_updated_at) {
+                        dataStatusHtml = `<div style="font-size:0.68rem; color:var(--text-muted); margin-top:0.35rem;">🟢 Güncel: ${s.data_updated_at.substring(0, 16)}</div>`;
+                    }
+                }
+
                 const strategyHtml = s.strategy_action
                     ? `<div style="font-size:0.75rem; color:#cbd5e1; margin-top:0.5rem; background:rgba(0,0,0,0.3); padding:0.4rem 0.6rem; border-radius:6px; border-left:3px solid ${isNU ? '#f43f5e' : '#10b981'};">
                          💡 <strong>Semih Ersoy Stratejisi:</strong> ${s.strategy_action}
@@ -338,6 +350,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
 
                     ${confluenceHtml}
+                    ${dataStatusHtml}
 
                     <div class="target-val" style="margin-top:0.75rem; font-size:1.4rem;">${fmtTR(s.last_close)} ₺</div>
                     
