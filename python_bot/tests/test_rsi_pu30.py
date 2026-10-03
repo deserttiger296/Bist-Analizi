@@ -203,20 +203,27 @@ class TestWilderRSI:
         # Sonraki barlar düşüş → RSI düşmeli
         assert rsi[-1] < 80.0, f"Düşüş sonrası RSI < 80 bekleniyor, alınan {rsi[-1]:.1f}"
 
-    def test_nan_input_treated_as_flat(self):
+    def test_nan_input_produces_rsi_50(self):
         """
-        NaN dolu girişte wilder_rsi çökmemeli.
-        NaN'lar fiyat değişimi hesaplarında 0'a dönüşür → flat bar → RSI 50.
-        Bu beklenen ve belgelenmiş bir davranıştır.
+        wilder_rsi'ya tüm NaN içeren dizi verildiğinde RSI 50.0 üretmeli.
+
+        Mekanizma:
+          np.diff([NaN, NaN, ...]) → [NaN, NaN, ...] (NaN kalır, 0'a dönüşmez)
+          np.where(NaN > 0, ...) → False koşulu → gains[i] = 0.0, losses[i] = 0.0
+          avg_gain = avg_loss = 0.0 → "avg_gain + avg_loss == 0" dalı → rsi[period] = 50.0
+          Sonraki barlar: Wilder smoothing'de g=0, l=0 ekleniyor → avg değişmiyor → 50.0 sabit.
+
+        Bu davranış wilder_rsi içindeki sıfıra bölme korumasının yan etkisidir;
+        NaN giriş desteklenmez, ancak fonksiyon çökmek yerine 50 üretir.
         """
         closes = np.full(20, np.nan, dtype=float)
-        try:
-            rsi = wilder_rsi(closes, 14)
-            # NaN giriş → diff sıfır → flat → 50 veya NaN; her ikisi de kabul edilir
-            for v in rsi[14:]:
-                assert np.isnan(v) or (0.0 <= v <= 100.0), f"Geçersiz RSI değeri: {v}"
-        except Exception as e:
-            pytest.fail(f"NaN girişte beklenmedik hata: {e}")
+        rsi = wilder_rsi(closes, 14)
+        # İlk 14 değer her zaman NaN (warmup dönemi)
+        assert all(np.isnan(rsi[:14])), "Warmup dönemi (index 0..13) NaN olmalı"
+        # period ve sonrası: tüm NaN giriş → avg_gain=avg_loss=0 → RSI=50
+        assert rsi[14] == 50.0, f"Tüm-NaN girişte RSI[14]=50.0 bekleniyor, alınan {rsi[14]}"
+        for i in range(15, 20):
+            assert rsi[i] == 50.0, f"Tüm-NaN girişte RSI[{i}]=50.0 bekleniyor, alınan {rsi[i]}"
 
 
 # ===========================================================================
@@ -914,62 +921,157 @@ class TestDetectRsiNU70:
 # 8. Sınır Durumları
 # ===========================================================================
 
+# ===========================================================================
+# 8. Sınır Durumları
+# ===========================================================================
+
 class TestEdgeCases:
-    """Aşırı durumlar ve veri sorunları."""
+    """
+    Sınır durumu testleri.
 
-    def test_all_nan_closes_no_crash(self):
-        """Tüm kapanışlar NaN → hata vermemeli."""
-        closes = np.full(30, np.nan)
-        df = _make_df(closes=closes, interval="1h")
-        try:
-            result = detect_rsi_pu30(df, ignore_lifetime=True, interval="1h")
-            # NaN close → hata vermemeli; None veya herhangi değer döner
-        except Exception as e:
-            pytest.fail(f"Beklenmedik hata: {e}")
+    Doğrulama stratejisi:
+    - Her test yalnızca kodun gerçek sözleşmesini doğrular.
+    - Belirsiz davranış 'her şeyi kabul et' koşuluyla geçiştirilmez;
+      doğrudan beklenen değer pinlenir.
+    """
 
-    def test_single_bar_no_crash(self):
-        """Tek bar → hata vermemeli, None döner."""
+    def test_all_nan_closes_returns_none(self):
+        """
+        detect_rsi_pu30'a tümü NaN olan kapanış değerleri içeren DataFrame
+        verildiğinde None döndürmeli.
+
+        Nedenler zinciri:
+        1. wilder_rsi(NaN_array) → warmup NaN, sonrası RSI=50 (flat-bar davranışı).
+        2. Flat RSI → pivot low bulunamaz (herhangi bir dip lokal minimum değil).
+        3. Pivot yoksa sinyal üretilmez → None döner.
+
+        Fonksiyon çökmemeli ve None dışında başka bir değer döndürmemeli.
+        """
+        closes = np.full(60, np.nan)
+        # lows/highs da NaN olursa pivot fonksiyonu tutarlı davranmalı
+        df = _make_df(closes=closes, lows=np.full(60, np.nan),
+                      highs=np.full(60, np.nan), interval="1h")
+        result = detect_rsi_pu30(df, ignore_lifetime=True, interval="1h")
+        assert result is None, (
+            f"Tüm-NaN kapanış verisiyle sinyal üretilmemeli, alınan: {result}"
+        )
+
+    def test_single_bar_pu30_returns_none(self):
+        """
+        detect_rsi_pu30'a tek barlık DataFrame verildiğinde None döndürmeli.
+
+        MIN_BARS_REQUIRED = 25 guard fonksiyonun başında kontrol edilir;
+        1 < 25 olduğundan erken çıkış yapılır ve None döner.
+        """
         df = _make_df(closes=[100.0], interval="1h")
         result = detect_rsi_pu30(df, ignore_lifetime=True, interval="1h")
-        assert result is None
+        assert result is None, (
+            "Tek barlık veriyle detect_rsi_pu30 None döndürmeli (MIN_BARS_REQUIRED=25 guard)"
+        )
+
+    def test_single_bar_nu70_returns_none(self):
+        """
+        detect_rsi_nu70'e tek barlık DataFrame verildiğinde None döndürmeli.
+
+        Aynı MIN_BARS_REQUIRED = 25 guard geçerlidir.
+        """
+        df = _make_df(closes=[100.0], interval="1h")
+        result = detect_rsi_nu70(df, ignore_lifetime=True, interval="1h")
+        assert result is None, (
+            "Tek barlık veriyle detect_rsi_nu70 None döndürmeli (MIN_BARS_REQUIRED=25 guard)"
+        )
 
     def test_flat_price_no_pu30_signal(self):
-        """Flat (değişimsiz) fiyat → PU30 sinyali üretilmemeli."""
+        """
+        Tamamen düz (değişimsiz) fiyat → PU30 sinyali üretilmemeli.
+
+        60 bar seçildi: RSI hesabı (14 bar warmup) ve pivot tespiti
+        (pivot_left_bars=5, pivot_right_bars=2 → min 7 bar gerekli) için
+        MIN_BARS_REQUIRED=25 eşiğini rahatlıkla aşar.
+
+        Neden None: Flat fiyat → tüm lows eşit → local minima yok → pivot yok → sinyal yok.
+        """
         df = _make_df(closes=np.ones(60) * 100.0, interval="1h")
+        assert len(df) >= 25, "Test verisi MIN_BARS_REQUIRED'ı aşmalı"
         result = detect_rsi_pu30(df, ignore_lifetime=True, interval="1h")
-        assert result is None
+        assert result is None, "Düz fiyatta PU30 sinyali üretilmemeli"
 
     def test_flat_price_no_nu70_signal(self):
-        """Flat fiyat → NU70 sinyali üretilmemeli."""
-        df = _make_df(closes=np.ones(60) * 100.0, interval="1h")
-        result = detect_rsi_nu70(df, ignore_lifetime=True, interval="1h")
-        assert result is None
+        """
+        Tamamen düz (değişimsiz) fiyat → NU70 sinyali üretilmemeli.
 
-    def test_resample_bist_4h_no_crash_single_bar(self):
-        """Tek bar resample → hata vermemeli."""
+        60 bar, MIN_BARS_REQUIRED=25'i aşıyor.
+        Flat fiyat → tüm highs eşit → local maxima yok → pivot yok → sinyal yok.
+        """
+        df = _make_df(closes=np.ones(60) * 100.0, interval="1h")
+        assert len(df) >= 25, "Test verisi MIN_BARS_REQUIRED'ı aşmalı"
+        result = detect_rsi_nu70(df, ignore_lifetime=True, interval="1h")
+        assert result is None, "Düz fiyatta NU70 sinyali üretilmemeli"
+
+    def test_resample_bist_4h_single_weekday_bar_produces_one_row(self):
+        """
+        Tek bir hafta içi 10:00 barı verildiğinde resample_bist_4h
+        tam olarak 1 satır ve beklenen OHLCV sütunlarını döndürmeli.
+
+        Tasarım: Tek bar bir seans dilimine (10:00–14:00) düşer.
+        O dilimde sadece bir bar olsa da agg() o barı ilk/max/min/son/toplam
+        kurallarıyla aynen korur → 1 satır çıktı beklenir.
+
+        Çıktı sütunları: date, Open, High, Low, Close, Volume (büyük harf OHLCV).
+        """
+        input_open, input_high, input_low, input_close, input_vol = (
+            100.0, 101.0, 99.0, 100.5, 1000.0
+        )
         df = pd.DataFrame([{
-            "date": pd.Timestamp("2025-01-06 10:00:00", tz=ISTANBUL_TZ),
+            "date": pd.Timestamp("2025-01-06 10:00:00", tz=ISTANBUL_TZ),  # Pazartesi
+            "open": input_open,
+            "high": input_high,
+            "low": input_low,
+            "close": input_close,
+            "volume": input_vol,
+            "is_closed": True,
+        }])
+        df4h = resample_bist_4h(df)
+
+        # Çıktı tipi
+        assert isinstance(df4h, pd.DataFrame), "Çıktı DataFrame olmalı"
+
+        # Satır sayısı: tek bir seans dilimine düşen tek bar → 1 satır
+        assert len(df4h) == 1, (
+            f"Tek hafta içi barlık girişten 1 satır bekleniyor, alınan {len(df4h)}"
+        )
+
+        # Zorunlu sütunlar
+        expected_cols = {"Open", "High", "Low", "Close", "Volume"}
+        actual_cols = set(df4h.columns)
+        assert expected_cols.issubset(actual_cols), (
+            f"Eksik sütunlar: {expected_cols - actual_cols}"
+        )
+
+        row = df4h.iloc[0]
+
+        # OHLCV toplama kuralları (tek bar → ilk=max=min=son=kendisi, volume toplam=kendisi)
+        assert row["Open"] == input_open, f"Open: beklenen {input_open}, alınan {row['Open']}"
+        assert row["High"] == input_high, f"High: beklenen {input_high}, alınan {row['High']}"
+        assert row["Low"] == input_low, f"Low: beklenen {input_low}, alınan {row['Low']}"
+        assert row["Close"] == input_close, f"Close: beklenen {input_close}, alınan {row['Close']}"
+        assert row["Volume"] == input_vol, f"Volume: beklenen {input_vol}, alınan {row['Volume']}"
+
+    def test_resample_bist_4h_weekend_bar_produces_empty(self):
+        """
+        Yalnızca hafta sonu barı içeren girişte resample_bist_4h boş DataFrame döndürmeli.
+
+        Tasarım: BIST Cumartesi-Pazar kapalı. resample_bist_4h hafta sonu
+        barlarını filtreler; filtreden sonra veri boşsa pd.DataFrame() döner.
+        """
+        df = pd.DataFrame([{
+            "date": pd.Timestamp("2025-01-04 10:00:00", tz=ISTANBUL_TZ),  # Cumartesi
             "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5,
             "volume": 1000.0, "is_closed": True,
         }])
-        try:
-            df4h = resample_bist_4h(df)
-            assert isinstance(df4h, pd.DataFrame)
-        except Exception as e:
-            pytest.fail(f"Tek bar resample hata verdi: {e}")
+        df4h = resample_bist_4h(df)
+        assert isinstance(df4h, pd.DataFrame), "Çıktı DataFrame olmalı"
+        assert len(df4h) == 0, (
+            f"Yalnızca hafta sonu barından boş çıktı bekleniyor, alınan {len(df4h)} satır"
+        )
 
-    def test_wilder_rsi_only_nan_documented_behavior(self):
-        """
-        NaN dolu dizi → wilder_rsi hata vermemeli.
-        NaN'lar numpy diff'te 0'a dönüşür → flat bar davranışı → RSI 50 döner.
-        Bu davranış 'NaN girişi desteklenmez, 0 değişim olarak işlenir' anlamına gelir.
-        Test bu davranışı dokümente eder.
-        """
-        closes = np.full(20, np.nan, dtype=float)
-        try:
-            rsi = wilder_rsi(closes, 14)
-            # Sonuç 50 veya NaN — her ikisi de kabul edilir
-            for v in rsi:
-                assert np.isnan(v) or (0.0 <= v <= 100.0)
-        except Exception as e:
-            pytest.fail(f"NaN girişte beklenmedik hata: {e}")
