@@ -1,0 +1,10 @@
+node_modules
+.next
+.venv
+python_bot/.venv
+python_bot/**
+**/*.pt
+**/*.onnx
+**/*.bin
+db/**
+*.db

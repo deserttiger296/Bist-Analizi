@@ -59,3 +59,5 @@ journal/
 # Locally-trained ML model artifacts (regenerate via
 # python_bot/engine/brain/local_classifier.py train_and_save())
 python_bot/models/
+.vercel
+.env*
