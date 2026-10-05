@@ -61,6 +61,80 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    const results = document.getElementById('results');
+
+    async function handleSingleScan() {
+        const symbol = (symbolInput.value || '').trim().toUpperCase();
+        if (!symbol) return;
+        errorMsg.classList.add('hidden');
+        if (results) results.classList.add('hidden');
+        scanStatus.classList.remove('hidden');
+        scanBtn.disabled = true;
+
+        try {
+            const res = await fetch(`/api/bist/${symbol}`);
+            const data = await res.json();
+            if (!res.ok || data.error) throw new Error(data.error || `${symbol} verisi alınamadı.`);
+
+            renderSingleStock(data);
+        } catch (error) {
+            errorMsg.textContent = error.message;
+            errorMsg.classList.remove('hidden');
+        } finally {
+            scanStatus.classList.add('hidden');
+            scanBtn.disabled = false;
+        }
+    }
+
+    function renderSingleStock(stock) {
+        if (!results) return;
+        results.innerHTML = '';
+        const card = document.createElement('div');
+        card.className = 'card';
+        const changePercent = stock.changePercent != null ? stock.changePercent : ((stock.change && stock.lastClose) ? (stock.change / stock.lastClose * 100) : 0);
+        const changeSign = changePercent >= 0 ? '+' : '';
+        const changeColor = changePercent >= 0 ? 'var(--neon-green)' : 'var(--neon-red)';
+        
+        card.innerHTML = `
+            <div class="card-top">
+                <div class="card-symbol">${stock.symbol}</div>
+                <div class="card-badge" style="color: ${changeColor}; border: 1px solid ${changeColor};">
+                    ${changeSign}${changePercent.toFixed(2)}%
+                </div>
+            </div>
+            
+            <div class="target-grid">
+                <div class="target-item">
+                    <div class="target-label">Son Fiyat</div>
+                    <div class="target-val">${stock.lastClose ? Number(stock.lastClose).toFixed(2) : '-'} ₺</div>
+                </div>
+                <div class="target-item">
+                    <div class="target-label">Gün İçi En Yüksek</div>
+                    <div class="target-val">${stock.high ? Number(stock.high).toFixed(2) : '-'} ₺</div>
+                </div>
+                <div class="target-item">
+                    <div class="target-label">Gün İçi En Düşük</div>
+                    <div class="target-val">${stock.low ? Number(stock.low).toFixed(2) : '-'} ₺</div>
+                </div>
+            </div>
+
+            <div style="margin-top: 1.5rem; display: flex; gap: 1rem;">
+                <button class="btn-chart" data-symbol="${stock.symbol}">📈 GRAFİĞİ GÖSTER</button>
+            </div>
+        `;
+
+        const chartBtn = card.querySelector('.btn-chart');
+        chartBtn.addEventListener('click', () => openChart(stock.symbol));
+
+        results.appendChild(card);
+        results.classList.remove('hidden');
+    }
+
+    if (scanBtn) scanBtn.addEventListener('click', handleSingleScan);
+    if (symbolInput) symbolInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleSingleScan();
+    });
+
     function renderRadar(stocks) {
         radarGrid.innerHTML = '';
         if (!stocks || stocks.length === 0) {
