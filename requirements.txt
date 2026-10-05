@@ -1,0 +1,6 @@
+# Vercel Python function (api/index.py) only -- the lightweight signal engine.
+# The full engine's dependencies are in python_bot/requirements.txt.
+fastapi
+numpy
+pandas
+yfinance

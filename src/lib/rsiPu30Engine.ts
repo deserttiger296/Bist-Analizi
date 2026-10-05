@@ -3,21 +3,22 @@
 // Deliberately its own file, not folded into sniperEngine.ts -- this is a
 // separate rule-based engine with no ML and no shared state with the sniper
 // pipeline, and the client code mirrors that separation.
+import { BACKEND_URL } from "./backend";
 
-const DEFAULT_BASE_URL = "http://127.0.0.1:8001";
 const DEFAULT_TIMEOUT_MS = 10000;
 
 function getBaseUrl(): string {
-  return process.env.SNIPER_ENGINE_URL || DEFAULT_BASE_URL;
+  return BACKEND_URL;
 }
 
 async function fetchJson<T>(path: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T | null> {
-  const url = new URL(path, getBaseUrl());
+  // Plain concatenation: new URL(path, base) would drop a base path such as /api/py.
+  const url = `${getBaseUrl()}${path}`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetch(url.toString(), { signal: controller.signal, cache: "no-store" });
+    const res = await fetch(url, { signal: controller.signal, cache: "no-store" });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       console.warn(`[rsiPu30Engine] ${path} returned ${res.status}: ${body.slice(0, 200)}`);
@@ -26,7 +27,7 @@ async function fetchJson<T>(path: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promi
     return (await res.json()) as T;
   } catch (err: any) {
     const reason = err?.name === "AbortError" ? "timed out" : (err?.message || String(err));
-    console.warn(`[rsiPu30Engine] ${path} unreachable (${getBaseUrl()}): ${reason}. Is main_api:app running on port 8001?`);
+    console.warn(`[rsiPu30Engine] ${path} unreachable (${getBaseUrl()}): ${reason}. Is the signal engine reachable?`);
     return null;
   } finally {
     clearTimeout(timeoutId);

@@ -13,7 +13,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!rf || !rf.present || !rf.feature_importances) {
             const p = document.createElement('p');
             p.className = 'disclaimer';
-            p.textContent = 'Model ağırlıkları alınamadı (backend erişilemiyor veya model eğitilmemiş).';
+            p.textContent = rf && rf.note
+                ? `RF model ağırlıkları: ${rf.note} (ML modelleri yalnızca tam yerel motorda çalışır).`
+                : 'Model ağırlıkları alınamadı (backend erişilemiyor veya model eğitilmemiş).';
             box.appendChild(p);
             return;
         }
@@ -36,6 +38,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     fetch('/api/health').then(r => r.json()).then(h => {
         if (h.status !== 'ok') throw new Error(h.detail || 'Backend erişilemiyor');
+        if (h.deployment === 'vercel-lite') {
+            setStatus('status-backend', 'green', 'Sinyal motoru: Çevrimiçi (RSI/MOSTRSI)');
+            setStatus('status-rf', 'amber', 'RF: bu dağıtımda yok');
+            setStatus('status-lstm', 'amber', 'LSTM: bu dağıtımda yok');
+            setStatus('status-sentiment', 'amber', 'Haber Analizi: bu dağıtımda yok');
+            renderWeights(h.rf_model);
+            return;
+        }
         setStatus('status-backend', 'green', 'Backend: Çevrimiçi');
         setStatus('status-rf', h.rf_model.present ? 'green' : 'red',
             h.rf_model.present ? `RF Modeli: ${h.rf_model.model_version}` : 'RF Modeli: EĞİTİLMEMİŞ');

@@ -7,25 +7,26 @@
 // This is the PRIMARY prediction engine for the app. Like pythonEngine.ts,
 // every function here fails soft (logs a warning, resolves to null) so a
 // down/unstarted engine degrades the UI instead of crashing it.
+import { BACKEND_URL } from "./backend";
 
 // 127.0.0.1, not "localhost" -- uvicorn is started with --host 127.0.0.1,
 // and Node's fetch on Windows can resolve "localhost" to the IPv6 ::1
 // first, which nothing is listening on, causing a fast "fetch failed"
 // instead of falling back to IPv4.
-const DEFAULT_BASE_URL = "http://127.0.0.1:8001";
 const DEFAULT_TIMEOUT_MS = 10000;
 
 function getBaseUrl(): string {
-  return process.env.SNIPER_ENGINE_URL || DEFAULT_BASE_URL;
+  return BACKEND_URL;
 }
 
 async function fetchJson<T>(path: string, init: RequestInit = {}, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T | null> {
-  const url = new URL(path, getBaseUrl());
+  // Plain concatenation: new URL(path, base) would drop a base path such as /api/py.
+  const url = `${getBaseUrl()}${path}`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetch(url.toString(), {
+    const res = await fetch(url, {
       ...init,
       signal: controller.signal,
       cache: "no-store",
@@ -40,7 +41,7 @@ async function fetchJson<T>(path: string, init: RequestInit = {}, timeoutMs = DE
     return (await res.json()) as T;
   } catch (err: any) {
     const reason = err?.name === "AbortError" ? "timed out" : (err?.message || String(err));
-    console.warn(`[sniperEngine] ${path} unreachable (${getBaseUrl()}): ${reason}. Is python_bot's main_api:app running on port 8001?`);
+    console.warn(`[sniperEngine] ${path} unreachable (${getBaseUrl()}): ${reason}. Is the signal engine reachable?`);
     return null;
   } finally {
     clearTimeout(timeoutId);

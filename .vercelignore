@@ -2,9 +2,14 @@ node_modules
 .next
 .venv
 python_bot/.venv
-python_bot/**
+python_bot/models/**
+python_bot/tests/**
+python_bot/static/**
+python_bot/engine/lab/**
 **/*.pt
+**/*.pth
 **/*.onnx
 **/*.bin
+**/*.joblib
 db/**
 *.db

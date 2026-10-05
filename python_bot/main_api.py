@@ -17,8 +17,7 @@ from python_bot.engine.brain.logger import log_prediction
 from python_bot.engine.brain.finbert_sentiment import FinBertSentimentAnalyzer
 from python_bot.engine.brain.meta_learning import MetaLearningCalibrationEngine
 from python_bot.engine.journal.daily_history import get_history, resolve_pending_outcomes
-from python_bot.engine.signals.rsi_pu30 import scan_universe_rsi_pu30, get_symbol_chart_data
-from python_bot.engine.signals.most_rsi import scan_universe_most_rsi, get_most_rsi_chart_data
+from python_bot.signal_api import router as signal_router
 import yfinance as yf
 import numpy as np
 
@@ -133,18 +132,7 @@ def health_check():
         "sentiment_engine": "finbert" if sentiment_analyzer.model_loaded else "lexicon_fallback",
     }
 
-BIST100_SYMBOLS = [
-    "AGHOL", "AKBNK", "AKCNS", "AKFGY", "AKSA", "AKSEN", "ALARK", "ALBRK", "ALFAS", "ARCLK",
-    "ASELS", "ASTOR", "ASUZU", "AYDEM", "BAGFS", "BERA", "BIMAS", "BRISA", "BRSAN", "BUCIM",
-    "CANTE", "CCOLA", "CEMAS", "CIMSA", "CWCME", "DOAS", "DOHOL", "ECILC", "EGEEN", "EKGYO",
-    "ENJSA", "ENKAI", "ERBOS", "EREGL", "EUREN", "EUPWR", "FROTO", "GARAN", "GENIL", "GESAN",
-    "GLYHO", "GUBRF", "GWIND", "HALKB", "HEKTS", "HLGYO", "IPEKE", "ISCTR", "ISDMR", "ISGYO",
-    "ISMEN", "IZMDC", "KARSN", "KCAER", "KCHOL", "KMPUR", "KONTR", "KONYA", "KORDS", "KOZAA",
-    "KOZAL", "KRDMD", "KZBGY", "MAVI", "MGROS", "MIATK", "ODAS", "OTKAR", "OYAKC", "PENTA",
-    "PETKM", "PGSUS", "PSGYO", "QUAGR", "SAHOL", "SASA", "SELEC", "SISE", "SMRTG", "SNGYO",
-    "SOKM", "TABGD", "TAVHL", "TCELL", "THYAO", "TKFEN", "TOASO", "TSKB", "TTKOM", "TTRAK",
-    "TUKAS", "TUPRS", "ULKER", "VAKBN", "VESBE", "VESTL", "YEOTK", "YKBNK", "YYLGD", "ZOREN"
-]
+from python_bot.engine.universe import BIST100_SYMBOLS
 
 # USD Rate Cache
 _USD_RATE = 34.0
@@ -582,86 +570,7 @@ def get_daily_history(days: int = None):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/scan/rsi-pu30")
-def scan_rsi_pu30(interval: str = "4h", signal_type: str = "all"):
-    """
-    RSI PU30 (Dip/Alış) ve NU70 (Tepe/Satış) uyumsuzluk tarayıcısı.
-    Semih Murat Ersoy formülü.
-    interval: "1d", "4h" veya "1h".
-    signal_type: "all", "pu30", "nu70".
-    """
-    if interval not in ("1d", "4h", "1h"):
-        raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
-    if signal_type not in ("all", "pu30", "nu70"):
-        raise HTTPException(status_code=400, detail=f"Unsupported signal_type: {signal_type}")
-    try:
-        result = scan_universe_rsi_pu30(BIST100_SYMBOLS, interval=interval, signal_type=signal_type)
-        # Top-level status mirrors the scan's own success/partial/error, so a
-        # scan where every symbol failed is never reported as "success".
-        return {"status": result["status"], "data": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/scan/rsi-pu30/{symbol}")
-def get_rsi_pu30_symbol_detail(symbol: str, interval: str = "4h"):
-    """Full price+RSI series and PU30 / NU70 divergence pairs. interval: '1d', '4h', or '1h'.
-
-    Response includes:
-      data_status       — FRESH | STALE | INSUFFICIENT_HISTORY | ERROR
-      data_updated_at   — ISO timestamp of last successful fetch
-      history_limit_note — human-readable provider limit description
-    """
-    if interval not in ("1d", "4h", "1h"):
-        raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
-    try:
-        result = get_symbol_chart_data(symbol.upper(), interval=interval)
-        if result is None:
-            raise HTTPException(status_code=404, detail=f"No data for {symbol}")
-        # Ensure data quality fields are always present at top level
-        response_data = dict(result)
-        response_data.setdefault("data_status", "UNKNOWN")
-        response_data.setdefault("data_updated_at", None)
-        response_data.setdefault("history_limit_note", "")
-        return {"status": "success", "data": response_data}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/scan/most-rsi")
-def scan_most_rsi(interval: str = "1h"):
-    """
-    MOSTRSI (14, close, VAR 5, 9) Bull/Bear scanner.
-    Kıvanç Özbilgiç / Anıl Özekşi TradingView formülü.
-    interval: "1h" (varsayılan - TradingView 1s) veya "1d".
-    """
-    if interval not in ("1d", "1h"):
-        raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
-    try:
-        result = scan_universe_most_rsi(BIST100_SYMBOLS, interval=interval)
-        return {"status": result["status"], "data": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/scan/most-rsi/{symbol}")
-def get_most_rsi_detail(symbol: str, interval: str = "1h"):
-    """
-    Tek bir sembol için tam mum ve MOSTRSI (ExMOV, MOST stop seviyeleri) serisi.
-    interval: "1h" veya "1d".
-    """
-    if interval not in ("1d", "1h"):
-        raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
-    try:
-        result = get_most_rsi_chart_data(symbol.upper(), interval=interval)
-        if result is None:
-            raise HTTPException(status_code=404, detail=f"No data for {symbol}")
-        return {"status": "success", "data": result}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+app.include_router(signal_router)
 
 
 if __name__ == "__main__":

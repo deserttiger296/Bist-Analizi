@@ -1,4 +1,10 @@
 {
   "buildCommand": "next build",
-  "outputDirectory": ".next"
+  "outputDirectory": ".next",
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 60,
+      "excludeFiles": "{node_modules/**,.next/**,public/**,docs/**,src/**,scripts/**,db/**,python_bot/static/**,python_bot/tests/**,python_bot/models/**,**/*.pdf}"
+    }
+  }
 }
