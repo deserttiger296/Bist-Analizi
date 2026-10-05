@@ -40,9 +40,11 @@ from python_bot.engine.data.provider import (
 class PU30Config:
     rsi_length: int = 14
     rsi_threshold: float = 30.0
-    rsi2_above_threshold: bool = True  # 2. dipte RSI 30 üzerinde olmalı
+    rsi2_above_threshold: bool = False # Semih Ersoy: 30 altı/üstü şartı şart değil, trend uyumsuzluğu esastır
     require_higher_rsi: bool = True    # 2. dip RSI > 1. dip RSI
     require_lower_price: bool = True   # 2. dip Fiyat < 1. dip Fiyat
+    strict_threshold: bool = False     # True ise 1. dip <= 30 zorunlu; False ise trend uyumsuzluğu (örn. 5dk/15dk/1h/4h)
+    max_rsi_dip: float = 55.0          # Uyumsuzluk aranacak diplerin maksimum RSI tavanı
     pivot_left_bars: int = 5
     pivot_right_bars: int = 2
     min_gap_bars: int = 4
@@ -55,9 +57,11 @@ class PU30Config:
 class NU70Config:
     rsi_length: int = 14
     rsi_threshold: float = 70.0
-    rsi2_below_threshold: bool = True  # 2. tepede RSI 70 altında olmalı
+    rsi2_below_threshold: bool = False # Semih Ersoy: 70 altı/üstü şartı şart değil, tepelerden trend esastır
     require_lower_rsi: bool = True    # 2. tepe RSI < 1. tepe RSI
     require_higher_price: bool = True  # 2. tepe Fiyat > 1. tepe Fiyat
+    strict_threshold: bool = False     # True ise 1. tepe >= 70 zorunlu; False ise trend uyumsuzluğu
+    min_rsi_peak: float = 45.0         # Uyumsuzluk aranacak tepelerin minimum RSI tabanı
     pivot_left_bars: int = 5
     pivot_right_bars: int = 2
     min_gap_bars: int = 4
@@ -226,19 +230,25 @@ def detect_rsi_pu30(
                 if gap < cfg.min_gap_bars:
                     continue
 
-                # 1. Dip: RSI aşırı satım eşiğinde veya altında olmalı
-                if np.isnan(d1["rsi"]) or d1["rsi"] >= (cfg.rsi_threshold + 2.0):
+                # 1. Dip kontrolü
+                if np.isnan(d1["rsi"]):
+                    continue
+                # strict_threshold=True ise 1. dip mutlaka <= 32 olmalı (klasik PU30)
+                # strict_threshold=False ise Semih Ersoy trend uyumsuzluğu: dipler max_rsi_dip (örn 55) altında olmalı
+                if cfg.strict_threshold and d1["rsi"] >= (cfg.rsi_threshold + 2.0):
+                    continue
+                if not cfg.strict_threshold and (d1["rsi"] > cfg.max_rsi_dip or d2["rsi"] > cfg.max_rsi_dip):
                     continue
 
                 # 2. Dip: Fiyat kuralı (cfg.require_lower_price ise daha düşük dip yapmalı)
                 if cfg.require_lower_price and d2["price"] >= d1["price"]:
                     continue
 
-                # 2. Dip RSI kuralı: 1. Dipten yüksek olmalı
+                # 2. Dip RSI kuralı: 1. Dipten yüksek olmalı (Tepelerden / diplerden trend kuralı)
                 if cfg.require_higher_rsi and d2["rsi"] <= d1["rsi"]:
                     continue
 
-                # Semih Ersoy Kuralı: 2. Dip RSI 30 üzerinde olmalı
+                # Opsiyonel: 2. Dip RSI 30 üzerinde olmalı
                 if cfg.rsi2_above_threshold and d2["rsi"] < cfg.rsi_threshold:
                     continue
 
@@ -353,19 +363,25 @@ def detect_rsi_nu70(
                 if gap < cfg.min_gap_bars:
                     continue
 
-                # 1. Tepe: RSI aşırı alım eşiğinde veya üstünde olmalı
-                if np.isnan(t1["rsi"]) or t1["rsi"] < (cfg.rsi_threshold - 2.0):
+                # 1. Tepe kontrolü
+                if np.isnan(t1["rsi"]):
+                    continue
+                # strict_threshold=True ise 1. tepe mutlaka >= 68 olmalı (klasik NU70)
+                # strict_threshold=False ise Semih Ersoy trend uyumsuzluğu: tepeler min_rsi_peak (örn 45) üstünde olmalı
+                if cfg.strict_threshold and t1["rsi"] < (cfg.rsi_threshold - 2.0):
+                    continue
+                if not cfg.strict_threshold and (t1["rsi"] < cfg.min_rsi_peak or t2["rsi"] < cfg.min_rsi_peak):
                     continue
 
-                # 2. Tepe: Fiyat daha yüksek zirve yapmalı
+                # 2. Tepe: Fiyat daha yüksek zirve yapmalı (Fiyat tepeleri yükseliyor)
                 if cfg.require_higher_price and t2["price"] <= t1["price"]:
                     continue
 
-                # 2. Tepe: RSI daha düşük tepe yapmalı
+                # 2. Tepe: RSI daha düşük tepe yapmalı (RSI tepeleri düşüyor - Semih Ersoy kuralı)
                 if cfg.require_lower_rsi and t2["rsi"] >= t1["rsi"]:
                     continue
 
-                # Semih Ersoy Kuralı: 2. Tepe RSI 70 altında kalmalı
+                # Opsiyonel: 2. Tepe RSI 70 altında kalmalı
                 if cfg.rsi2_below_threshold and t2["rsi"] > (cfg.rsi_threshold + 2.0):
                     continue
 

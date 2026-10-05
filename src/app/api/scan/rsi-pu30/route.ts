@@ -137,6 +137,27 @@ const FALLBACK_SIGNALS = [
     dip1: { price: 298.0, rsi: 72.8, date: "2026-09-30 12:00" },
     dip2: { price: 304.5, rsi: 64.2, date: "2026-10-01 16:00" },
     explanation: "Tepede negatif uyumsuzluk sonrası kâr satışları hızlandı."
+  },
+  {
+    symbol: "F_AKBNK",
+    type: "PU30",
+    trend: "BULL",
+    label: "🟢 UYUMSUZLUK (VİOP 5dk / Dip)",
+    signal_date: "2026-10-05 10:30",
+    signal_price: 69.15,
+    last_close: 70.91,
+    bars_since_confirm: 2,
+    bars_since_signal: 2,
+    rsi: 65.50,
+    bounce_pct: 2.5,
+    confluence: "SCALP_1H",
+    confluence_badge: "⚡ 5dk VİOP TREND UYUMSUZLUĞU",
+    strategy_action: "Semih Ersoy Kuralı: 30 altı/üstü şartı aranmaksızın fiyat düşerken RSI yükselen dipler yaptı (Bas bas bağırdı).",
+    dip1: { price: 69.40, rsi: 32.5, date: "2026-10-02 15:00" },
+    dip2: { price: 68.85, rsi: 48.2, date: "2026-10-05 09:45" },
+    exmov: 70.5,
+    most: 69.8,
+    explanation: "Semih Murat Ersoy: Fiyat düşerken RSI yükselen dipler yaptı. 30 altı/üstü kuralına takılmadan trend çizgisi ile tespit edildi."
   }
 ];
 

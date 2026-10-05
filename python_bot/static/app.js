@@ -545,10 +545,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     const markerPos = isNU ? 'aboveBar' : 'belowBar';
                     const markerText = isNU ? `NU70 Satış (${fmtTR(sig.dip2.price)} ₺)` : `PU30 Alış (${fmtTR(sig.dip2.price)} ₺)`;
 
-                    // 1. Fiyat Uyumsuzluk Çizgisi (Fotoğraftaki Kalın Eğik Çizgi)
+                    // 1. Fiyat Uyumsuzluk Trend Çizgisi (Semih Ersoy TradingView Mavi Trend Çizgisi)
+                    // Fiyatta 1. Dip/Tepe ile 2. Dip/Tepe arasına çekilen net doğrusal trend
+                    const trendColor = '#3b82f6'; // Semih Ersoy'un TradingView Akbank grafiğindeki canlı mavi trend rengi
                     rsiPu30PriceConnector = rsiPu30PriceChartInst.addSeries(LightweightCharts.LineSeries, {
-                        color: lineColor, lineWidth: 3, lineStyle: LightweightCharts.LineStyle.Solid,
-                        crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
+                        color: trendColor, lineWidth: 3, lineStyle: LightweightCharts.LineStyle.Solid,
+                        crosshairMarkerVisible: true, lastValueVisible: false, priceLineVisible: false,
                     });
                     rsiPu30PriceConnector.setData([{ time: d1Time, value: sig.dip1.price }, { time: d2Time, value: sig.dip2.price }]);
 
@@ -634,15 +636,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                     }
 
-                    // 5. RSI Uyumsuzluk Çizgisi (Fotoğraftaki Kırmızı/Mavi Eğik Çizgi)
+                    // 5. RSI Uyumsuzluk Trend Çizgisi (Semih Ersoy TradingView Mavi Trend Çizgisi)
+                    // RSI penceresinde 1. Dip/Tepe RSI ile 2. Dip/Tepe RSI arasına çekilen net doğrusal trend
                     rsiPu30RsiConnector = rsiPu30RsiChartInst.addSeries(LightweightCharts.LineSeries, {
-                        color: lineColor, lineWidth: 3, lineStyle: LightweightCharts.LineStyle.Solid,
-                        crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
+                        color: trendColor, lineWidth: 3, lineStyle: LightweightCharts.LineStyle.Solid,
+                        crosshairMarkerVisible: true, lastValueVisible: false, priceLineVisible: false,
                     });
                     rsiPu30RsiConnector.setData([{ time: d1Time, value: sig.dip1.rsi }, { time: d2Time, value: sig.dip2.rsi }]);
                     rsiPu30RsiMarkers.setMarkers([
                         { time: d1Time, position: isNU ? 'above' : 'below', color: '#a855f7', shape: 'circle', text: `RSI ${fmtTR(sig.dip1.rsi, 1)}` },
-                        { time: d2Time, position: isNU ? 'above' : 'below', color: lineColor, shape: 'circle', text: `RSI ${fmtTR(sig.dip2.rsi, 1)}` },
+                        { time: d2Time, position: isNU ? 'above' : 'below', color: trendColor, shape: 'circle', text: `RSI ${fmtTR(sig.dip2.rsi, 1)}` },
                     ]);
                 }
             } else if (detail.last_bull) {

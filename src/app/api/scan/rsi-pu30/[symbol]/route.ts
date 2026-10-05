@@ -33,10 +33,10 @@ export async function GET(
   }
 
   // Generate fallback bars
-  const stepSec = interval === "1d" ? 86400 : (interval === "4h" ? 14400 : 3600);
+  const stepSec = interval === "1d" ? 86400 : (interval === "4h" ? 14400 : (interval === "5m" ? 300 : 3600));
   const now = Math.floor(Date.now() / 1000);
   const bars = [];
-  let basePrice = sym === "ASELS" ? 362.0 : (sym === "VAKBN" ? 33.0 : 60.0);
+  let basePrice = sym === "ASELS" ? 362.0 : (sym === "VAKBN" ? 33.0 : (sym === "F_AKBNK" ? 70.0 : 60.0));
   
   for (let i = 50; i >= 0; i--) {
     const time = now - i * stepSec;
@@ -46,8 +46,6 @@ export async function GET(
     const close = basePrice + (Math.random() * 0.4 - 0.2);
     const high = Math.max(open, close) + 0.4;
     const low = Math.min(open, close) - 0.4;
-    const rsi = 50 + Math.sin(i * 0.25) * 25;
-    const rsiVal = parseFloat(Math.min(95, Math.max(10, rsi)).toFixed(1));
     bars.push({
       time,
       date: new Date(time * 1000).toISOString().replace("T", " ").substring(0, 16),
@@ -55,9 +53,36 @@ export async function GET(
       high: parseFloat(high.toFixed(2)),
       low: parseFloat(low.toFixed(2)),
       close: parseFloat(close.toFixed(2)),
-      rsi: rsiVal,
-      rsi_sma: parseFloat((rsiVal * 0.9 + 5).toFixed(1)),
+      rsi: 50.0,
+      rsi_sma: 50.0,
     });
+  }
+
+  // Real Wilder RSI calculation on synthetic closes
+  const period = 14;
+  const closes = bars.map(b => b.close);
+  let avgGain = 0;
+  let avgLoss = 0;
+  for (let i = 1; i <= period && i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    if (diff > 0) avgGain += diff;
+    else avgLoss += Math.abs(diff);
+  }
+  avgGain /= period;
+  avgLoss /= period;
+
+  for (let i = period; i < bars.length; i++) {
+    if (i > period) {
+      const diff = closes[i] - closes[i - 1];
+      const gain = diff > 0 ? diff : 0;
+      const loss = diff < 0 ? Math.abs(diff) : 0;
+      avgGain = (avgGain * (period - 1) + gain) / period;
+      avgLoss = (avgLoss * (period - 1) + loss) / period;
+    }
+    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    const rsiVal = avgLoss === 0 ? 100 : parseFloat((100 - (100 / (1 + rs))).toFixed(1));
+    bars[i].rsi = rsiVal;
+    bars[i].rsi_sma = parseFloat((rsiVal * 0.95 + 2.5).toFixed(1));
   }
 
   const isNu = sym === "ASELS" || sym === "THYAO";
@@ -75,6 +100,18 @@ export async function GET(
   const puPeak = bars[midIdx].high + 1.5;
   const puDiff = puPeak - Math.min(puDip1, puDip2);
 
+  const p1Rsi = bars[p1Idx].rsi || 50;
+  const p2Rsi = bars[p2Idx].rsi || 50;
+
+  // Ensure divergence condition matches between price and RSI
+  let tepe1Rsi = isNu ? Math.max(p1Rsi, 65.0) : p1Rsi;
+  let tepe2Rsi = isNu ? Math.min(tepe1Rsi - 6.0, 62.0) : p2Rsi;
+  let dip1Rsi = !isNu ? Math.min(p1Rsi, 35.0) : p1Rsi;
+  let dip2Rsi = !isNu ? Math.max(dip1Rsi + 8.0, 45.0) : p2Rsi;
+
+  bars[p1Idx].rsi = isNu ? tepe1Rsi : dip1Rsi;
+  bars[p2Idx].rsi = isNu ? tepe2Rsi : dip2Rsi;
+
   const signal = isNu
     ? {
         type: "NU70",
@@ -84,10 +121,10 @@ export async function GET(
         pullback_pct: 4.5,
         bounce_pct: -4.5,
         is_active: true,
-        tepe1: { price: nuPeak1, rsi: 76.2, date: bars[p1Idx].date, time: bars[p1Idx].time },
-        tepe2: { price: nuPeak2, rsi: 66.8, date: bars[p2Idx].date, time: bars[p2Idx].time },
-        dip1: { price: nuPeak1, rsi: 76.2, date: bars[p1Idx].date, time: bars[p1Idx].time },
-        dip2: { price: nuPeak2, rsi: 66.8, date: bars[p2Idx].date, time: bars[p2Idx].time },
+        tepe1: { price: nuPeak1, rsi: tepe1Rsi, date: bars[p1Idx].date, time: bars[p1Idx].time },
+        tepe2: { price: nuPeak2, rsi: tepe2Rsi, date: bars[p2Idx].date, time: bars[p2Idx].time },
+        dip1: { price: nuPeak1, rsi: tepe1Rsi, date: bars[p1Idx].date, time: bars[p1Idx].time },
+        dip2: { price: nuPeak2, rsi: tepe2Rsi, date: bars[p2Idx].date, time: bars[p2Idx].time },
         guven_kiran_dip: { price: parseFloat(nuDip.toFixed(2)), date: bars[midIdx].date, time: bars[midIdx].time },
         fibonacci_levels: [
           { label: "Fibo 1.618 (Düşüş Hedefi)", level: 1.618, price: parseFloat((Math.max(nuPeak1, nuPeak2) - 1.618 * nuDiff).toFixed(2)), color: "#f43f5e" },
@@ -100,12 +137,12 @@ export async function GET(
     : {
         type: "PU30",
         trend: "BULL",
-        label: "🟢 PU30 (Dip / Alış)",
+        label: sym === "F_AKBNK" ? "🟢 UYUMSUZLUK (VİOP 5dk / Dip)" : "🟢 PU30 (Dip / Alış)",
         bars_since_confirm: 1,
         bounce_pct: 3.5,
         is_active: true,
-        dip1: { price: puDip1, rsi: 23.4, date: bars[p1Idx].date, time: bars[p1Idx].time },
-        dip2: { price: puDip2, rsi: 34.8, date: bars[p2Idx].date, time: bars[p2Idx].time },
+        dip1: { price: puDip1, rsi: dip1Rsi, date: bars[p1Idx].date, time: bars[p1Idx].time },
+        dip2: { price: puDip2, rsi: dip2Rsi, date: bars[p2Idx].date, time: bars[p2Idx].time },
         guven_tazeleyen_tepe: { price: parseFloat(puPeak.toFixed(2)), date: bars[midIdx].date, time: bars[midIdx].time },
         fibonacci_levels: [
           { label: "Fibo 1.618 (Ana Hedef)", level: 1.618, price: parseFloat((Math.min(puDip1, puDip2) + 1.618 * puDiff).toFixed(2)), color: "#10b981" },
