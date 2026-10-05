@@ -1,3 +1,5 @@
+> **Doğrulama durumu (2026-10-05): DOĞRULANMAMIŞ / TARİHSEL.** Bu rapor, eğitim-test sızıntısı (rastgele bölme, örnek-içi değerlendirme) ve demo fallback verisi giderilmeden önce üretildi. Buradaki sayılar karar için kullanılmamalı. Güncel durum: [SIGNAL_AND_VALIDATION_STATUS.md](SIGNAL_AND_VALIDATION_STATUS.md).
+
 # 🔬 Rigorous Statistical Audit & Backtest Report (ML Edition)
 
 This audit evaluates the out-of-sample performance and statistical significance of the newly integrated **RandomForest Classifier** and **HMM Regime Detection** models for the BIST AI Analyst, effectively replacing the deprecated rule-based heuristics (CMF, RSI cutoffs).

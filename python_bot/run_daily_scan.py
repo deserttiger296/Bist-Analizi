@@ -21,8 +21,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, ".")
 
-from main_api import BIST100_SYMBOLS, predict_rf, _process_prediction
-from engine.journal.daily_history import log_daily_scan, resolve_pending_outcomes
+from python_bot.main_api import BIST100_SYMBOLS, predict_rf, _process_prediction
+from python_bot.engine.journal.daily_history import log_daily_scan, resolve_pending_outcomes
 
 SCAN_MAX_WORKERS = 10
 

@@ -72,6 +72,9 @@ body {
 .status-item { margin-bottom: 0.5rem; display: flex; align-items: center;}
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 8px; }
 .dot.green { background: var(--neon-green); box-shadow: 0 0 8px var(--neon-green); }
+.dot.red { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
+.dot.amber { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+.dot:not(.green):not(.red):not(.amber) { background: #64748b; }
 
 /* MAIN CONTENT */
 .main-content {

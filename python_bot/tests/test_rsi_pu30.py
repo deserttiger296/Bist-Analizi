@@ -122,6 +122,38 @@ def _make_ohlcv_df_for_validate(n=30, interval="1h"):
 
 
 # ===========================================================================
+# 0. Config Varsayılanları -- Semih Hoca Referans Uygulaması ile Hizalama
+# ===========================================================================
+
+class TestConfigDefaultsMatchReference:
+    """
+    PU30Config/NU70Config varsayılanları, kullanıcının referans uygulamasıyla
+    (rsi_uyumsuzluk.py / rsi_uyumsuzluk.pine -- "Semih Hoca kuralları") birebir
+    aynı olmalı: min_gap=8, min_tepki=%3, sinyal_omru=5, max_rsi_dip=55,
+    min_rsi_tepe=45. Bu test, varsayılanların sessizce referanstan sapmasını
+    (örn. daha gevşek bir değere geri dönmesini) yakalar.
+    """
+
+    def test_pu30_defaults(self):
+        cfg = PU30Config()
+        assert cfg.min_gap_bars == 8
+        assert cfg.min_bounce_pct == 3.0
+        assert cfg.signal_lifetime_bars == 5
+        assert cfg.max_rsi_dip == 55.0
+        assert cfg.pivot_left_bars == 5
+        assert cfg.pivot_right_bars == 2
+
+    def test_nu70_defaults(self):
+        cfg = NU70Config()
+        assert cfg.min_gap_bars == 8
+        assert cfg.min_pullback_pct == 3.0
+        assert cfg.signal_lifetime_bars == 5
+        assert cfg.min_rsi_peak == 45.0
+        assert cfg.pivot_left_bars == 5
+        assert cfg.pivot_right_bars == 2
+
+
+# ===========================================================================
 # 1. wilder_rsi Testleri
 # ===========================================================================
 
@@ -386,6 +418,36 @@ class TestResampleBist4h:
             for d in dates:
                 assert d.weekday() < 5, f"Hafta sonu barı bulundu: {d} (weekday={d.weekday()})"
 
+    def _make_yahoo_style_day(self):
+        """yfinance'in gerçek BIST saatlik damgaları: 09:30, 10:30, ..., 17:30 (9 bar).
+        09:30 barı 10:00 açılışını içerir; open değeri 50.0 olarak işaretli."""
+        rows = []
+        base = datetime(2025, 1, 6, tzinfo=ISTANBUL_TZ)  # Pazartesi
+        for i, hour in enumerate(range(9, 18)):
+            ts = base.replace(hour=hour, minute=30)
+            rows.append({
+                "date": ts, "open": 50.0 if hour == 9 else 100.0 + i,
+                "high": 101.0 + i, "low": 49.0 if hour == 9 else 99.0 + i,
+                "close": 100.5 + i, "volume": 100.0, "is_closed": True,
+            })
+        return pd.DataFrame(rows)
+
+    def test_opening_0930_bar_is_part_of_morning_bar(self):
+        """09:30 barı (seans açılışı) atılmamalı; sabah mumunun Open'ı ondan gelmeli."""
+        df4h = resample_bist_4h(self._make_yahoo_style_day())
+        assert len(df4h) == 2
+        date_col = "date" if "date" in df4h.columns else df4h.columns[0]
+        morning = df4h.sort_values(date_col).iloc[0]
+        assert morning["Open"] == 50.0, "Sabah 4s mumu gerçek açılış (09:30 barı) Open'ını içermeli"
+        assert morning["Low"] == 49.0
+        assert morning["Volume"] == 500.0  # 09:30..13:30 = 5 saatlik bar
+
+    def test_afternoon_bar_labelled_at_1430(self):
+        df4h = resample_bist_4h(self._make_yahoo_style_day())
+        date_col = "date" if "date" in df4h.columns else df4h.columns[0]
+        labels = sorted(pd.Timestamp(t).strftime("%H:%M") for t in df4h[date_col])
+        assert labels == ["10:00", "14:30"]
+
     def test_empty_input_returns_empty(self):
         """Boş giriş → boş çıkış."""
         df = pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume", "is_closed"])
@@ -445,6 +507,15 @@ class TestIsBarClosed:
         check_now = ref_date.replace(hour=12, minute=0)
         result = is_bar_closed(bar_time, "4h", now_ist=check_now)
         assert result is False, f"10:00 mum 12:00'de açık olmalı, sonuç: {result}"
+
+    def test_4h_morning_bar_still_open_until_1430(self):
+        """Sabah 4s mumunun son bileşeni 13:30 saatlik barıdır (14:30'da kapanır).
+        14:10'da mum hâlâ oluşuyor sayılmalı; aksi halde eksik mum teyit üretip
+        14:30'da değişebilir (repaint)."""
+        ref_date = datetime(2025, 1, 6, tzinfo=ISTANBUL_TZ)
+        bar_time = ref_date.replace(hour=10, minute=0)
+        assert is_bar_closed(bar_time, "4h", now_ist=ref_date.replace(hour=14, minute=10)) is False
+        assert is_bar_closed(bar_time, "4h", now_ist=ref_date.replace(hour=14, minute=30)) is True
 
     def test_1h_bar_recent_is_open(self):
         """Açılan 1h mum, 10 dakika sonra henüz kapanmamış olmalı."""
@@ -691,18 +762,16 @@ class TestDetectRsiPU30:
             assert field in signal, f"Zorunlu alan eksik: {field}"
 
     def test_pu30_dip2_rsi_above_30(self):
-        """PU30 sinyalinde 2. dip RSI değeri 30 üzerinde olmalı."""
+        """rsi2_above_threshold=True iken 2. dip RSI'ı 30 altındaysa sinyal ÜRETİLMEMELİ.
+        Bu fixture'da 2. dip RSI ~12: eşiksiz modda sinyal var, eşikli modda olmamalı."""
         df = self._build_pu30_df(n_pad=20)
-        cfg = PU30Config(
-            pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100,
-            rsi2_above_threshold=True,
-        )
-        signal = detect_rsi_pu30(df, cfg=cfg, ignore_lifetime=True, interval="1h")
-        if signal is None:
-            pytest.skip("Bu veri setiyle PU30 tespit edilemedi")
-        assert signal["dip2"]["rsi"] >= 30.0, (
-            f"2. dip RSI ({signal['dip2']['rsi']:.1f}) 30 üzerinde olmalı"
-        )
+        base = dict(pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100,
+                    min_bounce_pct=0.0, max_rsi_dip=1000.0)
+        loose = detect_rsi_pu30(df, cfg=PU30Config(**base), ignore_lifetime=True, interval="1h")
+        assert loose is not None and loose["dip2"]["rsi"] < 30.0, "Fixture ön koşulu: eşiksiz modda 2. dip RSI < 30"
+        strict = detect_rsi_pu30(df, cfg=PU30Config(**base, rsi2_above_threshold=True),
+                                 ignore_lifetime=True, interval="1h")
+        assert strict is None, "2. dip RSI 30 altındayken eşikli mod sinyal üretmemeli"
 
     def test_pu30_dip2_price_lower_than_dip1(self):
         """PU30 sinyalinde 2. dip fiyatı 1. dipten düşük olmalı."""
@@ -757,6 +826,36 @@ class TestDetectRsiPU30:
             assert signal_open["confirm_index"] != confirm_index, (
                 "Açık teyit barıyla aynı confirm_index'e sahip sinyal üretildi → look-ahead bias!"
             )
+
+    def test_pu30_max_rsi_dip_bounds_only_first_dip(self):
+        """
+        max_rsi_dip (esnek mod tavanı) yalnızca 1. dibe uygulanmalı, 2. dibe değil
+        -- referans uygulama (rsi_uyumsuzluk.py/.pine) ile birebir aynı kural.
+
+        Bu fixture'da dip1 RSI=0.0, dip2 RSI~12.03 (require_higher_rsi zaten
+        dip2 > dip1 şartını sağlıyor). max_rsi_dip=6.0 ile dip1 geçer (0 <= 6)
+        ama dip2 geçmez (12.03 > 6); kural yalnızca dip1'i sınırlıyorsa sinyal
+        YİNE bulunmalı. Eğer kod yanlışlıkla ikisini de sınırlarsa (eski hata),
+        bu sinyali reddeder ve test başarısız olur.
+        """
+        df = self._build_pu30_df(n_pad=20)
+        cfg = PU30Config(
+            pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100,
+            strict_threshold=False, max_rsi_dip=6.0,
+        )
+        signal = detect_rsi_pu30(df, cfg=cfg, ignore_lifetime=True, interval="1h")
+        assert signal is not None, (
+            "max_rsi_dip yalnızca 1. dibi sınırlamalı; 2. dip bu tavanı aşsa da sinyal üretilmeli"
+        )
+        assert signal["dip1"]["rsi"] <= 6.0
+        assert signal["dip2"]["rsi"] > 6.0
+
+        # Tavanı 1. dibin de altına çekince (dip1 rsi=0.0 > -1.0) sinyal düşmeli.
+        cfg_tight = PU30Config(
+            pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100,
+            strict_threshold=False, max_rsi_dip=-1.0,
+        )
+        assert detect_rsi_pu30(df, cfg=cfg_tight, ignore_lifetime=True, interval="1h") is None
 
     def test_pu30_signal_lifetime_filter(self):
         """signal_lifetime_bars aşıldığında eski sinyal filtrelenir (ignore_lifetime=False)."""
@@ -915,6 +1014,34 @@ class TestDetectRsiNU70:
         assert signal["confirm_time"] >= signal["pivot_time"], (
             "confirm_time pivot_time'dan küçük olamaz"
         )
+
+    def test_nu70_min_rsi_peak_bounds_only_first_peak(self):
+        """
+        min_rsi_peak (esnek mod tabanı) yalnızca 1. tepeye uygulanmalı, 2. tepeye
+        değil -- PU30 tarafındaki ayna kural (bkz. test_pu30_max_rsi_dip_bounds_only_first_dip).
+
+        Fixture'da tepe1 RSI=100.0, tepe2 RSI~89.9. min_rsi_peak=95.0 ile tepe1
+        geçer (100 >= 95) ama tepe2 geçmez (89.9 < 95); kural yalnızca tepe1'i
+        sınırlıyorsa sinyal YİNE bulunmalı.
+        """
+        df = self._build_nu70_df(n_pad=20)
+        cfg = NU70Config(
+            pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100,
+            strict_threshold=False, min_rsi_peak=95.0,
+        )
+        signal = detect_rsi_nu70(df, cfg=cfg, ignore_lifetime=True, interval="1h")
+        assert signal is not None, (
+            "min_rsi_peak yalnızca 1. tepeyi sınırlamalı; 2. tepe bu tabanın altında kalsa da sinyal üretilmeli"
+        )
+        assert signal["tepe1"]["rsi"] >= 95.0
+        assert signal["tepe2"]["rsi"] < 95.0
+
+        # Tabanı 1. tepenin de üstüne çekince (tepe1 rsi=100.0 < 101.0) sinyal düşmeli.
+        cfg_tight = NU70Config(
+            pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100,
+            strict_threshold=False, min_rsi_peak=101.0,
+        )
+        assert detect_rsi_nu70(df, cfg=cfg_tight, ignore_lifetime=True, interval="1h") is None
 
 
 # ===========================================================================
@@ -1075,3 +1202,52 @@ class TestEdgeCases:
             f"Yalnızca hafta sonu barından boş çıktı bekleniyor, alınan {len(df4h)} satır"
         )
 
+
+# ===========================================================================
+# Semih Hoca kuralları (5 Ekim 2026) — regresyon testleri
+# ===========================================================================
+
+def _semih_series():
+    """Sert düşüş -> Dip 1 -> %7 tepki -> yavaş düşüş (Dip 1 altına iner) -> daha derin Dip 2 -> dönüş."""
+    rng = np.random.default_rng(1)
+    c = np.concatenate([
+        np.full(20, 100.0), np.linspace(100, 80, 15), np.linspace(80, 86, 8),
+        np.linspace(86, 78.5, 20), np.linspace(78.5, 82, 4),
+    ]) + rng.normal(0, 0.15, 67)
+    return _make_df(c, lows=c - 0.3, highs=c + 0.3, interval="1h")
+
+
+class TestSemihKurallari:
+    def test_dip2_oncesi_dip1_altina_inen_klasik_uyumsuzluk_yakalanir(self):
+        """Eski kural (aradaki mumlar Dip 1'in altına inmemeli) bu yapıyı reddediyordu."""
+        sig = detect_rsi_pu30(_semih_series(), PU30Config(max_rsi_dip=55.0), ignore_lifetime=True, interval="1h")
+        assert sig is not None
+        assert sig["dip2"]["price"] < sig["dip1"]["price"]
+        assert sig["dip2"]["rsi"] > sig["dip1"]["rsi"]
+
+    def test_strict_modda_dip2_rsi_30_alti_reddedilir(self):
+        df = _semih_series()
+        flex = detect_rsi_pu30(df, PU30Config(), ignore_lifetime=True, interval="1h")
+        strict = detect_rsi_pu30(df, PU30Config(strict_threshold=True), ignore_lifetime=True, interval="1h")
+        assert flex is not None and flex["dip2"]["rsi"] < 30
+        assert strict is None
+
+    def test_nu70_ayna_ve_guven_kiran_dip(self):
+        df = _semih_series()
+        m = df.copy()
+        m["high"], m["low"] = 200 - df["low"], 200 - df["high"]
+        m["close"], m["open"] = 200 - df["close"], 200 - df["open"]
+        sig = detect_rsi_nu70(m, NU70Config(), ignore_lifetime=True, interval="1h")
+        assert sig is not None
+        assert sig["tepe2"]["price"] > sig["tepe1"]["price"]
+        assert sig["tepe2"]["rsi"] < sig["tepe1"]["rsi"]
+        assert sig["guven_kiran_dip"]["kirildi"] is False
+        assert sig["tetiklendi"] is False
+
+    def test_pu_guven_tazeleyen_tepe_kirilinca_tetiklenir(self):
+        df = _semih_series()
+        ext = _make_df(np.r_[df["close"].to_numpy(), 90.0, 91.0], interval="1h")
+        ext["low"] = np.r_[df["low"].to_numpy(), 89.7, 90.7]
+        ext["high"] = np.r_[df["high"].to_numpy(), 90.3, 91.3]
+        sig = detect_rsi_pu30(ext, PU30Config(), ignore_lifetime=True, interval="1h")
+        assert sig is not None and sig["tetiklendi"] is True

@@ -40,7 +40,7 @@ function getHistoricalTtl(barType: 'hourly' | 'daily' | 'weekly' | 'monthly'): n
 }
 
 // Global USDTRY fetcher
-let cachedUsdTry = 45.0; // fallback
+let cachedUsdTry = Number.NaN; // unavailable until fetched
 let lastUsdTryFetch = 0;
 
 async function getUsdTryRate(): Promise<number> {
@@ -261,16 +261,7 @@ export async function getLiveBistHistoricalBars(symbol: string, barType: 'hourly
 }
 
 export function alignAndConvertBars(assetBars: BistBar[], usdTryBars: BistBar[]): BistBar[] {
-  if (!usdTryBars || usdTryBars.length === 0) {
-    const fallbackRate = cachedUsdTry;
-    return assetBars.map(b => ({
-      ...b,
-      open: b.open / fallbackRate,
-      high: b.high / fallbackRate,
-      low: b.low / fallbackRate,
-      close: b.close / fallbackRate,
-    }));
-  }
+  if (!usdTryBars || usdTryBars.length === 0) throw new Error("Historical USDTRY data unavailable");
 
   // Sort usdTryBars by date ascending
   const sortedRates = [...usdTryBars].sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -494,7 +485,9 @@ export async function fetchBistLiveQuote(
     const [fundamentals, akdData, sentimentData, sniperPrediction] = await Promise.all([
       fetchFundamentalMetrics(symbol).catch(() => null),
       fetchAkdData(symbol).catch(() => null),
-      fetchSocialSentiment(symbol).catch(() => null),
+      // Bulk scans (bulkTick set) skip news sentiment: it costs one paid LLM call
+      // per symbol per scan and nothing in the scan scoring/UI consumes it.
+      bulkTick ? Promise.resolve(null) : fetchSocialSentiment(symbol).catch(() => null),
       includeSniper ? getSniperPrediction(symbol).catch(() => null) : Promise.resolve(null)
     ]);
 

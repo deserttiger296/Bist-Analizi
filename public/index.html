@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BIST Quantum Sniper | Algorithmic Trading Desk</title>
-    <link rel="stylesheet" href="/style.css">
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=20261005">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <!-- TradingView Lightweight Charts -->
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
@@ -28,9 +27,10 @@
         
         <div class="system-status">
             <h3>Terminal Status</h3>
-            <div class="status-item"><span class="dot green"></span> YFinance API: Online</div>
-            <div class="status-item"><span class="dot green"></span> ML Engine: Active</div>
-            <div class="status-item"><span class="dot green"></span> HMM Regime: Synced</div>
+            <div class="status-item" id="status-backend"><span class="dot"></span> Backend: kontrol ediliyor…</div>
+            <div class="status-item" id="status-rf"><span class="dot"></span> RF Modeli: —</div>
+            <div class="status-item" id="status-lstm"><span class="dot"></span> LSTM: —</div>
+            <div class="status-item" id="status-sentiment"><span class="dot"></span> Haber Analizi: —</div>
         </div>
     </nav>
 
@@ -62,7 +62,7 @@
             <div id="radarResults" class="hidden">
                 <div class="section-header">
                     <h2>🔥 GÜNÜN SNIPER FIRSATLARI (BIST100)</h2>
-                    <p>Yapay Zeka tarafından %60 Güven Skoru barajını geçen ve AL onayı alan kağıtlar.</p>
+                    <p>RF skoru %60 eşiğini geçen hisseler. GÖLGE MOD: modelin katkısı geçmiş testte doğrulanmadı; bu liste AL kararı değildir.</p>
                 </div>
                 <div id="radarGrid" class="cards-grid">
                     <!-- JS Injects Here -->
@@ -129,35 +129,11 @@
         <section id="weights" class="view-section">
             <div class="section-header">
                 <h2>⚖️ Yapay Zeka Karar Ağırlıkları (Feature Importances)</h2>
-                <p>Yapay Zekanın "AL" kararı verirken arka planda hangi göstergelere ne kadar güvendiğinin matematiksel (RandomForest) kanıtı.</p>
+                <p>Diskteki RF modelinin gerçek <code>feature_importances_</code> değerleri. GÖLGE MOD: modelin karar katkısı doğrulanmadı.</p>
             </div>
-            
-            <div class="weights-chart">
-                <div class="weight-bar-container">
-                    <div class="weight-label"><span>ATR (Volatilite)</span> <span>%25.41</span></div>
-                    <div class="weight-bar"><div class="fill" style="width: 25.41%; background: #00ffaa;"></div></div>
-                </div>
-                <div class="weight-bar-container">
-                    <div class="weight-label"><span>SMA50 (Orta Vade Trend)</span> <span>%20.96</span></div>
-                    <div class="weight-bar"><div class="fill" style="width: 20.96%; background: #00cc88;"></div></div>
-                </div>
-                <div class="weight-bar-container">
-                    <div class="weight-label"><span>MACD (Momentum)</span> <span>%17.25</span></div>
-                    <div class="weight-bar"><div class="fill" style="width: 17.25%; background: #009966;"></div></div>
-                </div>
-                <div class="weight-bar-container">
-                    <div class="weight-label"><span>RSI (Göreceli Güç)</span> <span>%14.24</span></div>
-                    <div class="weight-bar"><div class="fill" style="width: 14.24%; background: #007744;"></div></div>
-                </div>
-                <div class="weight-bar-container">
-                    <div class="weight-label"><span>EMA9 (Kısa Vade Trend)</span> <span>%11.98</span></div>
-                    <div class="weight-bar"><div class="fill" style="width: 11.98%; background: #005533;"></div></div>
-                </div>
-                <div class="weight-bar-container">
-                    <div class="weight-label"><span>Hacim (Volume Ratio)</span> <span>%10.15</span></div>
-                    <div class="weight-bar"><div class="fill" style="width: 10.15%; background: #003322;"></div></div>
-                </div>
-                <p class="disclaimer">* Sonuçlar THYAO hissesinin geçmiş 5 yıllık verisiyle hesaplanan Model Feature Importance çıktısıdır.</p>
+
+            <div class="weights-chart" id="weights-chart">
+                <p class="disclaimer">Model bilgisi yükleniyor…</p>
             </div>
         </section>
 
@@ -235,7 +211,6 @@
         </div>
     </div>
 
-    <script src="/app.js"></script>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20261005"></script>
 </body>
 </html>

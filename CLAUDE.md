@@ -15,6 +15,17 @@ Nicel (quant) motor artık `python_bot/` altında konsolide edilmiş durumda (es
 * API anahtarları ve gizli bilgiler asla kod içerisine gömülmemeli, `.env` / `.env.local` dosyasından okunmalıdır.
 
 ## Test ve Doğrulama Komutları
-* Motoru başlatmak için: `python_bot/.venv/Scripts/python.exe -m uvicorn main:app --port 8000` (python_bot/ içinden).
-* Eşbütünleşme testi: `GET /api/cointegration?asset_a=GARAN&asset_b=AKBNK` (veya Next.js üzerinden `/api/bist/cointegration`).
-* Rejim tespiti: `GET /api/regime?symbol=XU100.IS`.
+* `python_bot/` altındaki tüm modüller `python_bot.engine...` mutlak importu kullanır; bu yüzden
+  her komut **repo kökünden** (`.venv/Scripts/python.exe`, `python_bot/` değil kökteki `.venv`)
+  çalıştırılmalıdır. `cd python_bot && uvicorn main_api:app` artık ÇALIŞMAZ.
+* Sinyal motorunu (RF/LSTM/sentiment/RSI PU30/NU70 — frontend'in fiilen çağırdığı backend)
+  başlatmak için: `.venv/Scripts/python.exe -m uvicorn python_bot.main_api:app --port 8001`
+  (repo kökünden). Next.js `SNIPER_ENGINE_URL` ortam değişkeni ile bu adrese bağlanır
+  (varsayılan `http://127.0.0.1:8001`, bkz. `src/lib/backend.ts`, `src/lib/sniperEngine.ts`,
+  `src/lib/rsiPu30Engine.ts`).
+* Analitik motoru (cointegration/regime/kelly-sizing/risk-var — şu an frontend tarafından
+  çağrılmıyor, `src/lib/quant/pairs.ts` ve `regime.ts` içinde TS karşılıkları var) ayrı bir
+  portta (8000) başlatmak için: `.venv/Scripts/python.exe -m uvicorn python_bot.main:app --port 8000`.
+* Python testleri: `.venv/Scripts/python.exe -m pytest python_bot/tests/ -v` (repo kökünden).
+* Eşbütünleşme testi: `GET http://127.0.0.1:8000/api/cointegration?asset_a=GARAN&asset_b=AKBNK`.
+* Rejim tespiti: `GET http://127.0.0.1:8000/api/regime?symbol=XU100.IS`.

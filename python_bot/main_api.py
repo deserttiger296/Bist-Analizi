@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, HTTPException
@@ -9,14 +10,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from engine.brain.local_classifier import predict as predict_rf
-from engine.brain.deep_model import predict_lstm
-from engine.brain.logger import log_prediction
-from engine.brain.finbert_sentiment import FinBertSentimentAnalyzer
-from engine.brain.meta_learning import MetaLearningCalibrationEngine
-from engine.journal.daily_history import get_history, resolve_pending_outcomes
-from engine.signals.rsi_pu30 import scan_universe_rsi_pu30, get_symbol_chart_data
-from engine.signals.most_rsi import scan_universe_most_rsi, get_most_rsi_chart_data
+import joblib
+from python_bot.engine.brain.local_classifier import predict as predict_rf, MODEL_PATH as RF_MODEL_PATH
+from python_bot.engine.brain.deep_model import predict_lstm, TORCH_AVAILABLE
+from python_bot.engine.brain.logger import log_prediction
+from python_bot.engine.brain.finbert_sentiment import FinBertSentimentAnalyzer
+from python_bot.engine.brain.meta_learning import MetaLearningCalibrationEngine
+from python_bot.engine.journal.daily_history import get_history, resolve_pending_outcomes
+from python_bot.engine.signals.rsi_pu30 import scan_universe_rsi_pu30, get_symbol_chart_data
+from python_bot.engine.signals.most_rsi import scan_universe_most_rsi, get_most_rsi_chart_data
 import yfinance as yf
 import numpy as np
 
@@ -27,11 +29,15 @@ _shap_available = False
 try:
     import shap
     import joblib
-    from engine.brain.local_classifier import MODEL_PATH, FEATURE_COLUMNS
+    from python_bot.engine.brain.local_classifier import MODEL_PATH, FEATURE_COLUMNS
     _shap_available = True
 except ImportError:
     shap = None
     print("[SHAP] shap package not installed. XAI will use rule-based fallback.")
+
+# "shadow" (default): ML scores are logged and shown as experimental, never as a decision.
+# "decide" only after the variant comparison shows a real out-of-sample contribution.
+MODEL_DECISION_MODE = os.environ.get("MODEL_DECISION_MODE", "shadow")
 
 _PYTHON_BOT_ROOT = Path(__file__).resolve().parent
 if str(_PYTHON_BOT_ROOT) not in sys.path:
@@ -81,6 +87,51 @@ class PredictionRequest(BaseModel):
 @app.get("/")
 def root():
     return FileResponse(str(_PYTHON_BOT_ROOT / "static" / "index.html"))
+
+
+@app.get("/api/health")
+def health_check():
+    """Reports what's actually usable right now -- never a blanket 'ok'.
+    A missing model or dependency here means /api/predict and /api/scan_all
+    will return per-symbol errors, not fabricated signals; this endpoint is
+    how the frontend (or an operator) can tell that apart from a real outage."""
+    rf_model = {"present": RF_MODEL_PATH.exists()}
+    if rf_model["present"]:
+        try:
+            payload = joblib.load(RF_MODEL_PATH)
+            rf_model.update({
+                "model_version": payload.get("model_version"),
+                "feature_schema_version": payload.get("feature_schema_version"),
+                "training_start": payload.get("training_start"),
+                "training_end": payload.get("training_end"),
+                "validation_method": payload.get("validation_method"),
+                "validation_results": payload.get("validation_results"),
+                "skipped_symbols": payload.get("skipped_symbols"),
+                "feature_importances": sorted(
+                    ({"feature": f, "importance": float(v)} for f, v in
+                     zip(payload["feature_columns"], payload["model"].feature_importances_)),
+                    key=lambda x: -x["importance"]),
+            })
+        except Exception as e:
+            rf_model["present"] = False
+            rf_model["error"] = f"Model dosyası bozuk veya okunamıyor: {e}"
+
+    lstm_weights = _PYTHON_BOT_ROOT / "models" / "quantum_lstm.pth"
+    lstm_scaler = _PYTHON_BOT_ROOT / "models" / "lstm_scaler.joblib"
+
+    return {
+        "status": "ok",
+        "calculated_at": datetime.now(timezone.utc).isoformat(),
+        "rf_model": rf_model,
+        "lstm": {
+            "torch_installed": TORCH_AVAILABLE,
+            "weights_present": lstm_weights.exists(),
+            "scaler_present": lstm_scaler.exists(),
+            "usable": TORCH_AVAILABLE and lstm_weights.exists() and lstm_scaler.exists(),
+        },
+        "shap_explainability": {"installed": _shap_available},
+        "sentiment_engine": "finbert" if sentiment_analyzer.model_loaded else "lexicon_fallback",
+    }
 
 BIST100_SYMBOLS = [
     "AGHOL", "AKBNK", "AKCNS", "AKFGY", "AKSA", "AKSEN", "ALARK", "ALBRK", "ALFAS", "ARCLK",
@@ -225,14 +276,17 @@ def _process_prediction(result, symbol=""):
     lstm_threshold = meta_weights.get("lstm_threshold", 0.60)
 
     prob_up = result["class_probabilities"].get("UP", 0)
-    
+
     if prob_up >= rf_threshold:
-        sniper_label = "AL (GÜÇLÜ YÜKSELİŞ)"
+        # In shadow mode the RF score is recorded but never presented as a buy decision:
+        # its out-of-sample contribution has not been demonstrated (docs/SIGNAL_AND_VALIDATION_STATUS.md).
+        sniper_label = "GÖLGE: RF skoru eşik üstü (doğrulanmamış)" if MODEL_DECISION_MODE == "shadow" else "AL (GÜÇLÜ YÜKSELİŞ)"
         sniper_approved = True
     else:
         sniper_label = "İZLE (RİSKLİ/YATAY)"
         sniper_approved = False
-        
+
+    result["decision_mode"] = MODEL_DECISION_MODE
     result["sniper_label"] = sniper_label
     result["sniper_approved"] = sniper_approved
     result["sniper_threshold"] = rf_threshold
@@ -297,19 +351,26 @@ def _process_prediction(result, symbol=""):
     # --- DUAL-ENGINE CROSS CHECK (Derin Öğrenme Entegrasyonu) ---
     lstm_prob = None
     quantum_approved = False
-    
+    # approved | rejected | not_run (RF didn't approve) | unavailable (no torch/model) | error: ...
+    lstm_status = "not_run"
+
     if sniper_approved and symbol != "":
         try:
             lstm_prob = predict_lstm(symbol)
-            if lstm_prob is not None:
+            if lstm_prob is None:
+                lstm_status = "unavailable"
+            else:
                 result["lstm_probability"] = lstm_prob
                 if lstm_prob > lstm_threshold:
                     quantum_approved = True
-                    reasons.append(f"[KUANTUM ONAYI - LSTM %{int(lstm_prob*100)}]: Derin Öğrenme (Hafıza) modeli de YÜKSELİŞ öngörüsünü doğruladı! Çapraz Kontrol Başarılı.")
+                    lstm_status = "approved"
+                    reasons.append(f"[LSTM %{int(lstm_prob*100)} - doğrulanmamış model]: Derin öğrenme skoru eşiğin üzerinde (kalibre edilmiş olasılık değildir).")
                 else:
-                    reasons.append(f"[DİKKAT - LSTM %{int(lstm_prob*100)}]: Derin Öğrenme (Hafıza) bu işleme şüpheli yaklaşıyor. Çapraz onay alınamadı.")
+                    lstm_status = "rejected"
+                    reasons.append(f"[DİKKAT - LSTM %{int(lstm_prob*100)}]: Derin öğrenme skoru eşiğin altında; çapraz onay yok.")
         except Exception as e:
-            print(f"LSTM Error for {symbol}: {e}")
+            lstm_status = f"error: {e}"
+    result["lstm_status"] = lstm_status
 
     # --- TRIPLE-ENGINE: SENTIMENT CONFLUENCE ---
     sentiment_data = {}
@@ -385,13 +446,15 @@ def predict_symbol(req: PredictionRequest):
 SCAN_ALL_MAX_WORKERS = 10
 
 def _scan_one(sym: str):
+    """Never swallows a failure as 'no signal' -- returns (error, result) so the
+    caller can tell 'model/data error for this symbol' apart from 'scanned fine,
+    just not approved' instead of silently collapsing both into the same None."""
     try:
         raw_result = predict_rf(sym)
         result = _process_prediction(raw_result, sym)
-        return result if result["sniper_approved"] else None
+        return None, (result if result["sniper_approved"] else None)
     except Exception as e:
-        print(f"Skipping {sym}: {e}")
-        return None
+        return str(e), None
 
 @app.get("/api/scan_all")
 def scan_all_symbols():
@@ -400,14 +463,28 @@ def scan_all_symbols():
     # predict_rf/predict_lstm (which are also called individually by
     # /api/predict and /api/shap, so their sync contract stays as-is).
     approved_list = []
+    errors = []
     with ThreadPoolExecutor(max_workers=SCAN_ALL_MAX_WORKERS) as pool:
-        for result in pool.map(_scan_one, BIST100_SYMBOLS):
-            if result is not None:
+        for sym, (error, result) in zip(BIST100_SYMBOLS, pool.map(_scan_one, BIST100_SYMBOLS)):
+            if error is not None:
+                errors.append({"symbol": sym, "error": error})
+            elif result is not None:
                 approved_list.append(result)
 
     # Güven skoruna göre büyükten küçüğe sırala
     approved_list.sort(key=lambda x: x["class_probabilities"].get("UP", 0), reverse=True)
-    return {"status": "success", "count": len(approved_list), "data": approved_list}
+    attempted = len(BIST100_SYMBOLS)
+    scanned = attempted - len(errors)
+    status = "error" if errors and scanned == 0 else ("partial" if errors else "success")
+    return {
+        "status": status,
+        "count": len(approved_list),
+        "data": approved_list,
+        "attempted": attempted,
+        "scanned": scanned,
+        "errors": errors,
+        "calculated_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 @app.get("/api/chart/{symbol}")
 def get_chart_data(symbol: str):
@@ -519,7 +596,9 @@ def scan_rsi_pu30(interval: str = "4h", signal_type: str = "all"):
         raise HTTPException(status_code=400, detail=f"Unsupported signal_type: {signal_type}")
     try:
         result = scan_universe_rsi_pu30(BIST100_SYMBOLS, interval=interval, signal_type=signal_type)
-        return {"status": "success", "data": result}
+        # Top-level status mirrors the scan's own success/partial/error, so a
+        # scan where every symbol failed is never reported as "success".
+        return {"status": result["status"], "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -561,7 +640,7 @@ def scan_most_rsi(interval: str = "1h"):
         raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
     try:
         result = scan_universe_most_rsi(BIST100_SYMBOLS, interval=interval)
-        return {"status": "success", "data": result}
+        return {"status": result["status"], "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -588,4 +667,7 @@ def get_most_rsi_detail(symbol: str, interval: str = "1h"):
 if __name__ == "__main__":
     import uvicorn
     # Run the server locally on port 8000
-    uvicorn.run("main_api:app", host="127.0.0.1", port=8000, reload=True)
+    # Run from the repo root (parent of python_bot/) so the "python_bot." absolute
+    # imports above resolve: `python -m python_bot.main_api`, or equivalently
+    # `uvicorn python_bot.main_api:app --port 8001` from the repo root.
+    uvicorn.run("python_bot.main_api:app", host="127.0.0.1", port=8001, reload=True)

@@ -91,16 +91,20 @@ export default function HomePage() {
     setIsScanning(true);
     setError(null);
     try {
-      const res = await fetch("http://127.0.0.1:8001/api/predict", {
+      // Always go through our own /api route (which talks server-side to the
+      // Python engine via SNIPER_ENGINE_URL) -- never fetch the Python backend
+      // directly from the browser, which only works if the engine happens to
+      // be reachable at the visitor's own localhost.
+      const res = await fetch("/api/predict", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol: searchSymbol.trim().toUpperCase() }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.detail || "Analiz hatası");
+      if (json.status !== "success") throw new Error(json.detail || "Backend erişilemiyor veya tarama başarısız");
       setSingleResult(json.data);
     } catch (err: any) {
-      setError(err?.message || "Sunucuya bağlanılamadı. Python main_api.py (port 8001) açık mı?");
+      setError(err?.message || "Sunucuya bağlanılamadı.");
     } finally {
       setIsScanning(false);
     }
@@ -110,12 +114,17 @@ export default function HomePage() {
     setIsScanning(true);
     setError(null);
     try {
-      const res = await fetch("http://127.0.0.1:8001/api/scan_all");
+      const res = await fetch("/api/scan_all");
       const json = await res.json();
-      if (!res.ok) throw new Error(json.detail || "Radar tarama hatası");
+      if (json.status !== "success" && json.status !== "partial") {
+        throw new Error(json.detail || "Radar tarama başarısız (backend erişilemiyor)");
+      }
+      if (json.status === "partial") {
+        setError(`Kısmi tarama: ${json.errors?.length ?? 0} hisse taranamadı.`);
+      }
       setRadarResults(json.data || []);
     } catch (err: any) {
-      setError(err?.message || "Sunucuya bağlanılamadı. Python main_api.py (port 8001) açık mı?");
+      setError(err?.message || "Sunucuya bağlanılamadı.");
     } finally {
       setIsScanning(false);
     }
@@ -278,7 +287,7 @@ export default function HomePage() {
               <div className="text-4xl opacity-50">📡</div>
               <h3 className="text-base font-bold text-white">BIST100 Radarını Çalıştırın</h3>
               <p className="text-slate-400 text-xs max-w-md mx-auto">
-                Yukarıdaki "TÜM BIST100'Ü TARA" butonuna basarak tüm hisseleri RandomForest, LSTM ve FinBERT modelleriyle filtreleyebilir veya arama kutusuna hisse kodu yazarak anlık analiz alabilirsiniz.
+                Yukarıdaki &quot;TÜM BIST100&apos;Ü TARA&quot; butonuna basarak tüm hisseleri RandomForest, LSTM ve FinBERT modelleriyle filtreleyebilir veya arama kutusuna hisse kodu yazarak anlık analiz alabilirsiniz.
               </p>
             </div>
           )}
@@ -321,7 +330,7 @@ export default function HomePage() {
         <div className="space-y-4">
           <div className="border-b border-slate-800 pb-3">
             <h2 className="text-xl font-black text-white">⚖️ Yapay Zeka Karar Ağırlıkları (Feature Importances)</h2>
-            <p className="text-slate-400 text-xs mt-1">Yapay Zekanın "AL" kararı verirken arka planda hangi göstergelere ne kadar güvendiğinin matematiksel (RandomForest) kanıtı.</p>
+            <p className="text-slate-400 text-xs mt-1">Yapay Zekanın &quot;AL&quot; kararı verirken arka planda hangi göstergelere ne kadar güvendiğinin matematiksel (RandomForest) kanıtı.</p>
           </div>
 
           <div className="rounded-2xl border border-slate-800 bg-[#0d1322] p-6 space-y-4">

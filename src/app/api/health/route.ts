@@ -1,6 +1,6 @@
 import { backendRequest } from "@/lib/backend";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export async function GET(request: Request) {
-  return backendRequest("/api/scan/rsi-pu30" + new URL(request.url).search);
+export async function GET() {
+  return backendRequest("/api/health");
 }

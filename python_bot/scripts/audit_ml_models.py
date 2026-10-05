@@ -23,7 +23,7 @@ _PYTHON_BOT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PYTHON_BOT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PYTHON_BOT_ROOT))
 
-from engine.brain.local_classifier import _build_training_rows, FEATURE_COLUMNS, MODEL_PATH, FORWARD_HORIZON_DAYS
+from python_bot.engine.brain.local_classifier import _build_training_rows, FEATURE_COLUMNS, MODEL_PATH, FORWARD_HORIZON_DAYS
 
 # 80% KESİNLİK HEDEFİ İÇİN GÜVEN EŞİĞİ
 CONFIDENCE_THRESHOLD = 0.60 

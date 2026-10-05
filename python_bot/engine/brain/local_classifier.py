@@ -68,12 +68,13 @@ import joblib
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 
-from engine.brain.regime_hmm import classify_regime_hmm
+from python_bot.engine.brain.regime_hmm import classify_regime_hmm
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("BIST_LocalClassifier")
 
-MODEL_VERSION = "local_rf_v1"
+MODEL_VERSION = "local_rf_v2"
+FEATURE_SCHEMA_VERSION = "ohlcv-relative-hmm-v2"
 FORWARD_HORIZON_DAYS = 5
 UP_THRESHOLD = 0.02
 DOWN_THRESHOLD = -0.02
@@ -114,21 +115,22 @@ def _normalize_symbol(symbol: str) -> str:
 
 
 def _rsi(close: pd.Series, period: int = 14) -> pd.Series:
-    import pandas_ta as ta
-    return ta.rsi(close, length=period).fillna(50.0)
+    from python_bot.engine.signals.rsi_pu30 import wilder_rsi
+    return pd.Series(wilder_rsi(close.to_numpy(dtype=np.float64), period), index=close.index)
 
 
 def _fetch_history(symbol: str, period: str = "3y") -> pd.DataFrame:
     ticker = _normalize_symbol(symbol)
-    df = yf.download(ticker, period=period, progress=False)
+    df = yf.download(ticker, period=period, progress=False, auto_adjust=True, timeout=15)
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.droplevel(1)
-    return df
+    from python_bot.engine.data.provider import is_bar_closed
+    return df.loc[[is_bar_closed(t, "1d") for t in df.index]]
 
 
 def _fetch_benchmark_close(period: str = "3y") -> pd.Series:
     """Fetch the XU100 index close series used for relative-momentum features."""
-    df = yf.download(BENCHMARK_TICKER, period=period, progress=False)
+    df = yf.download(BENCHMARK_TICKER, period=period, progress=False, auto_adjust=True, timeout=15)
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.droplevel(1)
     return df["Close"]
@@ -162,38 +164,49 @@ def _relative_momentum_features(close: pd.Series, benchmark_close: pd.Series) ->
 
 
 def _engineer_base_features(df: pd.DataFrame) -> pd.DataFrame:
-    import pandas_ta as ta
-    out = df.copy()
-    out["rsi_14"] = _rsi(out["Close"], 14)
-    ema9 = ta.ema(out["Close"], length=9)
-    sma50 = ta.sma(out["Close"], length=50)
-    out["close_over_ema9"] = (out["Close"] / ema9) - 1.0
-    out["close_over_sma50"] = (out["Close"] / sma50) - 1.0
-    vol_mean20 = ta.sma(out["Volume"], length=20)
-    out["volume_ratio"] = out["Volume"] / vol_mean20.replace(0, np.nan)
-    
-    # MACD
-    macd = ta.macd(out["Close"])
-    if macd is not None and not macd.empty:
-        out["macd"] = macd.iloc[:, 0]
-        out["macd_hist"] = macd.iloc[:, 1]
-        out["macd_signal"] = macd.iloc[:, 2]
-    
-    # Bollinger Bands
-    bb = ta.bbands(out["Close"])
-    if bb is not None and not bb.empty:
-        out["bb_lower"] = bb.iloc[:, 0]
-        out["bb_mid"] = bb.iloc[:, 1]
-        out["bb_upper"] = bb.iloc[:, 2]
-        out["bb_bandwidth"] = bb.iloc[:, 3]
-        out["bb_percent"] = bb.iloc[:, 4]
-        
-    # ATR
-    atr = ta.atr(out["High"], out["Low"], out["Close"])
-    if atr is not None and not atr.empty:
-        out["atr_14"] = atr
-        
+    out = df.copy().astype(np.float64)
+    c = out["Close"]
+    out["rsi_14"] = _rsi(c)
+    out["close_over_ema9"] = c/c.ewm(span=9, adjust=False, min_periods=9).mean()-1
+    out["close_over_sma50"] = c/c.rolling(50).mean()-1
+    out["volume_ratio"] = out.Volume/out.Volume.rolling(20).mean().replace(0, np.nan)
+    out["macd"] = c.ewm(span=12, adjust=False).mean()-c.ewm(span=26, adjust=False).mean()
+    out["macd_signal"] = out.macd.ewm(span=9, adjust=False).mean()
+    out["macd_hist"] = out.macd-out.macd_signal
+    mid, std = c.rolling(20).mean(), c.rolling(20).std(ddof=0)
+    out["bb_bandwidth"] = 400*std/mid
+    out["bb_percent"] = (c-(mid-2*std))/(4*std).replace(0,np.nan)
+    tr = pd.concat([out.High-out.Low,(out.High-c.shift()).abs(),(out.Low-c.shift()).abs()],axis=1).max(axis=1)
+    out["atr_14"] = tr.ewm(alpha=1/14, adjust=False, min_periods=14).mean()
     return out
+
+
+def build_features(df, benchmark_close):
+    """Single causal feature path for RF and LSTM, both training and inference."""
+    out = _engineer_base_features(df)
+    out = out.join(_rolling_regime_features(df.Close))
+    out = out.join(_relative_momentum_features(df.Close, benchmark_close))
+    return out.replace([np.inf, -np.inf], np.nan)
+
+
+def validate_artifact(payload):
+    if payload.get("feature_schema_version") != FEATURE_SCHEMA_VERSION or payload.get("feature_columns") != FEATURE_COLUMNS:
+        raise ValueError("MODEL_INCOMPATIBLE: feature schema/order mismatch; retraining required")
+    for key in ("training_start", "training_end", "selection_end", "label_definition", "forward_horizon_days", "preprocessing_version", "validation_method", "validation_results", "model_version"):
+        if key not in payload:
+            raise ValueError(f"MODEL_INCOMPATIBLE: missing {key}")
+    if payload["forward_horizon_days"] != FORWARD_HORIZON_DAYS or payload["preprocessing_version"] != FEATURE_SCHEMA_VERSION or payload["label_definition"] != "UP/DOWN/FLAT: +/-0.5*ATR/close*sqrt(5), 5 trading bars":
+        raise ValueError("MODEL_INCOMPATIBLE: target or preprocessing mismatch")
+
+
+def artifact_metadata(train, selection, model_version, results):
+    return {"feature_schema_version": FEATURE_SCHEMA_VERSION, "feature_columns": FEATURE_COLUMNS,
+            "training_start": str(train.index.min()), "training_end": str(train.index.max()),
+            "selection_end": str(selection.index.max()), "model_version": model_version,
+            "forward_horizon_days": FORWARD_HORIZON_DAYS,
+            "label_definition": "UP/DOWN/FLAT: +/-0.5*ATR/close*sqrt(5), 5 trading bars",
+            "preprocessing_version": FEATURE_SCHEMA_VERSION,
+            "validation_method": "shared-date-purged-holdout", "validation_results": results}
 
 
 def _regime_features_for_symbol(close: pd.Series) -> Dict[str, float]:
@@ -210,7 +223,7 @@ def _regime_features_for_symbol(close: pd.Series) -> Dict[str, float]:
         return {"regime_code": float(code), "regime_confidence": float(result["confidence"])}
     except Exception as e:
         logger.warning(f"HMM regime fit failed, defaulting to neutral regime: {e}")
-        return {"regime_code": 0.0, "regime_confidence": 0.0}
+        raise RuntimeError("HMM_UNAVAILABLE") from e
 
 
 REGIME_MIN_HISTORY = 150
@@ -251,7 +264,7 @@ def _rolling_regime_features(close: pd.Series) -> pd.DataFrame:
             conf = float(result["confidence"])
         except Exception as e:
             logger.warning(f"Rolling HMM regime fit failed at row {i}, defaulting to neutral: {e}")
-            code, conf = 0.0, 0.0
+            raise RuntimeError("HMM_UNAVAILABLE") from e
         end = min(i + REGIME_REFIT_EVERY, n)
         codes.iloc[i:end] = code
         confidences.iloc[i:end] = conf
@@ -278,11 +291,12 @@ def _label_forward_return(feat: pd.DataFrame) -> pd.Series:
     vol_threshold = ATR_LABEL_MULTIPLIER * atr_pct * np.sqrt(FORWARD_HORIZON_DAYS)
 
     fwd_return = feat["Close"].shift(-FORWARD_HORIZON_DAYS) / feat["Close"] - 1.0
-    return pd.Series(
+    labels = pd.Series(
         np.where(fwd_return > vol_threshold, "UP",
                  np.where(fwd_return < -vol_threshold, "DOWN", "FLAT")),
         index=feat.index,
     )
+    return labels.where(fwd_return.notna())
 
 
 def _build_training_rows(symbol: str, benchmark_close: Optional[pd.Series] = None) -> Optional[pd.DataFrame]:
@@ -291,26 +305,13 @@ def _build_training_rows(symbol: str, benchmark_close: Optional[pd.Series] = Non
         logger.warning(f"Not enough history for {symbol}, skipping.")
         return None
 
-    feat = _engineer_base_features(df)
-
-    regime = _rolling_regime_features(df["Close"])
-    feat["regime_code"] = regime["regime_code"]
-    feat["regime_confidence"] = regime["regime_confidence"]
-
     if benchmark_close is None:
         benchmark_close = _fetch_benchmark_close(period="3y")
-    rel_mom = _relative_momentum_features(df["Close"], benchmark_close)
-    feat["rel_return_5d"] = rel_mom["rel_return_5d"]
-    feat["rel_return_20d"] = rel_mom["rel_return_20d"]
-
+    feat = build_features(df, benchmark_close)
     feat["label"] = _label_forward_return(feat)
+    feat["label_end"] = pd.Series(df.index, index=df.index).shift(-FORWARD_HORIZON_DAYS)
     feat["symbol"] = symbol
-
-    feat = feat.dropna(subset=FEATURE_COLUMNS)
-    # Drop the tail rows where the forward-looking label is undefined
-    feat = feat.iloc[:-FORWARD_HORIZON_DAYS] if len(feat) > FORWARD_HORIZON_DAYS else feat.iloc[0:0]
-
-    return feat[FEATURE_COLUMNS + ["label", "symbol"]]
+    return feat.dropna(subset=FEATURE_COLUMNS+["label", "label_end"])[FEATURE_COLUMNS+["label", "symbol", "label_end"]]
 
 
 WALKFORWARD_TRAIN_FRACTION = 0.75
@@ -336,6 +337,26 @@ def _walkforward_split(rows: pd.DataFrame) -> "tuple[pd.DataFrame, pd.DataFrame]
     return rows.iloc[:train_end], rows.iloc[split_idx:]
 
 
+def build_training_set(symbols: List[str], benchmark_close: pd.Series):
+    """Rows for all symbols whose features could be computed. A symbol whose
+    features fail (e.g. HMM_UNAVAILABLE) is excluded and reported -- never
+    filled with a made-up neutral value."""
+    frames, skipped = [], {}
+    for symbol in symbols:
+        try:
+            rows = _build_training_rows(symbol, benchmark_close)
+            if rows is None or rows.empty:
+                skipped[symbol] = "insufficient history"
+            else:
+                frames.append(rows)
+        except Exception as e:
+            skipped[symbol] = str(e)
+            logger.warning(f"Skipping {symbol}: {e}")
+    if not frames:
+        raise RuntimeError(f"No training data could be built; skipped: {skipped}")
+    return pd.concat(frames).sort_index(), skipped
+
+
 def train_and_save(symbols: List[str]) -> None:
     """
     Fetches history for `symbols` via yfinance, engineers features, labels
@@ -344,25 +365,11 @@ def train_and_save(symbols: List[str]) -> None:
     """
     logger.info(f"Training local classifier on {len(symbols)} symbols: {symbols}")
     benchmark_close = _fetch_benchmark_close(period="3y")  # fetch once, shared across all symbols
-    train_frames = []
-    test_frames = []
-    for symbol in symbols:
-        try:
-            rows = _build_training_rows(symbol, benchmark_close=benchmark_close)
-            if rows is not None and not rows.empty:
-                train_rows, test_rows = _walkforward_split(rows)
-                if not train_rows.empty:
-                    train_frames.append(train_rows)
-                if not test_rows.empty:
-                    test_frames.append(test_rows)
-        except Exception as e:
-            logger.error(f"Failed to build training rows for {symbol}: {e}")
-
-    if not train_frames:
-        raise RuntimeError("No training data could be built for any symbol.")
-
-    train_data = pd.concat(train_frames, axis=0, ignore_index=True)
-    logger.info(f"Assembled {len(train_data)} training rows across {len(train_frames)} symbols.")
+    rows, skipped = build_training_set(symbols, benchmark_close)
+    from python_bot.engine.brain.validation import split_by_date
+    train_data, test_data, final_data = split_by_date(rows)
+    logger.info(f"Assembled {len(train_data)} training rows across {len(symbols)} requested symbols "
+                f"({train_data['symbol'].nunique()} with usable history).")
     logger.info(f"Label distribution:\n{train_data['label'].value_counts()}")
 
     X_train = train_data[FEATURE_COLUMNS].astype(float).to_numpy()
@@ -381,8 +388,7 @@ def train_and_save(symbols: List[str]) -> None:
     )
     model.fit(X_train, y_train)
 
-    if test_frames:
-        test_data = pd.concat(test_frames, axis=0, ignore_index=True)
+    if not test_data.empty:
         X_test = test_data[FEATURE_COLUMNS].astype(float).to_numpy()
         y_test = test_data["label"].astype(str).to_numpy()
         test_acc = float(accuracy_score(y_test, model.predict(X_test)))
@@ -426,6 +432,9 @@ def train_and_save(symbols: List[str]) -> None:
         "validation_method": "walk_forward_purged",
         "up_precision_by_threshold": threshold_precision,
     }
+    payload.update(artifact_metadata(train_data, test_data, MODEL_VERSION, {"selection_accuracy": test_acc, "untouched_final_rows": len(final_data)}))
+    payload["symbols"] = sorted(rows["symbol"].unique().tolist())
+    payload["skipped_symbols"] = skipped
     joblib.dump(payload, MODEL_PATH)
     logger.info(f"Saved model to {MODEL_PATH}")
 
@@ -441,6 +450,7 @@ def predict(symbol: str) -> Dict[str, Any]:
         )
 
     payload = joblib.load(MODEL_PATH)
+    validate_artifact(payload)
     model = payload["model"]
     feature_columns = payload["feature_columns"]
 
@@ -448,17 +458,11 @@ def predict(symbol: str) -> Dict[str, Any]:
     if df.empty or len(df) < 60:
         raise ValueError(f"Not enough recent history for {symbol} to compute features.")
 
-    feat = _engineer_base_features(df)
-    regime = _regime_features_for_symbol(df["Close"])
-    feat["regime_code"] = regime["regime_code"]
-    feat["regime_confidence"] = regime["regime_confidence"]
-
-    benchmark_close = _fetch_benchmark_close(period="1y")
-    rel_mom = _relative_momentum_features(df["Close"], benchmark_close)
-    feat["rel_return_5d"] = rel_mom["rel_return_5d"]
-    feat["rel_return_20d"] = rel_mom["rel_return_20d"]
-
-    latest = feat.dropna(subset=feature_columns).iloc[-1]
+    feat = build_features(df, _fetch_benchmark_close(period="1y"))
+    latest = feat.iloc[-1]
+    if latest[feature_columns].isna().any():
+        raise ValueError("DATA_INSUFFICIENT: latest feature row is incomplete")
+    regime = latest
     x = latest[feature_columns].values.reshape(1, -1)
 
     proba = model.predict_proba(x)[0]
@@ -473,6 +477,9 @@ def predict(symbol: str) -> Dict[str, Any]:
     return {
         "symbol": symbol,
         "as_of": as_of_str,
+        "source": "yfinance_auto_adjust",
+        "score_semantics": "uncalibrated_class_score",
+        "calculated_at": pd.Timestamp.now(tz="UTC").isoformat(),
         "predicted_label": predicted_label,
         "probability": probability,
         "model_version": payload.get("model_version", MODEL_VERSION),

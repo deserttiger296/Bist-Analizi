@@ -1,3 +1,5 @@
+> **Doğrulama durumu (2026-10-05): DOĞRULANMAMIŞ / TARİHSEL.** Bu rapor, eğitim-test sızıntısı (rastgele bölme, örnek-içi değerlendirme) ve demo fallback verisi giderilmeden önce üretildi. Buradaki sayılar karar için kullanılmamalı. Güncel durum: [SIGNAL_AND_VALIDATION_STATUS.md](SIGNAL_AND_VALIDATION_STATUS.md).
+
 # 📊 Stock Valuations Performance Report (June 5 – June 17, 2026)
 **System:** Kazananlar Kulübü — BIST AI Analyst  
 **Report Date:** June 17, 2026  

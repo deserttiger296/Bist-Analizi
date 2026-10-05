@@ -1,3 +1,5 @@
+> **Doğrulama durumu (2026-10-05): DOĞRULANMAMIŞ / TARİHSEL.** Bu rapor, eğitim-test sızıntısı (rastgele bölme, örnek-içi değerlendirme) ve demo fallback verisi giderilmeden önce üretildi. Buradaki sayılar karar için kullanılmamalı. Güncel durum: [SIGNAL_AND_VALIDATION_STATUS.md](SIGNAL_AND_VALIDATION_STATUS.md).
+
 # 📊 SME QP Analiz Motoru - Geliştirme ve Analiz Raporu
 
 **Proje Adı:** BIST Analyst - SME QP Analiz Motoru

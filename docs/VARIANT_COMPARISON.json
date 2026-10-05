@@ -1,0 +1,57 @@
+{
+  "rows": [
+    {
+      "variant": "Yaln\u0131z RSI",
+      "trades": 32,
+      "net_return_pct": 4.40459044794006,
+      "expectancy_pct": 0.11455792676723367,
+      "avg_win_pct": 4.806067197123567,
+      "avg_loss_pct": -3.095422100318678,
+      "profit_factor": 1.0623306482545385,
+      "max_drawdown_pct": 5.3077883857164725,
+      "exposure_pct": 22.356495468277945,
+      "win_rate_pct": 40.625
+    },
+    {
+      "variant": "RSI + MOSTRSI",
+      "trades": 2,
+      "net_return_pct": 0.8151225534001938,
+      "expectancy_pct": 1.2465541958042117,
+      "avg_win_pct": 5.73531768231769,
+      "avg_loss_pct": -3.2422092907092663,
+      "profit_factor": 1.768953564704341,
+      "max_drawdown_pct": 1.4955782991207367,
+      "exposure_pct": 2.719033232628399,
+      "win_rate_pct": 50.0
+    },
+    {
+      "variant": "RSI + RF",
+      "trades": 0,
+      "net_return_pct": 0.0,
+      "expectancy_pct": 0.0,
+      "avg_win_pct": 0.0,
+      "avg_loss_pct": 0.0,
+      "profit_factor": null,
+      "max_drawdown_pct": 0.0,
+      "exposure_pct": 0.0,
+      "win_rate_pct": 0.0
+    },
+    {
+      "variant": "RSI + LSTM",
+      "trades": 6,
+      "net_return_pct": -5.425891869632249,
+      "expectancy_pct": -2.7773831878057096,
+      "avg_win_pct": 0.0,
+      "avg_loss_pct": -2.7773831878057096,
+      "profit_factor": 0.0,
+      "max_drawdown_pct": 5.425923762310481,
+      "exposure_pct": 12.688821752265861,
+      "win_rate_pct": 0.0
+    }
+  ],
+  "benchmarks": {
+    "E\u015fit a\u011f\u0131rl\u0131k al-tut (evren)": 3.3025324397454767,
+    "XU100 al-tut": -4.656713411604285
+  },
+  "final_start": "2026-04-02"
+}

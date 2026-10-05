@@ -10,7 +10,7 @@ BIST100 hisselerini anlık olarak tarayan, derin öğrenme, makine öğrenmesi v
 ### 1. 📊 Piyasa Radarı (Sniper Opportunities)
 - Tüm BIST100 endeksini anlık olarak tarar.
 - **RandomForestClassifier** ile teknik göstergeleri ve XU100 relatif momentum verilerini analiz ederek hissenin yön (UP/DOWN/FLAT) olasılığını hesaplar.
-- **%60 Güven Skoru** barajını geçen hisseleri "AL (GÜÇLÜ YÜKSELİŞ)" onayıyla radara yansıtır.
+- RF skoru %60 eşiğini geçen hisseler radarda **GÖLGE MOD** etiketiyle listelenir: modelin katkısı geçmiş testte doğrulanmadığı için bu bir AL kararı değildir (bkz. `docs/SIGNAL_AND_VALIDATION_STATUS.md`, `docs/VARIANT_COMPARISON.md`).
 
 ### 2. 🧠 Sistem Mimarisi & Açık Kaynak Motorlar
 - **Scikit-Learn (Yapay Zeka):** Karar ağaçları tabanlı çok sınıflı yön kestirimi.
@@ -23,13 +23,7 @@ BIST100 hisselerini anlık olarak tarayan, derin öğrenme, makine öğrenmesi v
 - **YFinance:** BIST hisselerinin anlık ve geçmiş verilerini kesintisiz sağlar.
 
 ### 3. ⚖️ AI Karar Ağırlıkları (Feature Importances)
-Yapay Zekanın karar verirken arka planda hangi göstergelere ne kadar güvendiğinin matematiksel dökümü:
-- **ATR (Volatilite):** %25.41
-- **SMA50 (Orta Vade Trend):** %20.96
-- **MACD (Momentum):** %17.25
-- **RSI (Göreceli Güç):** %14.24
-- **EMA9 (Kısa Vade Trend):** %11.98
-- **Hacim Oranı (Volume Ratio):** %10.15
+Terminaldeki ağırlıklar artık `/api/health` üzerinden diskteki RF modelinin gerçek `feature_importances_` değerlerinden gösterilir (eski sabit yüzdeler kaldırıldı).
 
 ### 4. 📉 MOSTRSI & RSI PU30 (Kural Tabanlı Özel Motorlar)
 - **MOSTRSI (14, close, VAR 5, 9):** Kıvanç Özbilgiç / Anıl Özekşi TradingView formülü. RSI(14) üzerine 5 periyotluk VAR (VIDYA) adaptif hareketli ortalama ve %9 takip eden stop uygulanır. 1 saatlik (`1s`) ve günlük (`1d`) periyotlarda yeşil **Bull** al sinyallerini tespit eder.
@@ -40,18 +34,30 @@ Yapay Zekanın karar verirken arka planda hangi göstergelere ne kadar güvendi�
 ## 🚀 Kurulum ve Çalıştırma
 
 ### 1. Python Sniper Backend (FastAPI / Port 8001)
+`python_bot/` içindeki modüller artık `python_bot.engine...` mutlak import yolunu kullanıyor,
+bu yüzden uvicorn **repo kökünden** (`python_bot/`'un bir üstü) ve modül yolu
+`python_bot.main_api:app` olarak başlatılmalı — `cd python_bot && uvicorn main_api:app`
+`ModuleNotFoundError: No module named 'python_bot'` ile başarısız olur.
 ```bash
-cd python_bot
-# Sanal ortamı aktive edin
+# Sanal ortamı aktive edin (repo kökünde)
 .venv\Scripts\activate
 
 # Bağımlılıkları yükleyin
-pip install -r requirements.txt
+pip install -r python_bot/requirements.txt
 
-# Sniper API & Web Terminalini başlatın
-uvicorn main_api:app --host 0.0.0.0 --port 8001 --reload
+# Sniper API & Web Terminalini başlatın (repo kökünden)
+uvicorn python_bot.main_api:app --host 0.0.0.0 --port 8001 --reload
 ```
-API ve Web Terminali `http://127.0.0.1:8001` üzerinde yayına girer.
+API ve Web Terminali `http://127.0.0.1:8001` üzerinde yayına girer. Next.js tarafı bu adresi
+`SNIPER_ENGINE_URL` ortam değişkeninden okur (bkz. `.env.example`); değişken boşsa
+`http://127.0.0.1:8001` varsayılanı kullanılır.
+
+Analitik motor (`python_bot.main:app` — cointegration/regime/kelly-sizing/risk-var; şu an
+frontend tarafından çağrılmıyor, bazı fonksiyonları `src/lib/quant/` altında TS olarak yeniden
+uygulandı) ayrı ve farklı bir portta (8000) çalıştırılabilir:
+```bash
+uvicorn python_bot.main:app --host 0.0.0.0 --port 8000 --reload
+```
 
 ### 2. Next.js Web Frontend (Port 3000)
 ```bash

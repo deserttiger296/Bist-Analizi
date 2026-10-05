@@ -1,134 +1,120 @@
-import os
+"""
+QuantumLSTM training on the SAME causal feature pipeline and label as the RF
+(local_classifier.build_features / _label_forward_return), so the two models
+answer the same question: "will the RF 'UP' label be hit within 5 bars?".
+
+Leakage controls:
+- Shared calendar split across all symbols (validation.split_by_date): train /
+  selection / untouched final, with the train and selection partitions purged
+  so no label window crosses into the next partition.
+- Scaler is fit on TRAIN rows only.
+- Sequences are built per symbol inside a single partition, never across a
+  boundary; rows whose forward label isn't known yet are already excluded.
+- Regime features come from the rolling (past-only) HMM in build_features.
+
+Run from the repo root:  .venv/Scripts/python.exe -m python_bot.engine.brain.train_deep_model
+"""
+import numpy as np
+import pandas as pd
+import joblib
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-import numpy as np
-import pandas as pd
-from pathlib import Path
-from engine.brain.deep_model import QuantumLSTM, StockDataset, DEVICE
-from engine.brain.local_classifier import _fetch_history, _engineer_base_features, _regime_features_for_symbol, FEATURE_COLUMNS, FORWARD_HORIZON_DAYS, UP_THRESHOLD, DOWN_THRESHOLD
+
+from python_bot.engine.brain.deep_model import (
+    QuantumLSTM, StockDataset, DEVICE, MODEL_WEIGHTS_PATH, LSTM_META_PATH, SEQ_LENGTH,
+    LSTM_MODEL_VERSION, LSTM_LABEL_DEFINITION,
+)
+from python_bot.engine.brain.local_classifier import (
+    build_training_set, _fetch_benchmark_close, FEATURE_COLUMNS, FEATURE_SCHEMA_VERSION,
+    FORWARD_HORIZON_DAYS,
+)
+from python_bot.engine.brain.validation import split_by_date, sequences
 from sklearn.preprocessing import StandardScaler
-import joblib
 
-MODELS_DIR = Path(__file__).resolve().parent.parent.parent / "models"
-MODEL_WEIGHTS_PATH = MODELS_DIR / "quantum_lstm.pth"
-SCALER_PATH = MODELS_DIR / "lstm_scaler.joblib"
+EPOCHS = 15
 
-SEQ_LENGTH = 30 # Son 30 günün hafızasını tutacağız
 
-def build_sequences(symbol):
-    df = _fetch_history(symbol, period="5y")
-    if df.empty or len(df) < SEQ_LENGTH + FORWARD_HORIZON_DAYS:
-        return None, None
-        
-    feat = _engineer_base_features(df)
-    regime = _regime_features_for_symbol(df["Close"])
-    feat["regime_code"] = regime["regime_code"]
-    feat["regime_confidence"] = regime["regime_confidence"]
-    
-    # Calculate Forward Return
-    fwd_return = feat["Close"].shift(-FORWARD_HORIZON_DAYS) / feat["Close"] - 1.0
-    
-    # Derin öğrenme için Binary Classification: YÜKSELECEK Mİ? (1: EVET, 0: HAYIR)
-    feat["target"] = np.where(fwd_return >= UP_THRESHOLD, 1, 0)
-    
-    feat = feat.dropna(subset=FEATURE_COLUMNS + ["target"])
-    
-    data = feat[FEATURE_COLUMNS].values
-    targets = feat["target"].values
-    
-    sequences = []
-    seq_targets = []
-    
-    for i in range(len(data) - SEQ_LENGTH):
-        sequences.append(data[i : i + SEQ_LENGTH])
-        seq_targets.append(targets[i + SEQ_LENGTH - 1])
-        
-    if len(sequences) == 0:
-        return None, None
-        
-    return np.array(sequences), np.array(seq_targets)
+def _scaled(part: pd.DataFrame, scaler: StandardScaler) -> pd.DataFrame:
+    out = part.copy()
+    out[FEATURE_COLUMNS] = scaler.transform(out[FEATURE_COLUMNS].to_numpy(dtype=np.float64))
+    return out
 
-def train_lstm(symbols):
-    print(f"[{DEVICE}] Cihazında Quantum LSTM Eğitimi Başlıyor...")
-    
-    all_sequences = []
-    all_targets = []
-    
-    for sym in symbols:
-        print(f"{sym} verileri hazırlanıyor...")
-        seqs, targets = build_sequences(sym)
-        if seqs is not None:
-            all_sequences.append(seqs)
-            all_targets.append(targets)
-            
-    X = np.concatenate(all_sequences, axis=0)
-    y = np.concatenate(all_targets, axis=0)
-    
-    # Verileri Ölçeklendirme (Neural Networks Normalize Veri Sever)
-    num_samples, seq_len, num_features = X.shape
-    X_flat = X.reshape(-1, num_features)
-    scaler = StandardScaler()
-    X_flat_scaled = scaler.fit_transform(X_flat)
-    X_scaled = X_flat_scaled.reshape(num_samples, seq_len, num_features)
-    
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    joblib.dump(scaler, SCALER_PATH)
-    
-    # Zaman Serisi Doğruluğu (Dürüst Sistem) için Kronolojik Bölme
-    # İlk %80'i Eğitim (Geçmiş), Son %20'si Test (Gelecek)
-    split_idx = int(num_samples * 0.8)
-    
-    X_train, y_train = X_scaled[:split_idx], y[:split_idx]
-    X_test, y_test = X_scaled[split_idx:], y[split_idx:]
-    
-    train_dataset = StockDataset(X_train, y_train)
-    test_dataset = StockDataset(X_test, y_test)
-    
-    # Sadece eğitim verisi karıştırılabilir, test verisi asla karıştırılmaz
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
-    
-    model = QuantumLSTM(input_size=num_features, hidden_size=64, num_layers=2).to(DEVICE)
+
+def _evaluate(model, X, y):
+    model.eval()
+    with torch.no_grad():
+        prob = model(torch.tensor(X, dtype=torch.float32).to(DEVICE)).squeeze(-1).cpu().numpy()
+    result = {
+        "rows": int(len(y)),
+        "up_base_rate": float(y.mean()),
+        "accuracy_at_0_5": float(((prob >= 0.5) == (y == 1.0)).mean()),
+    }
+    for thr in (0.5, 0.6, 0.7):
+        mask = prob >= thr
+        result[f"up_precision_at_{thr}"] = float(y[mask].mean()) if mask.any() else None
+        result[f"support_at_{thr}"] = int(mask.sum())
+    return result
+
+
+def train_lstm(symbols, epochs: int = EPOCHS, seed: int = 42):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    print(f"[{DEVICE}] QuantumLSTM eğitimi: {len(symbols)} hisse")
+
+    benchmark = _fetch_benchmark_close(period="3y")
+    rows, skipped = build_training_set(symbols, benchmark)
+    train, selection, final = split_by_date(rows)
+
+    scaler = StandardScaler().fit(train[FEATURE_COLUMNS].to_numpy(dtype=np.float64))
+    X_train, y_train = sequences(_scaled(train, scaler), FEATURE_COLUMNS, SEQ_LENGTH)
+    X_sel, y_sel = sequences(_scaled(selection, scaler), FEATURE_COLUMNS, SEQ_LENGTH)
+    print(f"Eğitim sekansı: {len(y_train)} | Seçim (out-of-sample) sekansı: {len(y_sel)}")
+
+    loader = DataLoader(StockDataset(X_train, y_train), batch_size=64, shuffle=True)
+    model = QuantumLSTM(input_size=len(FEATURE_COLUMNS), hidden_size=64, num_layers=2).to(DEVICE)
     criterion = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
-    
-    EPOCHS = 15
-    print(f"Eğitim Verisi: {len(y_train)} sekans | Test (Gelecek) Verisi: {len(y_test)} sekans")
-    
-    for epoch in range(EPOCHS):
+
+    for epoch in range(epochs):
         model.train()
-        train_loss = 0
-        for batch_x, batch_y in train_loader:
+        total = 0.0
+        for batch_x, batch_y in loader:
             optimizer.zero_grad()
-            outputs = model(batch_x).squeeze()
-            loss = criterion(outputs, batch_y)
+            loss = criterion(model(batch_x).squeeze(-1), batch_y)
             loss.backward()
             optimizer.step()
-            train_loss += loss.item()
-            
-        # Dürüst Doğrulama (Geleceği tahmin etme)
-        model.eval()
-        correct = 0
-        total = 0
-        test_loss = 0
-        with torch.no_grad():
-            for batch_x, batch_y in test_loader:
-                outputs = model(batch_x).squeeze()
-                loss = criterion(outputs, batch_y)
-                test_loss += loss.item()
-                predicted = (outputs >= 0.5).float()
-                correct += (predicted == batch_y).sum().item()
-                total += batch_y.size(0)
-                
-        accuracy = correct / total
-        print(f"Epoch [{epoch+1}/{EPOCHS}] - Train Loss: {train_loss/len(train_loader):.4f} | Test Loss: {test_loss/len(test_loader):.4f} | GERÇEK DOĞRULUK: %{accuracy*100:.2f}")
+            total += loss.item()
+        print(f"Epoch {epoch + 1}/{epochs} train_loss={total / len(loader):.4f}")
 
-            
+    # Selection-period metrics only; the final partition stays untouched for
+    # the variant comparison (scripts/compare_variants.py).
+    results = _evaluate(model, X_sel, y_sel)
+    print(f"Seçim dönemi: {results}")
+
+    MODEL_WEIGHTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), MODEL_WEIGHTS_PATH)
-    print(f"Eğitim Tamamlandı! Model ağırlıkları kaydedildi: {MODEL_WEIGHTS_PATH}")
+    joblib.dump({
+        "scaler": scaler,
+        "model_version": LSTM_MODEL_VERSION,
+        "feature_schema_version": FEATURE_SCHEMA_VERSION,
+        "feature_columns": FEATURE_COLUMNS,
+        "seq_length": SEQ_LENGTH,
+        "forward_horizon_days": FORWARD_HORIZON_DAYS,
+        "label_definition": LSTM_LABEL_DEFINITION,
+        "training_start": str(train.index.min()),
+        "training_end": str(train.index.max()),
+        "selection_end": str(selection.index.max()),
+        "final_start": str(final.index.min()),
+        "validation_method": "shared-date-purged-holdout",
+        "validation_results": results,
+        "symbols": sorted(rows["symbol"].unique().tolist()),
+        "skipped_symbols": skipped,
+    }, LSTM_META_PATH)
+    print(f"Kaydedildi: {MODEL_WEIGHTS_PATH} + {LSTM_META_PATH}")
+    return results
+
 
 if __name__ == "__main__":
-    bist_symbols = ["THYAO", "GARAN", "TUPRS", "AKBNK", "ASELS", "KCHOL", "ISCTR", "SAHOL", "BIMAS", "EREGL"]
-    train_lstm(bist_symbols)
+    train_lstm(["THYAO", "GARAN", "TUPRS", "AKBNK", "ASELS", "KCHOL", "ISCTR", "SAHOL", "BIMAS", "EREGL"])

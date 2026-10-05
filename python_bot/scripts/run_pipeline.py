@@ -37,8 +37,8 @@ _PYTHON_BOT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PYTHON_BOT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PYTHON_BOT_ROOT))
 
-from engine.brain.regime_hmm import classify_regime_hmm
-from engine.brain.local_classifier import predict as ml_predict
+from python_bot.engine.brain.regime_hmm import classify_regime_hmm
+from python_bot.engine.brain.local_classifier import predict as ml_predict
 from engine import db
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

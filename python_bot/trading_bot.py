@@ -5,7 +5,7 @@ import pandas_ta as ta
 import yfinance as yf
 from typing import Dict, Any, List
 
-from engine.brain.local_classifier import predict as local_ml_predict
+from python_bot.engine.brain.local_classifier import predict as local_ml_predict
 
 # -------------------------------------------------------------------
 # Configuration & Logging Setup

@@ -1,4 +1,55 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // Gerçek sağlık durumu -- sabit "Online" yazısı yerine /api/health yanıtı.
+    function setStatus(id, color, text) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.innerHTML = `<span class="dot ${color}"></span> `;
+        el.appendChild(document.createTextNode(text));
+    }
+    function renderWeights(rf) {
+        const box = document.getElementById('weights-chart');
+        if (!box) return;
+        box.innerHTML = '';
+        if (!rf || !rf.present || !rf.feature_importances) {
+            const p = document.createElement('p');
+            p.className = 'disclaimer';
+            p.textContent = 'Model ağırlıkları alınamadı (backend erişilemiyor veya model eğitilmemiş).';
+            box.appendChild(p);
+            return;
+        }
+        rf.feature_importances.forEach(({ feature, importance }) => {
+            const pct = (importance * 100).toFixed(2);
+            const row = document.createElement('div');
+            row.className = 'weight-bar-container';
+            row.innerHTML = `<div class="weight-label"><span></span> <span>%${pct}</span></div>
+                <div class="weight-bar"><div class="fill" style="width: ${pct}%; background: #00cc88;"></div></div>`;
+            row.querySelector('.weight-label span').textContent = feature;
+            box.appendChild(row);
+        });
+        const note = document.createElement('p');
+        note.className = 'disclaimer';
+        const acc = rf.validation_results && rf.validation_results.selection_accuracy;
+        note.textContent = `* ${rf.model_version}, eğitim ${String(rf.training_start).slice(0, 10)} – ${String(rf.training_end).slice(0, 10)}` +
+            (acc != null ? `; seçim dönemi doğruluğu %${(acc * 100).toFixed(1)} (3 sınıf, naif taban ~%33).` : '.');
+        box.appendChild(note);
+    }
+
+    fetch('/api/health').then(r => r.json()).then(h => {
+        if (h.status !== 'ok') throw new Error(h.detail || 'Backend erişilemiyor');
+        setStatus('status-backend', 'green', 'Backend: Çevrimiçi');
+        setStatus('status-rf', h.rf_model.present ? 'green' : 'red',
+            h.rf_model.present ? `RF Modeli: ${h.rf_model.model_version}` : 'RF Modeli: EĞİTİLMEMİŞ');
+        setStatus('status-lstm', h.lstm.usable ? 'green' : 'amber',
+            h.lstm.usable ? 'LSTM: Hazır' : (h.lstm.torch_installed ? 'LSTM: Model eğitilmemiş' : 'LSTM: torch kurulu değil'));
+        setStatus('status-sentiment', h.sentiment_engine === 'finbert' ? 'green' : 'amber',
+            h.sentiment_engine === 'finbert' ? 'Haber Analizi: FinBERT' : 'Haber Analizi: Sözlük (FinBERT yok)');
+        renderWeights(h.rf_model);
+    }).catch(err => {
+        renderWeights(null);
+        setStatus('status-backend', 'red', `Backend: Erişilemiyor`);
+        ['status-rf', 'status-lstm', 'status-sentiment'].forEach(id => setStatus(id, '', id.replace('status-', '').toUpperCase() + ': bilinmiyor'));
+    });
+
     // Navigation
     const navLinks = document.querySelectorAll('.nav-links a');
     const sections = document.querySelectorAll('.view-section');
@@ -48,10 +99,18 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch('/api/scan_all');
             const json = await response.json();
-            
-            if (!response.ok) throw new Error(json.detail || "API Error");
-            renderRadar(json.data);
-            
+
+            // "error" = hiçbir hisse taranamadı (model/veri/backend) -- boş radar "sinyal yok" gibi gösterilmemeli.
+            if (!response.ok || json.status === 'error' || json.status === 'backend_unavailable' || json.status === 'timeout') {
+                const firstErr = json.errors && json.errors.length ? ` (${json.errors[0].error})` : '';
+                throw new Error((json.detail || 'Tarama başarısız: hiçbir hisse taranamadı') + firstErr);
+            }
+            renderRadar(json.data, json);
+            if (json.status === 'partial') {
+                errorMsg.textContent = `Kısmi tarama: ${json.scanned}/${json.attempted} hisse tarandı, ${json.errors.length} hisse hata verdi.`;
+                errorMsg.classList.remove('hidden');
+            }
+
         } catch (error) {
             errorMsg.textContent = error.message;
             errorMsg.classList.remove('hidden');
@@ -135,10 +194,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Enter') handleSingleScan();
     });
 
-    function renderRadar(stocks) {
+    function renderRadar(stocks, meta) {
         radarGrid.innerHTML = '';
         if (!stocks || stocks.length === 0) {
-            radarGrid.innerHTML = '<p style="color:var(--text-muted);">Gereken kriterleri karşılayan hisse bulunamadı.</p>';
+            const scannedInfo = meta && meta.scanned != null ? ` (${meta.scanned}/${meta.attempted} hisse tarandı)` : '';
+            radarGrid.innerHTML = `<p style="color:var(--text-muted);">Tarama tamamlandı${scannedInfo}: kriterleri karşılayan hisse yok.</p>`;
         } else {
             stocks.forEach(stock => {
                 const upProb = (stock.class_probabilities.UP * 100).toFixed(1);
@@ -149,17 +209,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 reasonsHtml += '</ul>';
 
+                const shadow = stock.decision_mode !== 'decide';
                 let badgeHtml = '';
-                if (stock.quantum_approved) {
+                if (shadow) {
+                    badgeHtml = `<div class="card-badge" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b;">GÖLGE · RF %${upProb}${stock.quantum_approved ? ' + LSTM' : ''} (doğrulanmamış)</div>`;
+                } else if (stock.quantum_approved) {
                     badgeHtml = `<div class="card-badge" style="background: rgba(16, 185, 129, 0.2); border: 1px solid var(--neon-green);">🚀 KUANTUM ONAYI (RF & LSTM)</div>`;
                 } else {
                     badgeHtml = `<div class="card-badge" style="background: rgba(59, 130, 246, 0.1); color: var(--accent);">RF Skor: %${upProb}</div>`;
                 }
 
-                const usdRate = stock.usd_rate || 35.0;
                 const targetUsd = (stock.target_price_usd != null && stock.target_price_usd > 0)
                     ? stock.target_price_usd
-                    : (stock.target_price_tl ? (stock.target_price_tl / usdRate) : null);
+                    : ((stock.target_price_tl && stock.usd_rate) ? (stock.target_price_tl / stock.usd_rate) : null);
 
                 const card = document.createElement('div');
                 card.className = 'card';
@@ -338,8 +400,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch {
                     throw new Error("Tarama motoru veriyi hazırlıyor veya backend sunucusuna bağlanılamadı.");
                 }
-                if (!response.ok) throw new Error(json.detail || "API Hatası");
+                if (!response.ok || json.status === 'error' || !json.data) {
+                    const firstErr = json.data && json.data.errors && json.data.errors.length ? ` (${json.data.errors[0].error})` : '';
+                    throw new Error((json.detail || 'Tarama başarısız: hiçbir hisse taranamadı') + firstErr);
+                }
                 renderRsiPu30(json.data);
+                if (json.status === 'partial') {
+                    rsiPu30ErrorMsg.textContent = `Kısmi tarama: ${json.data.scanned}/${json.data.attempted} hisse tarandı.`;
+                    rsiPu30ErrorMsg.classList.remove('hidden');
+                }
             } catch (error) {
                 rsiPu30ErrorMsg.textContent = error.message;
                 rsiPu30ErrorMsg.classList.remove('hidden');
@@ -360,7 +429,7 @@ document.addEventListener('DOMContentLoaded', () => {
             signals = signals.filter(s => s.type === 'NU70' || s.trend === 'BEAR');
         }
 
-        rsiPu30Scanned.textContent = data.scanned != null ? data.scanned : 100;
+        rsiPu30Scanned.textContent = data.scanned != null ? data.scanned : '—';
         rsiPu30Matched.textContent = signals.length;
         rsiPu30Skipped.textContent = (!data.errors || data.errors.length === 0) ? '—' : data.errors.map(e => e.symbol).join(', ');
 

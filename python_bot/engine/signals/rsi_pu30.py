@@ -12,7 +12,7 @@ Semih Murat Ersoy Formülü & Metodolojisi:
 
 Zaman Dilimleri (BIST Seans Uyumlu):
 - "1d": Günlük mumlar
-- "4h": 4 Saatlik mumlar (BIST seansına göre 10:00 ve 14:00 seans dilimleri)
+- "4h": 4 Saatlik mumlar (BIST seansına göre 10:00 [kapanış 14:30] ve 14:30 [kapanış 18:10] seans dilimleri)
 - "1h": 1 Saatlik mumlar (TradingView 1s)
 
 Look-Ahead Bias & Repainting Koruması:
@@ -27,6 +27,8 @@ import numpy as np
 import pandas as pd
 
 from python_bot.engine.data.provider import (
+    bar_close_time,
+    is_bar_closed,
     DataProvider,
     DataResult,
     DataStatus,
@@ -44,13 +46,13 @@ class PU30Config:
     require_higher_rsi: bool = True    # 2. dip RSI > 1. dip RSI
     require_lower_price: bool = True   # 2. dip Fiyat < 1. dip Fiyat
     strict_threshold: bool = False     # True ise 1. dip <= 30 zorunlu; False ise trend uyumsuzluğu (örn. 5dk/15dk/1h/4h)
-    max_rsi_dip: float = 55.0          # Uyumsuzluk aranacak diplerin maksimum RSI tavanı
+    max_rsi_dip: float = 55.0          # 1. dip RSI bu tavanın altında olmalı (referans: rsi_uyumsuzluk.py/.pine)
     pivot_left_bars: int = 5
     pivot_right_bars: int = 2
-    min_gap_bars: int = 4
+    min_gap_bars: int = 8
     max_gap_bars: int = 60
-    min_bounce_pct: float = 1.0
-    signal_lifetime_bars: int = 10
+    min_bounce_pct: float = 3.0
+    signal_lifetime_bars: int = 5
 
 
 @dataclass(frozen=True)
@@ -61,13 +63,13 @@ class NU70Config:
     require_lower_rsi: bool = True    # 2. tepe RSI < 1. tepe RSI
     require_higher_price: bool = True  # 2. tepe Fiyat > 1. tepe Fiyat
     strict_threshold: bool = False     # True ise 1. tepe >= 70 zorunlu; False ise trend uyumsuzluğu
-    min_rsi_peak: float = 45.0         # Uyumsuzluk aranacak tepelerin minimum RSI tabanı
+    min_rsi_peak: float = 45.0         # 1. tepe RSI bu tabanın üstünde olmalı (referans: rsi_uyumsuzluk.py/.pine)
     pivot_left_bars: int = 5
     pivot_right_bars: int = 2
-    min_gap_bars: int = 4
+    min_gap_bars: int = 8
     max_gap_bars: int = 60
-    min_pullback_pct: float = 1.0
-    signal_lifetime_bars: int = 10
+    min_pullback_pct: float = 3.0
+    signal_lifetime_bars: int = 5
 
 
 DEFAULT_PU30_CONFIG = PU30Config()
@@ -87,7 +89,7 @@ def _epoch_seconds(ts: Any) -> int:
     """Lightweight-Charts için epoch saniyesi üretir."""
     t = pd.Timestamp(ts)
     if t.tzinfo is not None:
-        t = t.tz_localize(None)
+        t = t.tz_convert("UTC").tz_localize(None)
     return int((t - _EPOCH) / pd.Timedelta(seconds=1))
 
 
@@ -150,7 +152,7 @@ def find_confirmed_pivot_lows(
     for p in range(lb, max_p):
         if is_closed is not None:
             # Sağ teyit barlarından herhangi biri kapanmamışsa bu pivot kesinleşmiş sayılamaz
-            if not np.all(is_closed[p + 1:p + rb + 1]):
+            if not np.all(is_closed[p - lb:p + rb + 1]):
                 continue
         left = lows[p - lb:p]
         right = lows[p + 1:p + rb + 1]
@@ -171,7 +173,7 @@ def find_confirmed_pivot_highs(
     max_p = n - rb
     for p in range(lb, max_p):
         if is_closed is not None:
-            if not np.all(is_closed[p + 1:p + rb + 1]):
+            if not np.all(is_closed[p - lb:p + rb + 1]):
                 continue
         left = highs[p - lb:p]
         right = highs[p + 1:p + rb + 1]
@@ -210,7 +212,7 @@ def detect_rsi_pu30(
     lows = df["low"].to_numpy(dtype=float)
     highs = df["high"].to_numpy(dtype=float)
     dates = df["date"].to_numpy()
-    is_closed_arr = df["is_closed"].to_numpy(dtype=bool) if "is_closed" in df.columns else None
+    is_closed_arr = df["is_closed"].to_numpy(dtype=bool) if "is_closed" in df.columns else np.array([is_bar_closed(t, interval) for t in dates])
 
     rsi = wilder_rsi(closes, cfg.rsi_length)
     pivot_indices = find_confirmed_pivot_lows(lows, cfg.pivot_left_bars, cfg.pivot_right_bars, is_closed_arr)
@@ -237,7 +239,10 @@ def detect_rsi_pu30(
                 # strict_threshold=False ise Semih Ersoy trend uyumsuzluğu: dipler max_rsi_dip (örn 55) altında olmalı
                 if cfg.strict_threshold and d1["rsi"] >= (cfg.rsi_threshold + 2.0):
                     continue
-                if not cfg.strict_threshold and (d1["rsi"] > cfg.max_rsi_dip or d2["rsi"] > cfg.max_rsi_dip):
+                # Referans (rsi_uyumsuzluk.py/.pine) tavanı yalnızca 1. dibe uygular;
+                # 2. dip RSI'ı zaten require_higher_rsi ile 1. dipten yüksek olmak zorunda,
+                # üst sınırı yoktur -- burada da ikisini birden sınırlamıyoruz.
+                if not cfg.strict_threshold and d1["rsi"] > cfg.max_rsi_dip:
                     continue
 
                 # 2. Dip: Fiyat kuralı (cfg.require_lower_price ise daha düşük dip yapmalı)
@@ -248,8 +253,8 @@ def detect_rsi_pu30(
                 if cfg.require_higher_rsi and d2["rsi"] <= d1["rsi"]:
                     continue
 
-                # Opsiyonel: 2. Dip RSI 30 üzerinde olmalı
-                if cfg.rsi2_above_threshold and d2["rsi"] < cfg.rsi_threshold:
+                # 2. Dip RSI 30 üzerinde: klasik PU30 (strict) modda zorunlu, esnek modda opsiyonel
+                if (cfg.rsi2_above_threshold or cfg.strict_threshold) and d2["rsi"] < cfg.rsi_threshold:
                     continue
 
                 between_lo = lows[d1["index"] + 1:d2["index"]]
@@ -261,7 +266,9 @@ def detect_rsi_pu30(
                 max_between = float(between_hi.max())
                 bounce_pct = (max_between / d1["price"] - 1.0) * 100.0
 
-                if min_between >= (d1["price"] * 0.99) and bounce_pct >= cfg.min_bounce_pct:
+                # Fiyat Dip 1'den Dip 2'ye inerken Dip 1'in altından geçmek ZORUNDA (2. dip daha düşük);
+                # bu yüzden doğru kural "aradaki hiçbir mum Dip 2'nin altına inmemeli" (Dip 2 = bölgenin dibi).
+                if min_between >= d2["price"] and bounce_pct >= cfg.min_bounce_pct:
                     confirm_index = d2["index"] + cfg.pivot_right_bars
                     if confirm_index >= n:
                         continue
@@ -304,12 +311,16 @@ def detect_rsi_pu30(
                         "confirm_index": confirm_index,
                         "confirm_time": _epoch_seconds(confirm_ts),
                         "confirm_date": confirm_ts.strftime(date_fmt),
-                        "knowable_at": confirm_ts.strftime(date_fmt),
+                        "confirm_bar_open": confirm_ts.isoformat(),
+                        "knowable_at": bar_close_time(confirm_ts, interval).isoformat(),
+                        "strategy_version": "rsi-divergence-v2",
                         "guven_tazeleyen_tepe": {
                             "price": round(max_between, 2),
                             "date": max_between_ts.strftime(date_fmt),
                             "time": _epoch_seconds(max_between_ts),
+                            "kirildi": bool(closes[-1] > max_between),
                         },
+                        "tetiklendi": bool(closes[-1] > max_between),
                         "fibonacci_levels": fibonacci_levels,
                         "bounce_pct": round(bounce_pct, 2),
                         "bars_since_confirm": bars_since,
@@ -343,7 +354,7 @@ def detect_rsi_nu70(
     highs = df["high"].to_numpy(dtype=float)
     lows = df["low"].to_numpy(dtype=float)
     dates = df["date"].to_numpy()
-    is_closed_arr = df["is_closed"].to_numpy(dtype=bool) if "is_closed" in df.columns else None
+    is_closed_arr = df["is_closed"].to_numpy(dtype=bool) if "is_closed" in df.columns else np.array([is_bar_closed(t, interval) for t in dates])
 
     rsi = wilder_rsi(closes, cfg.rsi_length)
     pivot_indices = find_confirmed_pivot_highs(highs, cfg.pivot_left_bars, cfg.pivot_right_bars, is_closed_arr)
@@ -370,7 +381,8 @@ def detect_rsi_nu70(
                 # strict_threshold=False ise Semih Ersoy trend uyumsuzluğu: tepeler min_rsi_peak (örn 45) üstünde olmalı
                 if cfg.strict_threshold and t1["rsi"] < (cfg.rsi_threshold - 2.0):
                     continue
-                if not cfg.strict_threshold and (t1["rsi"] < cfg.min_rsi_peak or t2["rsi"] < cfg.min_rsi_peak):
+                # Referans tabanı yalnızca 1. tepeye uygular (bkz. yukarıdaki PU30 notu, ayna kural).
+                if not cfg.strict_threshold and t1["rsi"] < cfg.min_rsi_peak:
                     continue
 
                 # 2. Tepe: Fiyat daha yüksek zirve yapmalı (Fiyat tepeleri yükseliyor)
@@ -381,8 +393,8 @@ def detect_rsi_nu70(
                 if cfg.require_lower_rsi and t2["rsi"] >= t1["rsi"]:
                     continue
 
-                # Opsiyonel: 2. Tepe RSI 70 altında kalmalı
-                if cfg.rsi2_below_threshold and t2["rsi"] > (cfg.rsi_threshold + 2.0):
+                # 2. Tepe RSI 70 altında: klasik NU70 (strict) modda zorunlu, esnek modda opsiyonel
+                if (cfg.rsi2_below_threshold or cfg.strict_threshold) and t2["rsi"] > (cfg.rsi_threshold + 2.0):
                     continue
 
                 between_lo = lows[t1["index"] + 1:t2["index"]]
@@ -391,8 +403,10 @@ def detect_rsi_nu70(
 
                 min_between = float(between_lo.min())
                 pullback_pct = (1.0 - min_between / t1["price"]) * 100.0
+                # Ayna kural: Tepe 2 aradaki en yüksek nokta olmalı
+                max_between_nu = float(highs[t1["index"] + 1:t2["index"]].max())
 
-                if pullback_pct >= cfg.min_pullback_pct:
+                if max_between_nu <= t2["price"] and pullback_pct >= cfg.min_pullback_pct:
                     confirm_index = t2["index"] + cfg.pivot_right_bars
                     if confirm_index >= n:
                         continue
@@ -438,12 +452,16 @@ def detect_rsi_nu70(
                         "confirm_index": confirm_index,
                         "confirm_time": _epoch_seconds(confirm_ts),
                         "confirm_date": confirm_ts.strftime(date_fmt),
-                        "knowable_at": confirm_ts.strftime(date_fmt),
+                        "confirm_bar_open": confirm_ts.isoformat(),
+                        "knowable_at": bar_close_time(confirm_ts, interval).isoformat(),
+                        "strategy_version": "rsi-divergence-v2",
                         "guven_kiran_dip": {
                             "price": round(min_between, 2),
                             "date": min_between_ts.strftime(date_fmt),
                             "time": _epoch_seconds(min_between_ts),
+                            "kirildi": bool(closes[-1] < min_between),
                         },
+                        "tetiklendi": bool(closes[-1] < min_between),
                         "fibonacci_levels": fibonacci_levels,
                         "pullback_pct": round(pullback_pct, 2),
                         "bounce_pct": round(pullback_pct, 2),
@@ -494,24 +512,39 @@ def scan_universe_rsi_pu30(
         try:
             df, data_res = _fetch_adjusted_bars(symbol, interval=interval)
             if df is None or len(df) < MIN_BARS_REQUIRED:
-                err_msg = data_res.error_message if data_res else "insufficient history"
+                err_msg = (data_res.error_message or "insufficient history") if data_res else "insufficient history"
                 return symbol, [], err_msg
 
+            if data_res.status != DataStatus.FRESH:
+                return symbol, [], data_res.status.value
             found = []
             last_close = float(df["close"].iloc[-1])
-            data_updated_at = data_res.updated_at if data_res else None
+            data_updated_at = data_res.last_bar_time if data_res else None
             data_status = data_res.status.value if data_res else "UNKNOWN"
 
-            # Çapraz teyit için karşıt zaman dilimini hazırla
-            cross_interval = "4h" if interval == "1h" else ("1h" if interval == "4h" else None)
-            df_cross = None
-            cross_data_status = None
-            if cross_interval:
-                try:
-                    df_cross, cross_res = _fetch_adjusted_bars(symbol, interval=cross_interval)
-                    cross_data_status = cross_res.status.value if cross_res else None
-                except Exception:
-                    df_cross = None
+            # Semih Hoca kural 3-4: 4s + günlük ana yön, 1s erken tetik / güven kıran dip.
+            #   1s taramada üst teyit = 4s VEYA günlük; 4s taramada alt teyit = 1s.
+            #   Karşı zaman dilimleri yalnızca sinyal bulunduğunda (lazy) çekilir.
+            cross_intervals = {"1h": ["4h", "1d"], "4h": ["1h"], "1d": ["1h"]}.get(interval, [])
+            _cross_cache: Dict[str, Optional[pd.DataFrame]] = {}
+
+            def _cross_df(ci: str) -> Optional[pd.DataFrame]:
+                if ci not in _cross_cache:
+                    try:
+                        cdf, cres = _fetch_adjusted_bars(symbol, interval=ci)
+                        ok = cdf is not None and cres is not None and cres.status == DataStatus.FRESH
+                        _cross_cache[ci] = cdf if ok else None
+                    except Exception:
+                        _cross_cache[ci] = None
+                return _cross_cache[ci]
+
+            def _cross_hits(detector, cfg_) -> List[str]:
+                hits = []
+                for ci in cross_intervals:
+                    cdf = _cross_df(ci)
+                    if cdf is not None and detector(cdf, cfg_, interval=ci):
+                        hits.append(ci)
+                return hits
 
             if signal_type in ("all", "pu30"):
                 sig_pu = detect_rsi_pu30(df, DEFAULT_PU30_CONFIG, interval=interval)
@@ -522,13 +555,13 @@ def scan_universe_rsi_pu30(
                     sig_pu["data_updated_at"] = data_updated_at
 
                     # Çoklu zaman dilimi (Multi-Timeframe) Çapraz Kontrolü
-                    has_cross_pu = False
-                    if df_cross is not None and cross_data_status == DataStatus.FRESH.value:
-                        has_cross_pu = bool(detect_rsi_pu30(df_cross, DEFAULT_PU30_CONFIG, interval=cross_interval))
+                    cross_pu = _cross_hits(detect_rsi_pu30, DEFAULT_PU30_CONFIG)
+                    has_cross_pu = bool(cross_pu)
+                    sig_pu["confirmed_timeframes"] = [interval] + cross_pu
 
                     if has_cross_pu:
                         sig_pu["confluence"] = "DOUBLE_BULL"
-                        sig_pu["confluence_badge"] = "💎 1s + 4s ÇİFTE ONAY (ANA RALLİ)"
+                        sig_pu["confluence_badge"] = f"💎 {' + '.join(sig_pu['confirmed_timeframes'])} ÇİFTE ONAY (ANA RALLİ)"
                         sig_pu["strategy_action"] = "Hem 1s hem 4s teyitli ana dip dönüşü. Büyük trend potansiyeli!"
                     elif interval == "1h":
                         sig_pu["confluence"] = "SCALP_1H"
@@ -549,18 +582,27 @@ def scan_universe_rsi_pu30(
                     sig_nu["data_status"] = data_status
                     sig_nu["data_updated_at"] = data_updated_at
 
-                    has_cross_nu = False
-                    if df_cross is not None and cross_data_status == DataStatus.FRESH.value:
-                        has_cross_nu = bool(detect_rsi_nu70(df_cross, DEFAULT_NU70_CONFIG, interval=cross_interval))
+                    cross_nu = _cross_hits(detect_rsi_nu70, DEFAULT_NU70_CONFIG)
+                    has_cross_nu = bool(cross_nu)
+                    sig_nu["confirmed_timeframes"] = [interval] + cross_nu
 
                     if has_cross_nu:
                         sig_nu["confluence"] = "DOUBLE_BEAR"
-                        sig_nu["confluence_badge"] = "🚨 1s + 4s ÇİFTE DÜŞÜŞ (ZİRVE ÇÖKÜŞ)"
-                        sig_nu["strategy_action"] = "Güven kıran dip kırıldı, tepeden sert kâr satışı riski. Kâr al / Stop tavsiye edilir."
+                        sig_nu["confluence_badge"] = f"🚨 {' + '.join(sig_nu['confirmed_timeframes'])} ÇİFTE DÜŞÜŞ (ZİRVE ÇÖKÜŞ)"
+                        gkd = sig_nu["guven_kiran_dip"]["price"]
+                        sig_nu["strategy_action"] = (
+                            f"Güven kıran dip ({gkd}) kırıldı, tepeden sert kâr satışı riski. Kâr al / Stop tavsiye edilir."
+                            if sig_nu["tetiklendi"] else
+                            f"Çift zaman diliminde tepe uyumsuzluğu. Güven kıran dip {gkd} altında kapanışta satış teyidi."
+                        )
                     elif interval == "1h":
                         sig_nu["confluence"] = "SCALP_BEAR"
                         sig_nu["confluence_badge"] = "⚠️ 1s GÜVEN KIRAN DİP UYARISI"
-                        sig_nu["strategy_action"] = "Saatlik bazda zirve geçilemedi ve ara dip altına indi. Erken çıkış fırsatı."
+                        sig_nu["strategy_action"] = (
+                            "Saatlik bazda zirve geçilemedi ve güven kıran dip kırıldı. Erken çıkış fırsatı."
+                            if sig_nu["tetiklendi"] else
+                            f"Saatlik bazda zirve geçilemedi. Güven kıran dip {sig_nu['guven_kiran_dip']['price']} izlenmeli."
+                        )
                     else:
                         sig_nu["confluence"] = "MACRO_BEAR"
                         sig_nu["confluence_badge"] = "🔴 4s TEPE YORULMASI"
@@ -580,12 +622,19 @@ def scan_universe_rsi_pu30(
                 errors.append({"symbol": clean_symbol_display(symbol), "error": err})
 
     # En yeni teyit edilen sinyalleri başa yerleştir
-    results.sort(key=lambda s: s.get("bars_since_confirm", 999))
+    _rank = {"DOUBLE_BULL": 0, "DOUBLE_BEAR": 0}
+    results.sort(key=lambda s: (_rank.get(s.get("confluence"), 1), s.get("bars_since_confirm", 999)))
 
     return {
         "signals": results,
         "errors": errors,
-        "scanned": len(symbols),
+        "attempted": len(symbols),
+        "scanned": len(symbols) - len(errors),
+        "status": "error" if len(errors) == len(symbols) and errors else ("partial" if errors else "success"),
+        "source": "yfinance_auto_adjust",
+        "model_version": None,
+        "calculated_at": pd.Timestamp.now(tz="UTC").isoformat(),
+        "checks": {"closed_bars": True, "calendar": "REGULAR_SESSION_ONLY"},
         "matched": len(results),
         "interval": interval,
         "signal_type": signal_type,

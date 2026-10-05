@@ -56,9 +56,14 @@ class DataResult:
     bar_count: int = 0
     history_limit_note: str = ""
     is_forming_bar_included: bool = False
+    warnings: List[str] = field(default_factory=list)
+    source: str = "yfinance_auto_adjust"
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            "source": self.source,
+            "warnings": self.warnings,
+            "calendar_status": "REGULAR_SESSION_ONLY",
             "symbol": self.symbol,
             "interval": self.interval,
             "status": self.status.value,
@@ -164,69 +169,33 @@ def validate_and_clean_ohlcv(df: pd.DataFrame, interval: str) -> Tuple[pd.DataFr
     return df.reset_index(drop=True), warnings
 
 
-def is_bar_closed(bar_time: pd.Timestamp, interval: str, now_ist: Optional[datetime] = None) -> bool:
-    """
-    Bir mumun kapanıp kapanmadığını BIST seans kurallarına göre belirler.
-    
-    BIST Kuralları:
-    - Hafta sonu (Cumartesi=5, Pazar=6): Tüm önceki mumlar kapalıdır.
-    - Hafta içi:
-      - 1d: Seans 18:10'da tamamen biter. now_ist >= 18:10 ise günün mumu kapalıdır.
-      - 4h: 10:00 mumu 14:00'te kapanır; 14:00 mumu 18:10'da kapanır.
-      - 1h: Mum başlangıcından 60 dakika sonra kapanır.
-    """
-    now = now_ist or datetime.now(ISTANBUL_TZ)
-
-    # Bar zamanını Europe/Istanbul zaman dilimine normalize et
+def bar_close_time(bar_time, interval):
+    """Conservative regular-session close; holiday/half-day calendar not certified."""
     ts = pd.Timestamp(bar_time)
-    if ts.tzinfo is None:
-        ts = ts.tz_localize(ISTANBUL_TZ)
-    else:
-        ts = ts.tz_convert(ISTANBUL_TZ)
-
-    bar_date = ts.date()
-    today_date = now.date()
-
-    # Geçmiş günlerin mumları kesinlikle kapalıdır
-    if bar_date < today_date:
-        return True
-
-    # Gelecek bir tarihteyse (anomali) kapalı sayılamaz
-    if bar_date > today_date:
-        return False
-
-    # Hafta sonu ise bugüne ait mum olamaz ama varsa da kapalıdır
-    if now.weekday() >= 5:
-        return True
-
-    # Bugünün mumları için seans içi zaman kontrolü:
-    now_time = now.time()
-
+    ts = ts.tz_localize(ISTANBUL_TZ) if ts.tzinfo is None else ts.tz_convert(ISTANBUL_TZ)
     if interval == "1d":
-        return now_time >= BIST_CLOSING_END
-
+        return ts.normalize() + pd.Timedelta(hours=18, minutes=10)
     if interval == "4h":
-        # 10:00 sabah mumu 14:00'te kapanır
-        if ts.hour < 14:
-            return now_time >= BIST_MID_SESSION
-        # 14:00 öğleden sonra mumu 18:10'da kapanır
-        return now_time >= BIST_CLOSING_END
-
+        # Sabah mumunun son bileşeni 13:30 saatlik barıdır ve 14:30'da kapanır.
+        return ts.normalize() + (pd.Timedelta(hours=14, minutes=30) if ts.hour < 14 else pd.Timedelta(hours=18, minutes=10))
     if interval == "1h":
-        # 1 saatlik mum: bar zamanı + 60 dakika
-        bar_end_time = (ts + timedelta(hours=1)).time()
-        return now_time >= bar_end_time
+        return ts + pd.Timedelta(hours=1)
+    raise ValueError(f"Unsupported interval: {interval}")
 
-    return True
+
+def is_bar_closed(bar_time, interval, now_ist=None):
+    now = pd.Timestamp(now_ist or datetime.now(ISTANBUL_TZ))
+    now = now.tz_localize(ISTANBUL_TZ) if now.tzinfo is None else now.tz_convert(ISTANBUL_TZ)
+    return bool(bar_close_time(bar_time, interval) <= now)
 
 
 def resample_bist_4h(raw_1h_df: pd.DataFrame) -> pd.DataFrame:
     """
     1 saatlik BIST verisini duvar saati yerine Borsa İstanbul seansına göre
-    kesintisiz ve tutarlı iki 4 saatlik seans mumuna (10:00 ve 14:00) sentezler:
+    kesintisiz ve tutarlı iki 4 saatlik seans mumuna (10:00 ve 14:30) sentezler:
     
-    1. Seans (Sabah): 10:00 - 14:00 (10:00 öncesi açılış barları dahil 14:00'e kadar olanlar)
-    2. Seans (Öğle): 14:00 - 18:10 (14:00 ve sonrası kapanışa kadar olan barlar)
+    1. Seans (Sabah, etiket 10:00): 09:30..13:30 saatlik barları -> gerçek kapsam 10:00-14:30
+    2. Seans (Öğle, etiket 14:30): 14:30..17:30 saatlik barları -> gerçek kapsam 14:30-18:10
     
     OHLCV Toplama Kuralları:
     - Open: İlk barın Open değeri
@@ -252,7 +221,7 @@ def resample_bist_4h(raw_1h_df: pd.DataFrame) -> pd.DataFrame:
 
     # Timezone'u Europe/Istanbul yap
     if df.index.tzinfo is None:
-        df.index = df.index.tz_localize("UTC").tz_convert(ISTANBUL_TZ)
+        df.index = df.index.tz_localize(ISTANBUL_TZ)
     else:
         df.index = df.index.tz_convert(ISTANBUL_TZ)
 
@@ -264,14 +233,18 @@ def resample_bist_4h(raw_1h_df: pd.DataFrame) -> pd.DataFrame:
     col_map = {c: c.capitalize() for c in df.columns}
     df = df.rename(columns=col_map)
 
-    # Hafta sonu barlarını filtrele (BIST Cumartesi-Pazar kapalı)
-    df = df[df.index.dayofweek < 5]
+    # Hafta sonu barlarını filtrele (BIST Cumartesi-Pazar kapalı). yfinance BIST
+    # saatlik barları 09:30..17:30 damgalıdır; 09:30 barı 10:00 açılışını içerir,
+    # bu yüzden 09:xx barları sabah mumuna dahil edilmelidir (atılırsa gerçek açılış kaybolur).
+    df = df[(df.index.dayofweek < 5) & (df.index.hour >= 9) & (df.index.hour < 18)]
     if df.empty:
         return pd.DataFrame()
 
-    # BIST seans dilimi belirle: 14:00 öncesi sabah seansı, 14:00 ve sonrası öğle seansı
+    # Sabah mumu 09:30..13:30 saatlik barlarını (gerçek kapsam 10:00-14:30), öğle mumu
+    # 14:30..17:30 barlarını (14:30-18:10) içerir; öğle etiketi bu yüzden 14:30'dur.
+    # Kapanış zamanları bar_close_time ile tutarlıdır.
     def _session_label(dt: pd.Timestamp) -> pd.Timestamp:
-        session_time = dtime(10, 0) if dt.hour < 14 else dtime(14, 0)
+        session_time = dtime(10, 0) if dt.hour < 14 else dtime(14, 30)
         return pd.Timestamp.combine(dt.date(), session_time).tz_localize(ISTANBUL_TZ)
 
     session_keys = df.index.map(_session_label)
@@ -387,7 +360,7 @@ class YFinanceDataProvider:
 
             # Eğer kullanıcı oluşmakta olan mumu istemiyorsa ve son mum kapanmamışsa son mumu filtrele
             if not include_forming_bar and is_forming:
-                df = df.iloc[:-1].copy()
+                df = df[df["is_closed"]].copy()
 
             if df.empty:
                 return DataResult(
@@ -419,6 +392,7 @@ class YFinanceDataProvider:
                 bar_count=len(df),
                 history_limit_note=limit_note,
                 is_forming_bar_included=include_forming_bar and is_forming,
+                warnings=warnings + ["Holiday/half-day calendar and missing source bars are not certified."],
             )
 
         except Exception as e:

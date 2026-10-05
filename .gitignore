@@ -53,8 +53,11 @@ __pycache__/
 .venv/
 venv/
 
-# Generated backtest audit trail output (src/core/backtest.py)
-journal/
+# Generated backtest audit trail output (root only -- a bare `journal/` also
+# hid the python_bot/engine/journal/ source package from git)
+/journal/
+# Runtime decision/outcome logs written by engine/journal/daily_history.py
+python_bot/engine/journal/*.csv
 
 # Locally-trained ML model artifacts (regenerate via
 # python_bot/engine/brain/local_classifier.py train_and_save())

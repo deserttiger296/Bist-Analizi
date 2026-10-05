@@ -54,6 +54,12 @@ class BacktestConfig:
     slippage_pct: float = 0.05       # Tek yön ortalama kayma payı (%)
     holding_bars_max: int = 20       # Maksimum pozisyon tutma barı
     target_pct: float = 6.0          # Kâr al hedefi (%)
+    initial_capital: float = 100000.0
+    risk_per_trade_pct: float = 1.0
+    max_exposure_pct: float = 100.0
+    max_positions: int = 5
+    max_loss_pct: float = 10.0
+    interval: str = "4h"
     stop_loss_pct: float = 3.0       # Zarar kes seviyesi (%)
 
 
@@ -69,195 +75,128 @@ class BacktestSummary:
     max_drawdown_pct: float
     trades: List[BacktestTrade] = field(default_factory=list)
     limitations: List[str] = field(default_factory=list)
+    equity_curve: List[Dict[str, Any]] = field(default_factory=list)
+    exposure_pct: float = 0.0
+    average_win_pct: float = 0.0
+    average_loss_pct: float = 0.0
 
 
-def run_single_symbol_backtest(
-    df: pd.DataFrame,
-    symbol: str,
-    config: Optional[BacktestConfig] = None,
-    pu30_cfg: Optional[PU30Config] = None,
-    nu70_cfg: Optional[NU70Config] = None,
-) -> List[BacktestTrade]:
+def run_portfolio_backtest(frames, config=None, pu30_cfg=None, nu70_cfg=None, signal_filter=None):
+    """Spot, long-only, shared cash. Stops first on ambiguous bars; liquidate at data end.
+
+    `signal_filter(symbol, history, signal)` must use only the supplied prefix.
+    NU70 is an exit warning, never an implicit short sale.
     """
-    Tek bir hisse için tam walk-forward simülasyonu çalıştırır.
-    Look-ahead bias içermez: Her bar t anında sadece 0..t barları sinyal motoruna verilir.
-    """
-    if config is None:
-        config = BacktestConfig()
-    if pu30_cfg is None:
-        pu30_cfg = DEFAULT_PU30_CONFIG
-    if nu70_cfg is None:
-        nu70_cfg = DEFAULT_NU70_CONFIG
-
-    n = len(df)
-    if n < 35:
-        return []
-
-    trades: List[BacktestTrade] = []
-    in_position: bool = False
-    active_trade_type = ""
-    entry_idx = -1
-    entry_price_exec = 0.0
-    entry_time_str = ""
-
-    friction_total = (config.commission_pct + config.slippage_pct) * 2  # Giriş + çıkış toplam sürtünme (%)
-
-    # Teyit edilmiş son sinyalleri tekrar tekrar işleme almamak için takip kümesi
-    processed_confirm_indices = set()
-
-    for t in range(30, n):
-        # 1. Pozisyondaysak çıkış kurallarını kontrol et (Önce SL / TP / Süre)
-        if in_position:
-            bars_held = t - entry_idx
-            curr_bar = df.iloc[t]
-            curr_high = float(curr_bar["high"])
-            curr_low = float(curr_bar["low"])
-            curr_close = float(curr_bar["close"])
-            bar_time = str(curr_bar["date"])
-
-            exit_price = None
-            exit_reason = ""
-
-            if active_trade_type == "PU30":  # Long işlem
-                # Hedef kontrolü
-                target_price = entry_price_exec * (1.0 + config.target_pct / 100.0)
-                stop_price = entry_price_exec * (1.0 - config.stop_loss_pct / 100.0)
-
-                if curr_low <= stop_price:
-                    exit_price = stop_price
-                    exit_reason = "STOP"
-                elif curr_high >= target_price:
-                    exit_price = target_price
-                    exit_reason = "TARGET"
-                elif bars_held >= config.holding_bars_max:
-                    exit_price = curr_close
-                    exit_reason = "HOLDING_EXPIRY"
-
-            elif active_trade_type == "NU70":  # Short/Hedge işlem
-                target_price = entry_price_exec * (1.0 - config.target_pct / 100.0)
-                stop_price = entry_price_exec * (1.0 + config.stop_loss_pct / 100.0)
-
-                if curr_high >= stop_price:
-                    exit_price = stop_price
-                    exit_reason = "STOP"
-                elif curr_low <= target_price:
-                    exit_price = target_price
-                    exit_reason = "TARGET"
-                elif bars_held >= config.holding_bars_max:
-                    exit_price = curr_close
-                    exit_reason = "HOLDING_EXPIRY"
-
-            if exit_price is not None:
-                if active_trade_type == "PU30":
-                    gross_ret = (exit_price / entry_price_exec - 1.0) * 100.0
-                else:
-                    gross_ret = (1.0 - exit_price / entry_price_exec) * 100.0
-
-                net_ret = gross_ret - friction_total
-                pnl = net_ret * entry_price_exec / 100.0
-
-                trades.append(
-                    BacktestTrade(
-                        symbol=symbol,
-                        signal_type=active_trade_type,
-                        entry_time=entry_time_str,
-                        entry_price=round(entry_price_exec, 2),
-                        exit_time=bar_time,
-                        exit_price=round(exit_price, 2),
-                        exit_reason=exit_reason,
-                        holding_bars=bars_held,
-                        gross_return_pct=round(gross_ret, 2),
-                        net_return_pct=round(net_ret, 2),
-                        pnl_amount=round(pnl, 2),
-                    )
-                )
-                in_position = False
-                active_trade_type = ""
+    from python_bot.engine.data.provider import bar_close_time
+    cfg = config or BacktestConfig()
+    if not (cfg.initial_capital > 0 and 0 < cfg.stop_loss_pct < 100 and cfg.target_pct > 0
+            and 0 < cfg.risk_per_trade_pct <= 100 and 0 < cfg.max_exposure_pct <= 100
+            and cfg.max_positions >= 1 and 0 < cfg.max_loss_pct <= 100
+            and 0 <= cfg.commission_pct < 100 and 0 <= cfg.slippage_pct < 100):
+        raise ValueError("Invalid risk or execution configuration")
+    cash = cfg.initial_capital
+    positions, pending, marks = {}, {}, {}
+    trades, curve = [], [{"time": "initial", "equity": cash, "cash": cash, "unrealized_pnl": 0.0}]
+    fee, slip = cfg.commission_pct / 100, cfg.slippage_pct / 100
+    timeline = {}
+    for symbol, df in frames.items():
+        if not df.date.is_monotonic_increasing or df.date.duplicated().any():
+            raise ValueError("Bars must be unique and ordered")
+        for i, row in df.iterrows():
+            if "is_closed" in row and not row.is_closed:
                 continue
+            ts = pd.Timestamp(row.date)
+            ts = ts.tz_localize(ISTANBUL_TZ) if ts.tzinfo is None else ts.tz_convert(ISTANBUL_TZ)
+            timeline.setdefault(ts, []).append((symbol, df.index.get_loc(i), row))
+    occupied = 0
+    for ts, bars in sorted(timeline.items()):
+        # Update opening marks before allocations; no future close used for sizing.
+        for symbol, i, row in bars:
+            marks[symbol] = float(row.open)
+        for symbol, i, row in sorted(bars, key=lambda b: b[0]):
+            df = frames[symbol]
+            order = pending.get(symbol)
+            if order and ts >= order["available"]:
+                pending.pop(symbol)
+                equity = cash + sum(p["qty"] * marks[s] for s, p in positions.items())
+                exposure = sum(p["qty"] * marks[s] for s, p in positions.items())
+                if symbol not in positions and len(positions) < cfg.max_positions and equity > cfg.initial_capital * (1-cfg.max_loss_pct/100):
+                    price = float(row.open) * (1+slip)
+                    budget = min(cash/(1+fee), max(0, equity*cfg.max_exposure_pct/100-exposure), equity*cfg.risk_per_trade_pct/cfg.stop_loss_pct)
+                    qty = int(budget / price)
+                    if qty:
+                        cost = qty * price * (1+fee)
+                        cash -= cost
+                        positions[symbol] = {"qty": qty, "entry": price, "cost": cost, "time": str(ts), "index": i}
+            p = positions.get(symbol)
+            if p:
+                stop, target = p["entry"]*(1-cfg.stop_loss_pct/100), p["entry"]*(1+cfg.target_pct/100)
+                raw_exit, reason = None, None
+                if float(row.open) <= stop:
+                    raw_exit, reason = float(row.open), "STOP_GAP"
+                elif float(row.low) <= stop:
+                    raw_exit, reason = stop, "STOP"
+                elif float(row.open) >= target:
+                    raw_exit, reason = float(row.open), "TARGET_GAP"
+                elif float(row.high) >= target:
+                    raw_exit, reason = target, "TARGET"
+                elif p.get("exit_pending"):
+                    raw_exit, reason = float(row.open), "NU70_EXIT"
+                elif i-p["index"] >= cfg.holding_bars_max:
+                    raw_exit, reason = float(row.close), "HOLDING_EXPIRY"
+                if i == len(df)-1 and raw_exit is None:
+                    raw_exit, reason = float(row.close), "END_OF_DATA"
+                if raw_exit is not None:
+                    price = raw_exit*(1-slip)
+                    proceeds = p["qty"]*price*(1-fee)
+                    pnl = proceeds-p["cost"]
+                    cash += proceeds
+                    trades.append(BacktestTrade(symbol, "PU30", p["time"], p["entry"], str(ts), price, reason, i-p["index"], (raw_exit/p["entry"]-1)*100, pnl/p["cost"]*100, pnl))
+                    del positions[symbol]
+            marks[symbol] = float(row.close)
+            if i >= 30 and i+1 < len(df):
+                prefix = df.iloc[:i+1]
+                if symbol in positions:
+                    sell = detect_rsi_nu70(prefix, cfg=nu70_cfg or DEFAULT_NU70_CONFIG, interval=cfg.interval)
+                    if sell and sell["confirm_index"] == i:
+                        positions[symbol]["exit_pending"] = True
+                elif symbol not in pending:
+                    sig = detect_rsi_pu30(prefix, cfg=pu30_cfg or DEFAULT_PU30_CONFIG, interval=cfg.interval)
+                    if sig and sig["confirm_index"] == i and (signal_filter is None or signal_filter(symbol, prefix, sig)):
+                        available = pd.Timestamp(sig.get("knowable_at", bar_close_time(row.date, cfg.interval)))
+                        if available.tzinfo is None: available = available.tz_localize(ISTANBUL_TZ)
+                        pending[symbol] = {"available": available}
+        equity = cash+sum(p["qty"]*marks[s] for s,p in positions.items())
+        occupied += bool(positions)
+        curve.append({"time": str(ts), "equity": equity, "cash": cash, "unrealized_pnl": sum(p["qty"]*marks[s]-p["cost"] for s,p in positions.items())})
+    summary = evaluate_backtest_summary(trades)
+    summary.equity_curve = curve
+    eq = np.array([p["equity"] for p in curve], dtype=np.float64)
+    summary.total_net_return_pct = float((eq[-1]/cfg.initial_capital-1)*100)
+    summary.max_drawdown_pct = float(np.max((1-eq/np.maximum.accumulate(eq))*100))
+    summary.exposure_pct = occupied/max(1,len(timeline))*100
+    return summary
 
-        # 2. Pozisyonda değilsek, [0..t] verisiyle sinyal motorunu çalıştır
-        sub_df = df.iloc[: t + 1].copy()
-        sig_pu = detect_rsi_pu30(sub_df, cfg=pu30_cfg, ignore_lifetime=False, interval="4h")
-        sig_nu = detect_rsi_nu70(sub_df, cfg=nu70_cfg, ignore_lifetime=False, interval="4h")
 
-        sig_to_take = None
-        if sig_pu and sig_pu.get("confirm_index") == t and t not in processed_confirm_indices:
-            sig_to_take = ("PU30", sig_pu)
-            processed_confirm_indices.add(t)
-        elif sig_nu and sig_nu.get("confirm_index") == t and t not in processed_confirm_indices:
-            sig_to_take = ("NU70", sig_nu)
-            processed_confirm_indices.add(t)
-
-        if sig_to_take and (t + 1 < n):
-            sig_type, _ = sig_to_take
-            # İŞLEM GİRİŞİ: Look-Ahead koruması gereği sinyalin bilindiği andan (t kapanışı)
-            # sonraki ilk barın (t+1) AÇILIŞINDA (Open) + slippage ile gerçekleşir.
-            next_bar = df.iloc[t + 1]
-            next_open = float(next_bar["open"])
-            slippage_adj = next_open * (config.slippage_pct / 100.0)
-
-            if sig_type == "PU30":
-                entry_price_exec = next_open + slippage_adj
-            else:
-                entry_price_exec = next_open - slippage_adj
-
-            in_position = True
-            active_trade_type = sig_type
-            entry_idx = t + 1
-            entry_time_str = str(next_bar["date"])
-
-    return trades
+def run_single_symbol_backtest(df, symbol, config=None, pu30_cfg=None, nu70_cfg=None):
+    if len(df) < 35: return []
+    return run_portfolio_backtest({symbol: df.reset_index(drop=True)}, config, pu30_cfg, nu70_cfg).trades
 
 
-def evaluate_backtest_summary(trades: List[BacktestTrade]) -> BacktestSummary:
-    """İşlem listesinden genel performans metriklerini hesaplar."""
-    limitations = [
-        "Veri kaynağı (yfinance) yalnızca halihazırda işlem gören hisseleri içerir; survivorship bias riski taşır.",
-        "1 saatlik veriler en fazla 730 gün geçmişe sahiptir; daha uzun test periyotları sınırlıdır.",
-        "Geçmiş simülasyon performansı gelecekteki getiri garantisi sağlamaz.",
-    ]
-
-    if not trades:
-        return BacktestSummary(
-            total_trades=0,
-            winning_trades=0,
-            losing_trades=0,
-            win_rate_pct=0.0,
-            avg_trade_net_return_pct=0.0,
-            total_net_return_pct=0.0,
-            profit_factor=0.0,
-            max_drawdown_pct=0.0,
-            trades=[],
-            limitations=limitations,
-        )
-
-    wins = [t for t in trades if t.net_return_pct > 0]
-    losses = [t for t in trades if t.net_return_pct <= 0]
-
-    win_rate = (len(wins) / len(trades)) * 100.0
-    net_returns = [t.net_return_pct for t in trades]
-    avg_net_return = float(np.mean(net_returns))
-    total_net_return = float(np.sum(net_returns))
-
-    total_gross_profit = sum(t.net_return_pct for t in wins)
-    total_gross_loss = abs(sum(t.net_return_pct for t in losses))
-    profit_factor = (total_gross_profit / total_gross_loss) if total_gross_loss > 0 else 99.0
-
-    # Drawdown hesabı
-    cumulative = np.cumsum(net_returns)
-    peak = np.maximum.accumulate(cumulative)
-    drawdowns = peak - cumulative
-    max_dd = float(np.max(drawdowns)) if len(drawdowns) > 0 else 0.0
-
+def evaluate_backtest_summary(trades):
+    returns = np.array([t.net_return_pct for t in trades], dtype=np.float64)
+    wins, losses = returns[returns>0], returns[returns<0]
+    equity = np.r_[1.0, np.cumprod(1+returns/100)]
     return BacktestSummary(
-        total_trades=len(trades),
-        winning_trades=len(wins),
-        losing_trades=len(losses),
-        win_rate_pct=round(win_rate, 2),
-        avg_trade_net_return_pct=round(avg_net_return, 2),
-        total_net_return_pct=round(total_net_return, 2),
-        profit_factor=round(profit_factor, 2),
-        max_drawdown_pct=round(max_dd, 2),
-        trades=trades,
-        limitations=limitations,
-    )
+        total_trades=len(trades), winning_trades=len(wins), losing_trades=len(losses),
+        win_rate_pct=len(wins)/max(1,len(trades))*100,
+        avg_trade_net_return_pct=float(returns.mean()) if len(returns) else 0.0,
+        total_net_return_pct=float((equity[-1]-1)*100),
+        profit_factor=float(wins.sum()/-losses.sum()) if len(losses) else None,
+        max_drawdown_pct=float(np.max((1-equity/np.maximum.accumulate(equity))*100)),
+        trades=trades, average_win_pct=float(wins.mean()) if len(wins) else 0.0,
+        average_loss_pct=float(losses.mean()) if len(losses) else 0.0,
+        limitations=["Trade-only summary compounds sequential full-capital trades; use portfolio simulation for actual shared capital.",
+                      "Spot long-only; NU70 exits, no VIOP, borrowing or leverage.",
+                      "Stop-first intrabar assumption; auction liquidity, halts, delistings and corporate-action point-in-time data unverified.",
+                      "Open positions liquidated at final close with costs; drawdown sampled at closes, not tick-level."])

@@ -20,7 +20,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
-from engine.signals.rsi_pu30 import _fetch_adjusted_bars, wilder_rsi, _epoch_seconds, INTERVALS
+from python_bot.engine.signals.rsi_pu30 import _fetch_adjusted_bars, wilder_rsi, _epoch_seconds, INTERVALS
+from python_bot.engine.data.provider import DataStatus
 
 
 @dataclass(frozen=True)
@@ -165,9 +166,11 @@ def scan_universe_most_rsi(symbols: List[str], cfg: MOSTRSIConfig = DEFAULT_MOST
     
     def _scan_one(sym: str):
         try:
-            df = _fetch_adjusted_bars(sym, interval=interval)
+            df, data_res = _fetch_adjusted_bars(sym, interval=interval)
             if df is None:
-                return sym, None, "insufficient history"
+                return sym, None, (data_res.error_message if data_res and data_res.error_message else "insufficient history")
+            if data_res.status != DataStatus.FRESH:
+                return sym, None, data_res.status.value
             res = detect_most_rsi(df, cfg=cfg, interval=interval)
             if res is None:
                 return sym, None, None
@@ -188,7 +191,11 @@ def scan_universe_most_rsi(symbols: List[str], cfg: MOSTRSIConfig = DEFAULT_MOST
     return {
         "signals": signals,
         "errors": errors,
-        "scanned": len(symbols),
+        "attempted": len(symbols),
+        "scanned": len(symbols) - len(errors),
+        "status": "error" if errors and len(errors) == len(symbols) else ("partial" if errors else "success"),
+        "source": "yfinance_auto_adjust",
+        "calculated_at": pd.Timestamp.now(tz="UTC").isoformat(),
         "matched": len(signals),
         "interval": interval,
         "engine": "MOSTRSI_14_VAR_5_9",
@@ -203,7 +210,7 @@ def get_most_rsi_chart_data(symbol: str, cfg: MOSTRSIConfig = DEFAULT_MOSTRSI_CO
         raise ValueError(f"Unsupported interval: {interval}")
         
     date_fmt = INTERVALS[interval][1]
-    df = _fetch_adjusted_bars(symbol, interval=interval)
+    df, _ = _fetch_adjusted_bars(symbol, interval=interval)
     if df is None:
         return None
         

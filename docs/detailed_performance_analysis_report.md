@@ -1,3 +1,5 @@
+> **Doğrulama durumu (2026-10-05): DOĞRULANMAMIŞ / TARİHSEL.** Bu rapor, eğitim-test sızıntısı (rastgele bölme, örnek-içi değerlendirme) ve demo fallback verisi giderilmeden önce üretildi. Buradaki sayılar karar için kullanılmamalı. Güncel durum: [SIGNAL_AND_VALIDATION_STATUS.md](SIGNAL_AND_VALIDATION_STATUS.md).
+
 # 📊 BIST Analyst (v3.1) Detailed Performance Audit & Calibration Report
 **Evaluation Window:** June 5, 2026 – June 17, 2026 (12 Calendar Days)  
 **System Version:** Kazananlar Kulübü — BIST AI Analyst  

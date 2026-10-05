@@ -12,14 +12,14 @@ import ccxt
 from statsmodels.tsa.arima.model import ARIMA
 from typing import List, Optional
 
-from engine.audit_log import record_backtest_run
-from engine.stat_arb import run_pairs_analysis
-from engine.shield.kelly_sizing import KellySizingEngine
-from engine.shield.risk_var import ValueAtRiskModel
-from engine.ingest.l2_orderbook import L2OrderBookAnalyzer
-from engine.ingest.akd_scraper import BrokerDistributionScraper
-from engine.brain.regime_hmm import classify_regime_hmm
-from engine.execution.osmanli_webhook import send_webhook_order, Direction
+from python_bot.engine.audit_log import record_backtest_run
+from python_bot.engine.stat_arb import run_pairs_analysis
+from python_bot.engine.shield.kelly_sizing import KellySizingEngine
+from python_bot.engine.shield.risk_var import ValueAtRiskModel
+from python_bot.engine.ingest.l2_orderbook import L2OrderBookAnalyzer
+from python_bot.engine.ingest.akd_scraper import BrokerDistributionScraper
+from python_bot.engine.brain.regime_hmm import classify_regime_hmm
+from python_bot.engine.execution.osmanli_webhook import send_webhook_order, Direction
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("BIST_FastAPI_Quant")
