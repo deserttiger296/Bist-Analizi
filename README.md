@@ -77,3 +77,17 @@ Kök dizindeki PowerShell betiğiyle tüm servisleri (FastAPI, StockSharp, Next.
 ## 🌐 Canlı Yayına Alma (Netlify / Cloud)
 Next.js ve statik web terminali Netlify üzerinde sıfır konfigürasyon ile doğrudan derlenecek şekilde optimize edilmiştir (`npm run build`).
 Kullanıcılar GitHub reponuzu Netlify'a bağlayarak Continuous Deployment (otomatik güncelleme) avantajından yararlanabilir.
+
+
+### PU30 kural düzeltmesi — 6 Ekim 2026
+
+Canlı tarama, çapraz zaman dilimi teyidi ve sembol detayları varsayılan olarak
+katı PU30 kullanır: **ilk dip RSI < 30, ikinci dip RSI > 30**. Tam 30 kabul
+edilmez. Düşük ikinci fiyat ve kapanmış pivot teyidi koşulları da korunur.
+`pu30-strict-v3` bu kuralın sürümüdür. `strict_threshold=False` yalnızca açıkça
+seçilen eski deneysel uyumsuzluk araştırmaları içindir; API bunu seçmez.
+24,8 → 27,7 (KCAER) ve 32,9 → 33,4 (TOASO) PU30 değildir.
+Önceki esnek stratejiyle üretilen performans raporları bu sürümü doğrulamaz.
+
+Regresyon: `.venv/Scripts/python.exe -m pytest python_bot/tests/test_pu30_strict.py -q`
+Yerel değişiklik canlı siteye ancak yeni dağıtımla yansır.

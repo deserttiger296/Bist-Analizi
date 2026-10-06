@@ -42,10 +42,10 @@ from python_bot.engine.data.provider import (
 class PU30Config:
     rsi_length: int = 14
     rsi_threshold: float = 30.0
-    rsi2_above_threshold: bool = False # Semih Ersoy: 30 altı/üstü şartı şart değil, trend uyumsuzluğu esastır
+    rsi2_above_threshold: bool = False # strict_threshold=True zaten ikinci dip > 30 koşulunu zorunlu tutar
     require_higher_rsi: bool = True    # 2. dip RSI > 1. dip RSI
     require_lower_price: bool = True   # 2. dip Fiyat < 1. dip Fiyat
-    strict_threshold: bool = False     # True ise 1. dip <= 30 zorunlu; False ise trend uyumsuzluğu (örn. 5dk/15dk/1h/4h)
+    strict_threshold: bool = True      # PU30: ilk dip < 30, ikinci dip > 30 (6 Ekim 2026 düzeltmesi)
     max_rsi_dip: float = 55.0          # 1. dip RSI bu tavanın altında olmalı (referans: rsi_uyumsuzluk.py/.pine)
     pivot_left_bars: int = 5
     pivot_right_bars: int = 2
@@ -62,7 +62,7 @@ class NU70Config:
     rsi2_below_threshold: bool = False # Semih Ersoy: 70 altı/üstü şartı şart değil, tepelerden trend esastır
     require_lower_rsi: bool = True    # 2. tepe RSI < 1. tepe RSI
     require_higher_price: bool = True  # 2. tepe Fiyat > 1. tepe Fiyat
-    strict_threshold: bool = False     # True ise 1. tepe >= 70 zorunlu; False ise trend uyumsuzluğu
+    strict_threshold: bool = True      # NU70: ilk tepe > 70, ikinci tepe < 70 (PU30 ayna kuralı, 6 Ekim 2026)
     min_rsi_peak: float = 45.0         # 1. tepe RSI bu tabanın üstünde olmalı (referans: rsi_uyumsuzluk.py/.pine)
     pivot_left_bars: int = 5
     pivot_right_bars: int = 2
@@ -235,9 +235,9 @@ def detect_rsi_pu30(
                 # 1. Dip kontrolü
                 if np.isnan(d1["rsi"]):
                     continue
-                # strict_threshold=True ise 1. dip mutlaka <= 32 olmalı (klasik PU30)
+                # strict_threshold=True: ilk dip kesinlikle 30 altında; eşitlik kabul edilmez.
                 # strict_threshold=False ise Semih Ersoy trend uyumsuzluğu: dipler max_rsi_dip (örn 55) altında olmalı
-                if cfg.strict_threshold and d1["rsi"] >= (cfg.rsi_threshold + 2.0):
+                if cfg.strict_threshold and d1["rsi"] >= cfg.rsi_threshold:
                     continue
                 # Referans (rsi_uyumsuzluk.py/.pine) tavanı yalnızca 1. dibe uygular;
                 # 2. dip RSI'ı zaten require_higher_rsi ile 1. dipten yüksek olmak zorunda,
@@ -254,7 +254,7 @@ def detect_rsi_pu30(
                     continue
 
                 # 2. Dip RSI 30 üzerinde: klasik PU30 (strict) modda zorunlu, esnek modda opsiyonel
-                if (cfg.rsi2_above_threshold or cfg.strict_threshold) and d2["rsi"] < cfg.rsi_threshold:
+                if (cfg.rsi2_above_threshold or cfg.strict_threshold) and d2["rsi"] <= cfg.rsi_threshold:
                     continue
 
                 between_lo = lows[d1["index"] + 1:d2["index"]]
@@ -313,7 +313,7 @@ def detect_rsi_pu30(
                         "confirm_date": confirm_ts.strftime(date_fmt),
                         "confirm_bar_open": confirm_ts.isoformat(),
                         "knowable_at": bar_close_time(confirm_ts, interval).isoformat(),
-                        "strategy_version": "rsi-divergence-v2",
+                        "strategy_version": "pu30-strict-v3" if cfg.strict_threshold else "rsi-divergence-v2",
                         "guven_tazeleyen_tepe": {
                             "price": round(max_between, 2),
                             "date": max_between_ts.strftime(date_fmt),
@@ -377,9 +377,9 @@ def detect_rsi_nu70(
                 # 1. Tepe kontrolü
                 if np.isnan(t1["rsi"]):
                     continue
-                # strict_threshold=True ise 1. tepe mutlaka >= 68 olmalı (klasik NU70)
+                # strict_threshold=True: ilk tepe kesinlikle 70 üstünde; eşitlik kabul edilmez.
                 # strict_threshold=False ise Semih Ersoy trend uyumsuzluğu: tepeler min_rsi_peak (örn 45) üstünde olmalı
-                if cfg.strict_threshold and t1["rsi"] < (cfg.rsi_threshold - 2.0):
+                if cfg.strict_threshold and t1["rsi"] <= cfg.rsi_threshold:
                     continue
                 # Referans tabanı yalnızca 1. tepeye uygular (bkz. yukarıdaki PU30 notu, ayna kural).
                 if not cfg.strict_threshold and t1["rsi"] < cfg.min_rsi_peak:
@@ -394,7 +394,7 @@ def detect_rsi_nu70(
                     continue
 
                 # 2. Tepe RSI 70 altında: klasik NU70 (strict) modda zorunlu, esnek modda opsiyonel
-                if (cfg.rsi2_below_threshold or cfg.strict_threshold) and t2["rsi"] > (cfg.rsi_threshold + 2.0):
+                if (cfg.rsi2_below_threshold or cfg.strict_threshold) and t2["rsi"] >= cfg.rsi_threshold:
                     continue
 
                 between_lo = lows[t1["index"] + 1:t2["index"]]
@@ -454,7 +454,7 @@ def detect_rsi_nu70(
                         "confirm_date": confirm_ts.strftime(date_fmt),
                         "confirm_bar_open": confirm_ts.isoformat(),
                         "knowable_at": bar_close_time(confirm_ts, interval).isoformat(),
-                        "strategy_version": "rsi-divergence-v2",
+                        "strategy_version": "nu70-strict-v3" if cfg.strict_threshold else "rsi-divergence-v2",
                         "guven_kiran_dip": {
                             "price": round(min_between, 2),
                             "date": min_between_ts.strftime(date_fmt),

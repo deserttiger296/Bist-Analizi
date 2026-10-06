@@ -1,4 +1,6 @@
-# Varyant Karşılaştırması (out-of-sample)
+# Varyant Karşılaştırması (out-of-sample) — ESKİ: esnek kurallar `rsi-divergence-v2`
+
+> 6 Ekim 2026 itibarıyla geçersiz strateji sürümü: esnek eşik PU30/NU70 değildir. Güncel: [VARIANT_COMPARISON.md](VARIANT_COMPARISON.md) (`pu30-strict-v3`).
 
 Üretildi: 2026-10-05T16:40:43+00:00 · `python -m python_bot.scripts.compare_variants`
 

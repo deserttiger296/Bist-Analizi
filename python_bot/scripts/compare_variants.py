@@ -137,6 +137,7 @@ def _write_report(rows, benchmarks, final_start, universe, errors, cfg):
         f"Üretildi: {datetime.now(timezone.utc).isoformat(timespec='seconds')} · "
         f"`python -m python_bot.scripts.compare_variants`",
         "",
+        f"- Strateji: RSI PU30/NU70 `pu30-strict-v3` / `nu70-strict-v3` (1. dip RSI < 30, 2. dip RSI > 30; NU ayna kural).",
         f"- Evren: {len(universe)} hisse (veri hatası: {', '.join(errors) or 'yok'}), günlük mumlar.",
         f"- Girişler yalnızca **{final_start.date()}** sonrasında: RF ve LSTM'in ne eğitildiği ne değerlendirildiği dönem.",
         f"- Ortak işlem varsayımları: spot, yalnız long, NU70 = çıkış uyarısı; stop %{cfg.stop_loss_pct}, hedef %{cfg.target_pct}, "

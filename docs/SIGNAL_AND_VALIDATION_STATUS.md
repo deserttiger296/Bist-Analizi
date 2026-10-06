@@ -13,9 +13,13 @@ fiyat/RSI değerleriyle** üretti (ISDMR NU, 1g, tepe 62.00/72.32 → 66.25/66.0
 | Kural | Varsayılan | Not |
 |---|---|---|
 | RSI | Wilder RMA, 14 | TradingView `ta.rsi` ile aynı |
-| Mod | Esnek (`strict_threshold=False`) | Katı mod = klasik PU30/NU70 |
-| Esnek eşik | 1. dip RSI < 55 (PU), 1. tepe RSI > 45 (NU) | **Yalnızca 1. pivota** uygulanır |
-| Katı eşik | 1. dip < 30 ve 2. dip > 30 (PU); 1. tepe > 70 ve 2. tepe < 70 (NU) | ±2 tolerans |
+| Mod | **Katı** (`strict_threshold=True`, varsayılan, `pu30-strict-v3` / `nu70-strict-v3`) | 6 Ekim 2026 düzeltmesi |
+| Katı eşik | PU: 1. dip RSI **< 30** ve 2. dip RSI **> 30**. NU: 1. tepe **> 70** ve 2. tepe **< 70** | Kesin eşitsizlik; tam 30/70 kabul edilmez, tolerans yok |
+| Esnek mod (yalnızca açıkça seçilirse) | 1. dip RSI < 55 (PU), 1. tepe RSI > 45 (NU) | **PU30/NU70 değildir**; 5 Ekim'deki kısa vade (VIOP 5–15 dk) "trend uyumsuzluğu" araştırması içindir, API varsayılanı kullanmaz |
+
+**Kaynak kuralların uzlaştırılması.** 2 Ekim: "ilk RSI dibi 30 altında … 2. dibi 30 üzerinde yapıyor → yükseliş sinyali". 5 Ekim: 30 şartı "hiç gerek yok" (kısa vade trend uyumsuzluğu bağlamında). 6 Ekim, 4s PU30 kartları için: "Bu uyumsuzluk değil — kesinlikle ilk 30 altında 2. 30 üstünde olacak". Bu yüzden PU30/NU70 etiketi yalnızca katı kurala verilir; esnek uyumsuzluk ayrı bir tür olarak ele alınır.
+
+**Açık soru (uygulanmadı):** "Güven kırıcı dibi saatlik bazda arıyoruz; 4 saatlik bazda ararsak daha aşağıda sinyal üretir." Şu an güven kıran dip / güven tazeleyen tepe, sinyalin kendi zaman dilimindeki iki pivot arası en düşük/en yüksek noktadır. Saatlik güven kırıcı dibin tam tanımı (son saatlik salınım dibi mi?) netleşmeden tahmine dayalı uygulanmadı.
 | Fiyat / RSI | PU: dip2 fiyat < dip1, dip2 RSI > dip1. NU: tersi | |
 | Ara bölge | Dip 2 iki dip arasındaki en düşük nokta; Tepe 2 en yüksek nokta | |
 | Pivot | sol 5, sağ 2 bar; pivot RSI = pencere içi min/max | |
@@ -57,7 +61,8 @@ için sessizce "sinyal yok"** döndürüyordu; düzeltildi. Doğrulanmış perfo
 | LSTM (`quantum_lstm_v2`) | RF ile aynı özellik hattı ve aynı etiket (P(RF label = UP)); ölçekleyici yalnız eğitim verisine fit; diziler bölüm sınırını aşmaz. Seçim döneminde UP taban oranı %28.8; P≥0.60 iken isabet **%31.5** (308 örnek), tabandan anlamlı farkı yok. |
 | Karar modu | ML skorları varsayılan olarak **gölge modda** (`MODEL_DECISION_MODE=shadow`): kaydedilir ve "GÖLGE · doğrulanmamış" olarak gösterilir, AL kararı olarak sunulmaz. |
 | Haber analizi | FinBERT, Claude ve sözlük ayrı motor olarak raporlanır (`engine` alanı). Haber yokluğu veya analiz hatası **teyit sayılmaz**. |
-| Varyant karşılaştırması | [VARIANT_COMPARISON.md](VARIANT_COMPARISON.md) (2026-04-02 → 2026-10-05, modellerin görmediği dönem, 26 hisse, günlük). Yalnız RSI: 32 işlem, net **+%4.40**, işlem başı +%0.11, PF 1.06, maks. düşüş %5.3. +MOSTRSI: 2 işlem, +%0.82. +RF: **0 işlem**. +LSTM: 6 işlem, hepsi zararlı, **−%5.43**. Eşit ağırlık al-tut +%3.30, XU100 −%4.66. Sonuç: hiçbir filtre RSI tabanına kanıtlanmış katkı yapmadı; RSI tabanının al-tuta üstünlüğü de az işlemle istatistiksel olarak kanıtlanmış değil. Haber filtresi zaman damgalı geçmiş haber olmadığı için **test edilemedi**. |
+| Varyant karşılaştırması | **Esnek kurallarla (`rsi-divergence-v2`, artık geçersiz)** — [VARIANT_COMPARISON_rsi-divergence-v2.md](VARIANT_COMPARISON_rsi-divergence-v2.md) (2026-04-02 → 2026-10-05, modellerin görmediği dönem, 26 hisse, günlük). Yalnız RSI: 32 işlem, net **+%4.40**, işlem başı +%0.11, PF 1.06, maks. düşüş %5.3. +MOSTRSI: 2 işlem, +%0.82. +RF: **0 işlem**. +LSTM: 6 işlem, hepsi zararlı, **−%5.43**. Eşit ağırlık al-tut +%3.30, XU100 −%4.66. Sonuç: hiçbir filtre RSI tabanına kanıtlanmış katkı yapmadı; RSI tabanının al-tuta üstünlüğü de az işlemle istatistiksel olarak kanıtlanmış değil. Haber filtresi zaman damgalı geçmiş haber olmadığı için **test edilemedi**. |
+| Varyant karşılaştırması (katı `pu30-strict-v3`) | Yeniden çalıştırılıyor: [VARIANT_COMPARISON.md](VARIANT_COMPARISON.md). |
 | İleriye dönük (canlı) performans | **Bugün ölçülemez.** `engine/journal/daily_history.py` değiştirilemez karar kaydını ve ayrı sonuç olaylarını tutar; veri birikmeden sonuç raporlanmamalıdır. |
 
 `docs/` altındaki 2026-10-05 öncesi performans raporları başlarındaki bantla

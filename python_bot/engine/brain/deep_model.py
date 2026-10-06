@@ -23,8 +23,8 @@ if TORCH_AVAILABLE:
             sequences: numpy array of shape (num_samples, seq_length, num_features)
             targets: numpy array of shape (num_samples,) -> 1 (UP) or 0 (DOWN)
             """
-            self.sequences = torch.tensor(sequences, dtype=torch.float32).to(DEVICE)
-            self.targets = torch.tensor(targets, dtype=torch.float32).to(DEVICE)
+            self.sequences = torch.tensor(sequences, dtype=torch.float64).to(DEVICE)
+            self.targets = torch.tensor(targets, dtype=torch.float64).to(DEVICE)
 
         def __len__(self):
             return len(self.targets)
@@ -57,8 +57,8 @@ if TORCH_AVAILABLE:
 
         def forward(self, x):
             # x shape: (batch, seq_length, features)
-            h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(DEVICE)
-            c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(DEVICE)
+            h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size, dtype=x.dtype, device=x.device)
+            c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size, dtype=x.dtype, device=x.device)
 
             # LSTM'den geçiş
             out, _ = self.lstm(x, (h0, c0))
@@ -116,7 +116,7 @@ def lstm_probability_from_features(feat, meta, model):
         raise ValueError("DATA_INSUFFICIENT: incomplete LSTM feature window")
     x = meta["scaler"].transform(window.to_numpy(dtype=np.float64))
     with torch.no_grad():
-        return float(model(torch.tensor(x, dtype=torch.float32).unsqueeze(0).to(DEVICE)).item())
+        return float(model(torch.tensor(x, dtype=torch.float64).unsqueeze(0).to(DEVICE)).item())
 
 
 def load_lstm():
@@ -127,8 +127,9 @@ def load_lstm():
     from python_bot.engine.brain.local_classifier import FEATURE_COLUMNS
     meta = joblib.load(LSTM_META_PATH)
     validate_lstm_metadata(meta)
-    model = QuantumLSTM(input_size=len(FEATURE_COLUMNS)).to(DEVICE)
-    model.load_state_dict(torch.load(MODEL_WEIGHTS_PATH, map_location=DEVICE))
+    # float64 end to end (project standard): training, weights and inference share one dtype.
+    model = QuantumLSTM(input_size=len(FEATURE_COLUMNS)).double().to(DEVICE)
+    model.load_state_dict(torch.load(MODEL_WEIGHTS_PATH, map_location=DEVICE, weights_only=True))
     model.eval()
     return model, meta
 

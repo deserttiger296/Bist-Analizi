@@ -120,6 +120,10 @@ def detect_most_rsi(df: pd.DataFrame, cfg: MOSTRSIConfig = DEFAULT_MOSTRSI_CONFI
     if df is None or len(df) < (cfg.rsi_length + cfg.cmo_length + 10):
         return None
         
+    from python_bot.engine.data.provider import is_bar_closed
+    df = df.loc[[is_bar_closed(t, interval) for t in df.date]].copy()
+    if "is_closed" in df: df = df[df.is_closed]
+    if len(df) < 30: return None
     closes = df["close"].to_numpy(dtype=float)
     rsi = wilder_rsi(closes, cfg.rsi_length)
     vma = calc_tradingview_var(rsi, cfg.var_length, cfg.cmo_length)
@@ -214,6 +218,10 @@ def get_most_rsi_chart_data(symbol: str, cfg: MOSTRSIConfig = DEFAULT_MOSTRSI_CO
     if df is None:
         return None
         
+    from python_bot.engine.data.provider import is_bar_closed
+    df = df.loc[[is_bar_closed(t, interval) for t in df.date]].copy()
+    if "is_closed" in df: df = df[df.is_closed]
+    if len(df) < 30: return None
     closes = df["close"].to_numpy(dtype=float)
     rsi = wilder_rsi(closes, cfg.rsi_length)
     vma = calc_tradingview_var(rsi, cfg.var_length, cfg.cmo_length)

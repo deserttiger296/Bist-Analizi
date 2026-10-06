@@ -45,7 +45,7 @@ def _scaled(part: pd.DataFrame, scaler: StandardScaler) -> pd.DataFrame:
 def _evaluate(model, X, y):
     model.eval()
     with torch.no_grad():
-        prob = model(torch.tensor(X, dtype=torch.float32).to(DEVICE)).squeeze(-1).cpu().numpy()
+        prob = model(torch.tensor(X, dtype=torch.float64).to(DEVICE)).squeeze(-1).cpu().numpy()
     result = {
         "rows": int(len(y)),
         "up_base_rate": float(y.mean()),
@@ -73,7 +73,7 @@ def train_lstm(symbols, epochs: int = EPOCHS, seed: int = 42):
     print(f"Eğitim sekansı: {len(y_train)} | Seçim (out-of-sample) sekansı: {len(y_sel)}")
 
     loader = DataLoader(StockDataset(X_train, y_train), batch_size=64, shuffle=True)
-    model = QuantumLSTM(input_size=len(FEATURE_COLUMNS), hidden_size=64, num_layers=2).to(DEVICE)
+    model = QuantumLSTM(input_size=len(FEATURE_COLUMNS), hidden_size=64, num_layers=2).double().to(DEVICE)
     criterion = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
@@ -101,6 +101,7 @@ def train_lstm(symbols, epochs: int = EPOCHS, seed: int = 42):
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
         "feature_columns": FEATURE_COLUMNS,
         "seq_length": SEQ_LENGTH,
+        "dtype": "float64",
         "forward_horizon_days": FORWARD_HORIZON_DAYS,
         "label_definition": LSTM_LABEL_DEFINITION,
         "training_start": str(train.index.min()),

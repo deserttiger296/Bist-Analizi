@@ -135,7 +135,7 @@ class TestConfigDefaultsMatchReference:
     """
 
     def test_pu30_defaults(self):
-        cfg = PU30Config()
+        cfg = PU30Config(strict_threshold=False)
         assert cfg.min_gap_bars == 8
         assert cfg.min_bounce_pct == 3.0
         assert cfg.signal_lifetime_bars == 5
@@ -144,7 +144,8 @@ class TestConfigDefaultsMatchReference:
         assert cfg.pivot_right_bars == 2
 
     def test_nu70_defaults(self):
-        cfg = NU70Config()
+        cfg = NU70Config(strict_threshold=False)
+        assert NU70Config().strict_threshold is True
         assert cfg.min_gap_bars == 8
         assert cfg.min_pullback_pct == 3.0
         assert cfg.signal_lifetime_bars == 5
@@ -720,6 +721,7 @@ class TestDetectRsiPU30:
         """
         df = self._build_pu30_df(n_pad=20)
         cfg = PU30Config(
+            strict_threshold=False,
             pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100,
             rsi2_above_threshold=False,  # Sentetik veri için eşik filtresi devre dışı
         )
@@ -736,10 +738,12 @@ class TestDetectRsiPU30:
         """
         df = self._build_pu30_df(n_pad=20)
         cfg_no_thresh = PU30Config(
+            strict_threshold=False,
             pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100,
             rsi2_above_threshold=False,
         )
         cfg_with_thresh = PU30Config(
+            strict_threshold=False,
             pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100,
             rsi2_above_threshold=True,
         )
@@ -754,7 +758,7 @@ class TestDetectRsiPU30:
     def test_pu30_signal_has_required_fields(self):
         """PU30 sinyali zorunlu alanları içermeli."""
         df = self._build_pu30_df(n_pad=20)
-        cfg = PU30Config(pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100)
+        cfg = PU30Config(strict_threshold=False, pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100)
         signal = detect_rsi_pu30(df, cfg=cfg, ignore_lifetime=True, interval="1h")
         if signal is None:
             pytest.skip("Bu veri setiyle PU30 tespit edilemedi")
@@ -767,16 +771,16 @@ class TestDetectRsiPU30:
         df = self._build_pu30_df(n_pad=20)
         base = dict(pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100,
                     min_bounce_pct=0.0, max_rsi_dip=1000.0)
-        loose = detect_rsi_pu30(df, cfg=PU30Config(**base), ignore_lifetime=True, interval="1h")
+        loose = detect_rsi_pu30(df, cfg=PU30Config(strict_threshold=False, **base), ignore_lifetime=True, interval="1h")
         assert loose is not None and loose["dip2"]["rsi"] < 30.0, "Fixture ön koşulu: eşiksiz modda 2. dip RSI < 30"
-        strict = detect_rsi_pu30(df, cfg=PU30Config(**base, rsi2_above_threshold=True),
+        strict = detect_rsi_pu30(df, cfg=PU30Config(strict_threshold=False, **base, rsi2_above_threshold=True),
                                  ignore_lifetime=True, interval="1h")
         assert strict is None, "2. dip RSI 30 altındayken eşikli mod sinyal üretmemeli"
 
     def test_pu30_dip2_price_lower_than_dip1(self):
         """PU30 sinyalinde 2. dip fiyatı 1. dipten düşük olmalı."""
         df = self._build_pu30_df(n_pad=20)
-        cfg = PU30Config(pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100)
+        cfg = PU30Config(strict_threshold=False, pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100)
         signal = detect_rsi_pu30(df, cfg=cfg, ignore_lifetime=True, interval="1h")
         if signal is None:
             pytest.skip("Bu veri setiyle PU30 tespit edilemedi")
@@ -787,7 +791,7 @@ class TestDetectRsiPU30:
     def test_pu30_knowable_at_after_pivot(self):
         """knowable_at zamanı, pivot zamanından sonra veya eşit olmalı."""
         df = self._build_pu30_df(n_pad=20)
-        cfg = PU30Config(pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100)
+        cfg = PU30Config(strict_threshold=False, pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100)
         signal = detect_rsi_pu30(df, cfg=cfg, ignore_lifetime=True, interval="1h")
         if signal is None:
             pytest.skip("Bu veri setiyle PU30 tespit edilemedi")
@@ -808,7 +812,7 @@ class TestDetectRsiPU30:
         Teyit barı kapalı değilse sinyal üretilmemeli veya farklı confirm_index döner.
         """
         df = self._build_pu30_df(n_pad=20)
-        cfg = PU30Config(pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100)
+        cfg = PU30Config(strict_threshold=False, pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100)
 
         signal_all_closed = detect_rsi_pu30(df, cfg=cfg, ignore_lifetime=True, interval="1h")
         if signal_all_closed is None:
@@ -861,6 +865,7 @@ class TestDetectRsiPU30:
         """signal_lifetime_bars aşıldığında eski sinyal filtrelenir (ignore_lifetime=False)."""
         df = self._build_pu30_df(n_pad=50)  # Çok eski sinyal
         cfg = PU30Config(
+            strict_threshold=False,
             pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100,
             signal_lifetime_bars=5,  # Çok kısa ömür
         )
@@ -964,7 +969,7 @@ class TestDetectRsiNU70:
         zordur. Bu test `rsi2_below_threshold=False` ile temel mekanizmayı doğrular.
         """
         df = self._build_nu70_df(n_pad=20)
-        cfg = NU70Config(
+        cfg = NU70Config(strict_threshold=False, 
             pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100,
             rsi2_below_threshold=False,  # Sentetik veri için eşik filtresi devre dışı
         )
@@ -975,7 +980,7 @@ class TestDetectRsiNU70:
     def test_nu70_signal_has_required_fields(self):
         """NU70 sinyali zorunlu alanları içermeli."""
         df = self._build_nu70_df(n_pad=20)
-        cfg = NU70Config(pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100)
+        cfg = NU70Config(strict_threshold=False, pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100)
         signal = detect_rsi_nu70(df, cfg=cfg, ignore_lifetime=True, interval="1h")
         if signal is None:
             pytest.skip("Bu veri setiyle NU70 tespit edilemedi")
@@ -986,7 +991,7 @@ class TestDetectRsiNU70:
     def test_nu70_tepe2_rsi_below_threshold(self):
         """NU70 sinyalinde 2. tepe RSI değeri 1. tepeden düşük olmalı."""
         df = self._build_nu70_df(n_pad=20)
-        cfg = NU70Config(pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100)
+        cfg = NU70Config(strict_threshold=False, pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100)
         signal = detect_rsi_nu70(df, cfg=cfg, ignore_lifetime=True, interval="1h")
         if signal is None:
             pytest.skip("Bu veri setiyle NU70 tespit edilemedi")
@@ -1007,7 +1012,7 @@ class TestDetectRsiNU70:
     def test_nu70_confirm_time_after_pivot(self):
         """confirm_time pivot_time'dan sonra veya eşit olmalı."""
         df = self._build_nu70_df(n_pad=20)
-        cfg = NU70Config(pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100)
+        cfg = NU70Config(strict_threshold=False, pivot_left_bars=4, pivot_right_bars=2, min_gap_bars=3, max_gap_bars=100)
         signal = detect_rsi_nu70(df, cfg=cfg, ignore_lifetime=True, interval="1h")
         if signal is None:
             pytest.skip("Bu veri setiyle NU70 tespit edilemedi")
@@ -1220,14 +1225,14 @@ def _semih_series():
 class TestSemihKurallari:
     def test_dip2_oncesi_dip1_altina_inen_klasik_uyumsuzluk_yakalanir(self):
         """Eski kural (aradaki mumlar Dip 1'in altına inmemeli) bu yapıyı reddediyordu."""
-        sig = detect_rsi_pu30(_semih_series(), PU30Config(max_rsi_dip=55.0), ignore_lifetime=True, interval="1h")
+        sig = detect_rsi_pu30(_semih_series(), PU30Config(strict_threshold=False, max_rsi_dip=55.0), ignore_lifetime=True, interval="1h")
         assert sig is not None
         assert sig["dip2"]["price"] < sig["dip1"]["price"]
         assert sig["dip2"]["rsi"] > sig["dip1"]["rsi"]
 
     def test_strict_modda_dip2_rsi_30_alti_reddedilir(self):
         df = _semih_series()
-        flex = detect_rsi_pu30(df, PU30Config(), ignore_lifetime=True, interval="1h")
+        flex = detect_rsi_pu30(df, PU30Config(strict_threshold=False), ignore_lifetime=True, interval="1h")
         strict = detect_rsi_pu30(df, PU30Config(strict_threshold=True), ignore_lifetime=True, interval="1h")
         assert flex is not None and flex["dip2"]["rsi"] < 30
         assert strict is None
@@ -1237,7 +1242,7 @@ class TestSemihKurallari:
         m = df.copy()
         m["high"], m["low"] = 200 - df["low"], 200 - df["high"]
         m["close"], m["open"] = 200 - df["close"], 200 - df["open"]
-        sig = detect_rsi_nu70(m, NU70Config(), ignore_lifetime=True, interval="1h")
+        sig = detect_rsi_nu70(m, NU70Config(strict_threshold=False), ignore_lifetime=True, interval="1h")
         assert sig is not None
         assert sig["tepe2"]["price"] > sig["tepe1"]["price"]
         assert sig["tepe2"]["rsi"] < sig["tepe1"]["rsi"]
@@ -1249,5 +1254,5 @@ class TestSemihKurallari:
         ext = _make_df(np.r_[df["close"].to_numpy(), 90.0, 91.0], interval="1h")
         ext["low"] = np.r_[df["low"].to_numpy(), 89.7, 90.7]
         ext["high"] = np.r_[df["high"].to_numpy(), 90.3, 91.3]
-        sig = detect_rsi_pu30(ext, PU30Config(), ignore_lifetime=True, interval="1h")
+        sig = detect_rsi_pu30(ext, PU30Config(strict_threshold=False), ignore_lifetime=True, interval="1h")
         assert sig is not None and sig["tetiklendi"] is True
