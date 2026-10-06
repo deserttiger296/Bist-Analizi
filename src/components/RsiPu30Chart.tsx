@@ -33,7 +33,8 @@ export default function RsiPu30Chart({ bars, signal }: Props) {
     const commonOptions = {
       layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#94a3b8" },
       grid: { vertLines: { color: "rgba(255,255,255,0.05)" }, horzLines: { color: "rgba(255,255,255,0.05)" } },
-      timeScale: { timeVisible: false, borderColor: "rgba(255,255,255,0.1)" },
+      // The detail endpoint defaults to 4h bars, so show hour-of-day too.
+      timeScale: { timeVisible: true, borderColor: "rgba(255,255,255,0.1)" },
       rightPriceScale: { borderColor: "rgba(255,255,255,0.1)" },
       crosshair: { mode: 0 as const },
     };
@@ -55,13 +56,13 @@ export default function RsiPu30Chart({ bars, signal }: Props) {
       upColor: "#10b981", downColor: "#f43f5e", borderVisible: false,
       wickUpColor: "#10b981", wickDownColor: "#f43f5e",
     });
-    candleSeries.setData(bars.map((b) => ({ time: b.date as Time, open: b.open, high: b.high, low: b.low, close: b.close })));
+    candleSeries.setData(bars.map((b) => ({ time: b.time as Time, open: b.open, high: b.high, low: b.low, close: b.close })));
 
     // ── RSI pane ─────────────────────────────────────────────────────
     const rsiSeries = rsiChart.addSeries(LineSeries, {
       color: "#a78bfa", lineWidth: 2, crosshairMarkerVisible: true, lastValueVisible: true, priceLineVisible: false,
     });
-    const rsiData = bars.filter((b) => b.rsi != null).map((b) => ({ time: b.date as Time, value: b.rsi as number }));
+    const rsiData = bars.filter((b) => b.rsi != null).map((b) => ({ time: b.time as Time, value: b.rsi as number }));
     rsiSeries.setData(rsiData);
     rsiSeries.createPriceLine({ price: 30, color: "#f59e0b", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "RSI 30" });
     // autoScale must stay true for autoscaleInfoProvider to be consulted at
@@ -74,8 +75,8 @@ export default function RsiPu30Chart({ bars, signal }: Props) {
 
     // ── Divergence markers + connector lines (only if a signal exists) ──
     if (signal) {
-      const d1Time = signal.dip1.date as Time;
-      const d2Time = signal.dip2.date as Time;
+      const d1Time = signal.dip1.time as Time;
+      const d2Time = signal.dip2.time as Time;
 
       const priceConnector: ISeriesApi<"Line"> = priceChart.addSeries(LineSeries, {
         color: "#f43f5e", lineWidth: 2, lineStyle: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,

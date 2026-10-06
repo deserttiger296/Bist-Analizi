@@ -160,13 +160,16 @@ document.addEventListener('DOMContentLoaded', () => {
         results.innerHTML = '';
         const card = document.createElement('div');
         card.className = 'card';
-        const changePercent = stock.changePercent != null ? stock.changePercent : ((stock.change && stock.lastClose) ? (stock.change / stock.lastClose * 100) : 0);
+        // /api/bist/:symbol (Next, src/lib/bist.ts BistLiveQuote) names the
+        // symbol `ticker` and its `change` is already a percentage.
+        const symbol = stock.symbol || stock.ticker;
+        const changePercent = Number(stock.changePercent ?? stock.change ?? 0);
         const changeSign = changePercent >= 0 ? '+' : '';
         const changeColor = changePercent >= 0 ? 'var(--neon-green)' : 'var(--neon-red)';
         
         card.innerHTML = `
             <div class="card-top">
-                <div class="card-symbol">${stock.symbol}</div>
+                <div class="card-symbol">${symbol}</div>
                 <div class="card-badge" style="color: ${changeColor}; border: 1px solid ${changeColor};">
                     ${changeSign}${changePercent.toFixed(2)}%
                 </div>
@@ -188,12 +191,12 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
 
             <div style="margin-top: 1.5rem; display: flex; gap: 1rem;">
-                <button class="btn-chart" data-symbol="${stock.symbol}">📈 GRAFİĞİ GÖSTER</button>
+                <button class="btn-chart" data-symbol="${symbol}">📈 GRAFİĞİ GÖSTER</button>
             </div>
         `;
 
         const chartBtn = card.querySelector('.btn-chart');
-        chartBtn.addEventListener('click', () => openChart(stock.symbol));
+        chartBtn.addEventListener('click', () => openChart(symbol));
 
         results.appendChild(card);
         results.classList.remove('hidden');
@@ -300,19 +303,26 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await fetch(`/api/chart/${symbol}`);
             const json = await res.json();
-            
-            if (json.status === 'success') {
-                const data = json.data;
-                const cData = data.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close }));
-                const sData = data.filter(d => d.sma50 !== null).map(d => ({ time: d.time, value: d.sma50 }));
-                const eData = data.filter(d => d.ema9 !== null).map(d => ({ time: d.time, value: d.ema9 }));
-                
-                candleSeries.setData(cData);
-                smaSeries.setData(sData);
-                emaSeries.setData(eData);
-                chart.timeScale().fitContent();
+
+            // Two backends answer /api/chart: the Python engine returns
+            // {status:'success', data:[{time,...,sma50,ema9}]}, while on Vercel
+            // next.config rewrites it to /api/bist/:symbol/chart, which returns
+            // {data:{chartData:[{date,...,sma50}]}} (no status, no ema9).
+            const data = json.status === 'success' ? json.data : (json.data && json.data.chartData);
+            if (!res.ok || !Array.isArray(data) || data.length === 0) {
+                throw new Error(json.detail || json.error || `${symbol} grafik verisi alınamadı.`);
             }
+            const rows = data.map(d => ({ ...d, time: d.time || d.date }));
+            const cData = rows.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close }));
+            const sData = rows.filter(d => d.sma50 != null).map(d => ({ time: d.time, value: d.sma50 }));
+            const eData = rows.filter(d => d.ema9 != null).map(d => ({ time: d.time, value: d.ema9 }));
+
+            candleSeries.setData(cData);
+            smaSeries.setData(sData);
+            emaSeries.setData(eData);
+            chart.timeScale().fitContent();
         } catch (e) {
+            chartTitle.textContent = `${symbol} - ${e.message}`;
             console.error("Chart load failed", e);
         }
     }

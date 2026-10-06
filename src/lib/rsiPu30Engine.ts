@@ -40,7 +40,8 @@ export interface DipPoint {
   index: number;
   price: number;
   rsi: number;
-  date: string; // YYYY-MM-DD
+  date: string; // display text: "YYYY-MM-DD" (1d) or "YYYY-MM-DD HH:MM" (4h/1h)
+  time: number; // UTCTimestamp (epoch seconds) -- what the chart must use
 }
 
 export interface Pu30Signal {
@@ -65,7 +66,8 @@ export async function getRsiPu30Scan(): Promise<Pu30ScanResult | null> {
 }
 
 export interface Pu30Bar {
-  date: string;
+  date: string; // display text, see DipPoint.date
+  time: number; // UTCTimestamp (epoch seconds)
   open: number;
   high: number;
   low: number;
