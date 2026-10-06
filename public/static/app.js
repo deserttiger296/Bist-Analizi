@@ -597,14 +597,21 @@ document.addEventListener('DOMContentLoaded', () => {
         rsiPu30PriceChartInst.timeScale().subscribeVisibleLogicalRangeChange(syncFrom(rsiPu30RsiChartInst));
         rsiPu30RsiChartInst.timeScale().subscribeVisibleLogicalRangeChange(syncFrom(rsiPu30PriceChartInst));
 
-        rsiPu30PriceChartInst.subscribeCrosshairMove((param) => {
-            if (param.time) rsiPu30RsiChartInst.setCrosshairPosition(0, param.time, rsiPu30RsiSeries);
-            else rsiPu30RsiChartInst.clearCrosshairPosition();
-        });
-        rsiPu30RsiChartInst.subscribeCrosshairMove((param) => {
-            if (param.time) rsiPu30PriceChartInst.setCrosshairPosition(0, param.time, rsiPu30CandleSeries);
-            else rsiPu30PriceChartInst.clearCrosshairPosition();
-        });
+        // Crosshair move fires synchronously inside setData() when the mouse is
+        // over a pane. If the other pane has no point at that time yet (still
+        // empty while loading, or RSI warm-up bars), setCrosshairPosition throws
+        // "Value is null", which would abort openRsiPu30Chart mid-render and
+        // leave the RSI pane and all divergence lines undrawn.
+        const syncCrosshair = (targetChart, targetSeries) => (param) => {
+            try {
+                if (param.time) targetChart.setCrosshairPosition(0, param.time, targetSeries);
+                else targetChart.clearCrosshairPosition();
+            } catch (e) {
+                targetChart.clearCrosshairPosition();
+            }
+        };
+        rsiPu30PriceChartInst.subscribeCrosshairMove(syncCrosshair(rsiPu30RsiChartInst, rsiPu30RsiSeries));
+        rsiPu30RsiChartInst.subscribeCrosshairMove(syncCrosshair(rsiPu30PriceChartInst, rsiPu30CandleSeries));
     }
 
     let rsiPu30PriceLines = [];
