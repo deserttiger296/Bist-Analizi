@@ -29,7 +29,8 @@ def test_ema_shorter_than_window_is_all_nan():
 def test_chart_endpoint_returns_indicators_without_pandas_ta(monkeypatch):
     c = _closes()
     idx = pd.date_range("2026-01-01", periods=len(c), freq="B")
-    df = pd.DataFrame({"Open": c, "High": c * 1.01, "Low": c * 0.99, "Close": c, "Volume": 1.0}, index=idx)
+    v = c.to_numpy()  # a Series would be realigned to idx and turn into NaN
+    df = pd.DataFrame({"Open": v, "High": v * 1.01, "Low": v * 0.99, "Close": v, "Volume": 1.0}, index=idx)
     monkeypatch.setattr(main_api.yf, "download", lambda *a, **k: df.copy())
 
     res = main_api.get_chart_data("THYAO")
