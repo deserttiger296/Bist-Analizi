@@ -8,6 +8,12 @@ fi
 
 cd "$CLAUDE_PROJECT_DIR"
 
+# Node'un yerleşik fetch'i HTTPS_PROXY'yi kendiliğinden kullanmaz; bulut
+# ortamında Next (src/lib/bist.ts -> Yahoo vb.) veri çekebilsin diye açılır.
+if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+  echo 'export NODE_USE_ENV_PROXY=1' >> "$CLAUDE_ENV_FILE"
+fi
+
 # --- Python: python_bot/requirements-lock.txt (Python 3.12 için sabitlenmiş) ---
 # Analitik motor (python_bot.main, port 8000) lock dışındaki paketleri de ister;
 # lock ile aynı çözümde kurulur ki sinyal motorunun sürümleri değişmesin.
