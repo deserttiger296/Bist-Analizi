@@ -683,7 +683,7 @@ def scan_universe_rsi_pu30(
                         head = "Düşüş trendi içinde ara tepkidir (4s/G teyidi henüz yok). Kısa vadeli gir-çık."
                     else:
                         sig_pu["confluence"] = "MACRO_4H"
-                        sig_pu["confluence_badge"] = f"🏛️ {_TF_LABEL.get(interval, interval)} ANA DÖNÜŞ (Saatlik Tetik Bekleniyor)"
+                        sig_pu["confluence_badge"] = f"🏛️ {_TF_LABEL.get(interval, interval)} ANA DÖNÜŞ (" + ("Saatlik Tetik Geldi" if sig_pu["tetiklendi"] else "Saatlik Tetik Bekleniyor") + ")"
                         head = f"{_TF_LABEL.get(interval, interval)} grafikte PU30 oluştu."
                     sig_pu["strategy_action"] = f"{head} {_trigger_text(sig_pu['saatlik_seviye'], bull=True)}"
 
