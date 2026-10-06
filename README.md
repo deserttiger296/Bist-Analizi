@@ -39,11 +39,12 @@ bu yüzden uvicorn **repo kökünden** (`python_bot/`'un bir üstü) ve modül y
 `python_bot.main_api:app` olarak başlatılmalı — `cd python_bot && uvicorn main_api:app`
 `ModuleNotFoundError: No module named 'python_bot'` ile başarısız olur.
 ```bash
-# Sanal ortamı aktive edin (repo kökünde)
+# Sanal ortamı oluşturun ve aktive edin (repo kökünde, Python 3.12)
+python -m venv .venv
 .venv\Scripts\activate
 
-# Bağımlılıkları yükleyin
-pip install -r python_bot/requirements.txt
+# Bağımlılıkları birebir çalışan sürümlerle yükleyin (torch CPU, transformers, shap dahil)
+pip install -r python_bot/requirements-lock.txt
 
 # Sniper API & Web Terminalini başlatın (repo kökünden)
 uvicorn python_bot.main_api:app --host 0.0.0.0 --port 8001 --reload
@@ -61,7 +62,7 @@ uvicorn python_bot.main:app --host 0.0.0.0 --port 8000 --reload
 
 ### 2. Next.js Web Frontend (Port 3000)
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 Modern web arayüzü `http://localhost:3000` adresinde açılır.
@@ -78,9 +79,30 @@ Haber Analizi yeşil görünür.
 
 ---
 
-## 🌐 Canlı Yayına Alma (Netlify / Cloud)
-Next.js ve statik web terminali Netlify üzerinde sıfır konfigürasyon ile doğrudan derlenecek şekilde optimize edilmiştir (`npm run build`).
-Kullanıcılar GitHub reponuzu Netlify'a bağlayarak Continuous Deployment (otomatik güncelleme) avantajından yararlanabilir.
+### 4. ML modelleri (Git'e girmez)
+`python_bot/models/` (RF, LSTM) `.gitignore` içindedir. Yeni bir kopyada ya eski bilgisayardan
+kopyalayın ya da yeniden eğitin (repo kökünden):
+```bash
+.venv\Scripts\python.exe -c "from python_bot.engine.brain.local_classifier import train_and_save; train_and_save(['THYAO','GARAN','AKBNK','ASELS','BIMAS','EREGL','KCHOL','SAHOL','TUPRS','SISE'])"
+.venv\Scripts\python.exe -m python_bot.engine.brain.train_deep_model
+```
+
+---
+
+## 🌐 Canlı Yayın (Vercel)
+GitHub `deserttiger296/Bist-Analizi` deposunun `main` dalına her push, Vercel projesi `bist-analizi`
+tarafından otomatik yayına alınır: https://bist-analizi-five.vercel.app. Next.js sitesi ve
+`api/index.py` (RSI PU30/NU70 + MOSTRSI, `/api/py` altında) aynı dağıtımdadır; ML modelleri Vercel'de
+çalışmaz. GitHub Actions her push'ta lint, tip kontrolü ve build çalıştırır. (`netlify.toml` eski kalıntıdır.)
+
+## 📁 Bu sisteme ait kaynaklar
+- `docs/PU30_NU70_KARAR_AGACI.md` — kuralların koddaki karşılığı ve verilen kararlar
+- `docs/SIGNAL_AND_VALIDATION_STATUS.md`, `docs/VARIANT_COMPARISON.md` — doğrulama durumu ve geri test
+- `tradingview/rsi_pu30_nu70_mtf.pine` — sitedeki kuralla aynı TradingView göstergesi
+- `rsi_divergence_screener.py` — komut satırı tarayıcısı
+
+Yalnızca yerel kopyada (depo herkese açık olduğu için GitHub'a gönderilmez): kural kaynağı mesajlar
+(`docs/SEMIH_HOCA_MESAJLARI.md`), referans uygulama (`reference/rsi_uyumsuzluk.py` / `.pine`).
 
 
 ### PU30 kural düzeltmesi — 6 Ekim 2026

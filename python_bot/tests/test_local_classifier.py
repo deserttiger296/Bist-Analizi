@@ -84,3 +84,22 @@ def test_rejects_label_definition_mismatch():
     payload["label_definition"] = "some other label definition"
     with pytest.raises(ValueError, match="MODEL_INCOMPATIBLE"):
         validate_artifact(payload)
+
+
+def test_fetch_history_drops_unfinalised_nan_row(monkeypatch):
+    """yfinance can return the latest day with NaN OHLC (volume filled). Keeping it made
+    every rolling feature of the last row NaN, so all predictions failed (6 Oct 2026)."""
+    import numpy as np
+    import pandas as pd
+    from python_bot.engine.brain import local_classifier as lc
+
+    idx = pd.to_datetime(["2026-10-02", "2026-10-05", "2026-10-06"])
+    raw = pd.DataFrame({"Open": [286.5, 292.25, np.nan], "High": [294.0, 295.25, np.nan],
+                        "Low": [285.0, 291.75, np.nan], "Close": [292.0, 292.25, np.nan],
+                        "Volume": [30905024, 27225485, 27302874]}, index=idx)
+    monkeypatch.setattr(lc.yf, "download", lambda *a, **k: raw.copy())
+    hist = lc._fetch_history("THYAO", period="1y")
+    assert hist.index[-1] == pd.Timestamp("2026-10-05")
+    assert not hist[["Open", "High", "Low", "Close"]].isna().any().any()
+    bench = lc._fetch_benchmark_close(period="1y")
+    assert bench.index[-1] == pd.Timestamp("2026-10-05") and not bench.isna().any()

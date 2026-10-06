@@ -125,6 +125,9 @@ def _fetch_history(symbol: str, period: str = "3y") -> pd.DataFrame:
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.droplevel(1)
     from python_bot.engine.data.provider import is_bar_closed
+    # yfinance sometimes returns the latest day with NaN OHLC (volume filled) before the
+    # bar is finalised; such a row would poison every rolling feature of the last row.
+    df = df.dropna(subset=["Open", "High", "Low", "Close"])
     return df.loc[[is_bar_closed(t, "1d") for t in df.index]]
 
 
@@ -133,7 +136,7 @@ def _fetch_benchmark_close(period: str = "3y") -> pd.Series:
     df = yf.download(BENCHMARK_TICKER, period=period, progress=False, auto_adjust=True, timeout=15)
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.droplevel(1)
-    return df["Close"]
+    return df["Close"].dropna()
 
 
 def _relative_momentum_features(close: pd.Series, benchmark_close: pd.Series) -> pd.DataFrame:
