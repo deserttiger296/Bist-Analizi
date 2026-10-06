@@ -41,10 +41,21 @@ CLASS_LABELS = {
 }
 
 
+def _level_text(sig, is_pu):
+    name = "saatlik güven tazeleyen tepe" if is_pu else "saatlik güven kıran dip"
+    lvl = sig.get("saatlik_seviye")
+    if lvl is None:  # flexible signals: between-pivot extreme only
+        level = sig.get("guven_tazeleyen_tepe" if is_pu else "guven_kiran_dip") or {}
+        return f"ara bölge {'tepe' if is_pu else 'dip'} {level.get('price')}"
+    if lvl.get("price") is None:
+        return f"{name}: {lvl.get('durum')}"
+    state = {"kirildi": "aşıldı" if is_pu else "kırıldı", "bekleniyor_kirilim": "bekleniyor"}.get(lvl["durum"], lvl["durum"])
+    return f"{name} {lvl['price']} ({state})"
+
+
 def _row(sig, kind=None, cls=None):
     is_pu = sig["type"] == "PU30"
     p1, p2 = (sig["dip1"], sig["dip2"]) if is_pu else (sig["tepe1"], sig["tepe2"])
-    level = sig.get("guven_tazeleyen_tepe") if is_pu else sig.get("guven_kiran_dip")
     return {
         "sembol": sig["symbol"],
         "tur": kind or sig["type"],
@@ -53,8 +64,7 @@ def _row(sig, kind=None, cls=None):
         "p1": f"{p1['price']:.2f} / RSI {p1['rsi']:.1f} ({p1['date']})",
         "p2": f"{p2['price']:.2f} / RSI {p2['rsi']:.1f} ({p2['date']})",
         "bilinebilir": sig["knowable_at"],
-        "seviye": f"{'güven tazeleyen tepe' if is_pu else 'güven kıran dip'} {level['price']}"
-                  + (" (aşıldı)" if sig.get("tetiklendi") else ""),
+        "seviye": _level_text(sig, is_pu),
         "son_kapanis": round(sig.get("last_close", float("nan")), 2),
     }
 

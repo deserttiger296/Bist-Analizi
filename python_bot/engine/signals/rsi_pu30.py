@@ -494,6 +494,118 @@ def _fetch_adjusted_bars(
     return result.df, result
 
 
+def hourly_trust_level(
+    h1: pd.DataFrame, pivot_open: Any, interval: str, bull: bool,
+    lb: int = 5, rb: int = 2,
+) -> Dict[str, Any]:
+    """
+    Semih Hoca'nın saatlik güven seviyesi (ASELS 4s NU70 örneği: zirve 450 -> zirveyi
+    geçemeyen tepe 439,50 -> aradaki dip 423,25; "ASELSAN 423'te sat vermiş").
+
+    NU (bull=False): sinyalin 2. tepesinin saatlik zirvesinden sonra zirveyi geçemeyen ilk
+    kesinleşmiş saatlik tepe aranır; ikisi arasındaki en düşük saatlik fiyat = güven kıran dip.
+    PU (bull=True): ayna kural -- 2. dibin saatlik en düşük noktasından sonra dibi kıramayan ilk
+    kesinleşmiş saatlik dip; aradaki en yüksek saatlik fiyat = güven tazeleyen tepe.
+    Kırılım saatlik KAPANIŞLA sayılır (iğne mi kapanış mı sorusu Hoca'da açık).
+
+    durum: "kirildi" | "bekleniyor_kirilim" | "bekleniyor_yapi" (alt tepe / üst dip henüz yok)
+           | "gecersiz" (zirve aşıldı / dip kırıldı) | "veri_yok"
+    """
+    out: Dict[str, Any] = {"price": None, "durum": "veri_yok", "kirildi": False, "kaynak": "saatlik_yapi"}
+    if h1 is None or len(h1) == 0:
+        return out
+    h1 = h1.reset_index(drop=True)
+    if "is_closed" in h1.columns:
+        h1 = h1[h1["is_closed"]].reset_index(drop=True)
+    dates = pd.to_datetime(h1["date"])
+    start = pd.Timestamp(pivot_open)
+    if start.tzinfo is None:
+        start = start.tz_localize("Europe/Istanbul")
+    end = bar_close_time(start, interval)
+    in_bar = ((dates + pd.Timedelta(hours=1)) > start) & (dates < end)
+    if not in_bar.any():
+        return out
+    highs = h1["high"].to_numpy(dtype=np.float64)
+    lows = h1["low"].to_numpy(dtype=np.float64)
+    closes = h1["close"].to_numpy(dtype=np.float64)
+    window = np.flatnonzero(in_bar.to_numpy())
+    z = int(window[np.argmin(lows[window])] if bull else window[np.argmax(highs[window])])
+    extreme = lows[z] if bull else highs[z]
+    out["zirve" if not bull else "dip"] = {"price": round(float(extreme), 2), "date": dates.iloc[z].isoformat()}
+
+    # Structure pivots after the extreme: the left window only looks at bars AFTER the
+    # extreme. Otherwise a lower high formed a few hours after the zirve is never a pivot
+    # (the zirve itself sits in its left window) and the first "zirveyi geçemeyen tepe"
+    # is skipped (ASELS: 439,50 would be missed in favour of a later 434,50).
+    series = lows if bull else highs
+    pivots = []
+    for p in range(z + 2, len(series) - rb):
+        left = series[max(z + 1, p - lb):p]
+        right = series[p + 1:p + rb + 1]
+        if (np.all(series[p] < left) and np.all(series[p] <= right)) if bull else \
+           (np.all(series[p] > left) and np.all(series[p] >= right)):
+            pivots.append(p)
+    for p in pivots:
+        if bull and lows[z + 1:p + 1].min() < extreme:
+            out["durum"] = "gecersiz"  # 2. dibin altına inildi: yapı bozuldu
+            return out
+        if not bull and highs[z + 1:p + 1].max() > extreme:
+            out["durum"] = "gecersiz"  # zirve aşıldı
+            return out
+        between = slice(z + 1, p)
+        if between.stop - between.start < 1:
+            continue
+        level = float(highs[between].max()) if bull else float(lows[between].min())
+        lvl_idx = z + 1 + int(np.argmax(highs[between]) if bull else np.argmin(lows[between]))
+        out["price"] = round(level, 2)
+        out["date"] = dates.iloc[lvl_idx].isoformat()
+        out["yapi_pivotu"] = {"price": round(float(lows[p] if bull else highs[p]), 2), "date": dates.iloc[p].isoformat()}
+        after = closes[p + rb + 1:]  # kırılım ancak yapı pivotu kesinleştikten sonra sayılır
+        hit = np.flatnonzero(after > level) if bull else np.flatnonzero(after < level)
+        if len(hit):
+            k = p + rb + 1 + int(hit[0])
+            out.update(durum="kirildi", kirildi=True, kirilim_date=dates.iloc[k].isoformat())
+        else:
+            out["durum"] = "bekleniyor_kirilim"
+        return out
+    out["durum"] = "bekleniyor_yapi"
+    return out
+
+
+def apply_hourly_trust_level(sig: Dict[str, Any], df: pd.DataFrame, h1: Optional[pd.DataFrame], interval: str) -> None:
+    """Replaces the signal's trigger level with Semih Hoca's hourly definition. The old
+    between-pivot extreme is kept as `ara_bolge_*`; if the hourly structure has not formed
+    yet the trigger level is None (shown as 'bekleniyor'), never the between-pivot value."""
+    bull = sig["type"] == "PU30"
+    key = "guven_tazeleyen_tepe" if bull else "guven_kiran_dip"
+    p2 = sig["dip2"] if bull else sig["tepe2"]
+    sig["ara_bolge_tepe" if bull else "ara_bolge_dip"] = sig.get(key)
+    level = hourly_trust_level(h1, df["date"].iloc[p2["index"]], interval, bull)
+    sig["saatlik_seviye"] = level
+    if level["price"] is not None:
+        sig[key] = {"price": level["price"], "date": level.get("date"), "kirildi": level["kirildi"], "kaynak": "saatlik_yapi"}
+    else:
+        sig[key] = None
+    sig["tetiklendi"] = bool(level["kirildi"])
+
+
+def _trigger_text(level: Dict[str, Any], bull: bool) -> str:
+    name = "güven tazeleyen tepe" if bull else "güven kıran dip"
+    act = "aşıldı: alış teyidi" if bull else "kırıldı: satış / stop"
+    todo = "üzerinde saatlik kapanışta alış" if bull else "altında saatlik kapanışta satış"
+    structure = "dibi kıramayan saatlik dip" if bull else "zirveyi geçemeyen saatlik tepe"
+    durum = level.get("durum")
+    if durum == "kirildi":
+        return f"Saatlik {name} {level['price']} {act} ({level.get('kirilim_date', '')[:16]})."
+    if durum == "bekleniyor_kirilim":
+        return f"Saatlik {name} {level['price']}: {todo}."
+    if durum == "bekleniyor_yapi":
+        return f"Saatlik {name} henüz oluşmadı: önce {structure} bekleniyor."
+    if durum == "gecersiz":
+        return "Saatlik yapı bozuldu (" + ("2. dibin altına inildi" if bull else "zirve aşıldı") + "); sinyal zayıfladı."
+    return "Saatlik veri alınamadı; tetik seviyesi hesaplanamadı."
+
+
 def scan_universe_rsi_pu30(
     symbols: List[str],
     max_workers: int = 4,
@@ -560,21 +672,20 @@ def scan_universe_rsi_pu30(
                     has_cross_pu = bool(cross_pu)
                     sig_pu["confirmed_timeframes"] = [interval] + cross_pu
 
+                    apply_hourly_trust_level(sig_pu, df, df if interval == "1h" else _cross_df("1h"), interval)
                     if has_cross_pu:
                         sig_pu["confluence"] = "DOUBLE_BULL"
                         sig_pu["confluence_badge"] = f"💎 {' + '.join(sig_pu['confirmed_timeframes'])} ÇİFTE ONAY (ANA RALLİ)"
-                        sig_pu["strategy_action"] = f"{' + '.join(_TF_LABEL.get(t, t) for t in sig_pu['confirmed_timeframes'])} teyitli ana dip dönüşü (Semih Hoca: 1s + 4s/G = ana dönüş)."
+                        head = f"{' + '.join(_TF_LABEL.get(t, t) for t in sig_pu['confirmed_timeframes'])} teyitli ana dip dönüşü (Semih Hoca: 1s + 4s/G = ana dönüş)."
                     elif interval == "1h":
                         sig_pu["confluence"] = "SCALP_1H"
                         sig_pu["confluence_badge"] = "⚡ 1s TEPKİ YÜKSELİŞİ (KISA VADE)"
-                        sig_pu["strategy_action"] = "Düşüş trendi içinde ara tepkidir (4s teyidi henüz yok). Kısa vadeli gir-çık yapılmalı."
+                        head = "Düşüş trendi içinde ara tepkidir (4s/G teyidi henüz yok). Kısa vadeli gir-çık."
                     else:
                         sig_pu["confluence"] = "MACRO_4H"
                         sig_pu["confluence_badge"] = f"🏛️ {_TF_LABEL.get(interval, interval)} ANA DÖNÜŞ (Saatlik Tetik Bekleniyor)"
-                        sig_pu["strategy_action"] = (
-                            f"{_TF_LABEL.get(interval, interval)} grafikte PU30 oluştu. Saatlik bazda güven tazeleyen tepe "
-                            f"({sig_pu['guven_tazeleyen_tepe']['price']}) aşılınca giriş yapılabilir."
-                        )
+                        head = f"{_TF_LABEL.get(interval, interval)} grafikte PU30 oluştu."
+                    sig_pu["strategy_action"] = f"{head} {_trigger_text(sig_pu['saatlik_seviye'], bull=True)}"
 
                     found.append(sig_pu)
 
@@ -590,27 +701,20 @@ def scan_universe_rsi_pu30(
                     has_cross_nu = bool(cross_nu)
                     sig_nu["confirmed_timeframes"] = [interval] + cross_nu
 
+                    apply_hourly_trust_level(sig_nu, df, df if interval == "1h" else _cross_df("1h"), interval)
                     if has_cross_nu:
                         sig_nu["confluence"] = "DOUBLE_BEAR"
                         sig_nu["confluence_badge"] = f"🚨 {' + '.join(sig_nu['confirmed_timeframes'])} ÇİFTE DÜŞÜŞ (ZİRVE ÇÖKÜŞ)"
-                        gkd = sig_nu["guven_kiran_dip"]["price"]
-                        sig_nu["strategy_action"] = (
-                            f"Güven kıran dip ({gkd}) kırıldı, tepeden sert kâr satışı riski. Kâr al / Stop tavsiye edilir."
-                            if sig_nu["tetiklendi"] else
-                            f"Çift zaman diliminde tepe uyumsuzluğu. Güven kıran dip {gkd} altında kapanışta satış teyidi."
-                        )
+                        head = "Çoklu zaman diliminde tepe uyumsuzluğu (ana zirve)."
                     elif interval == "1h":
                         sig_nu["confluence"] = "SCALP_BEAR"
                         sig_nu["confluence_badge"] = "⚠️ 1s GÜVEN KIRAN DİP UYARISI"
-                        sig_nu["strategy_action"] = (
-                            "Saatlik bazda zirve geçilemedi ve güven kıran dip kırıldı. Erken çıkış fırsatı."
-                            if sig_nu["tetiklendi"] else
-                            f"Saatlik bazda zirve geçilemedi. Güven kıran dip {sig_nu['guven_kiran_dip']['price']} izlenmeli."
-                        )
+                        head = "Saatlikte tepe uyumsuzluğu (4s/G teyidi yok): kısa düzeltme."
                     else:
                         sig_nu["confluence"] = "MACRO_BEAR"
                         sig_nu["confluence_badge"] = f"🔴 {_TF_LABEL.get(interval, interval)} TEPE YORULMASI"
-                        sig_nu["strategy_action"] = f"{_TF_LABEL.get(interval, interval)} grafikte NU70 oluştu. Saatlik bazda güven kıran dip aranmalı (spot hissede çıkış uyarısı)."
+                        head = f"{_TF_LABEL.get(interval, interval)} grafikte NU70 oluştu (spot hissede çıkış uyarısı)."
+                    sig_nu["strategy_action"] = f"{head} {_trigger_text(sig_nu['saatlik_seviye'], bull=False)}"
 
                     found.append(sig_nu)
 
@@ -664,6 +768,11 @@ def get_symbol_chart_data(
 
     sig_pu = detect_rsi_pu30(df, DEFAULT_PU30_CONFIG, ignore_lifetime=True, interval=interval)
     sig_nu = detect_rsi_nu70(df, DEFAULT_NU70_CONFIG, ignore_lifetime=True, interval=interval)
+    if sig_pu or sig_nu:
+        h1 = df if interval == "1h" else _fetch_adjusted_bars(symbol, interval="1h")[0]
+        for sig in (sig_pu, sig_nu):
+            if sig:
+                apply_hourly_trust_level(sig, df, h1, interval)
 
     bars = []
     for i in range(len(df)):

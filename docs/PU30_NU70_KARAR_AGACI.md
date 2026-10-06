@@ -34,10 +34,15 @@ Sürüm: `pu30-strict-v3` / `nu70-strict-v3` (6 Ekim 2026). Kaynak: Semih Murat 
  hızlı kâr al)         taşınır)                 beklenir                               VİOP: short)             dip beklenir
 ```
 
-**Giriş / çıkış seviyesi.** PU30'da alım tetiği "güven tazeleyen tepe" (iki dip arasındaki en
-yüksek nokta) aşılınca; NU70'te satış teyidi "güven kıran dip" (iki tepe arasındaki en düşük nokta)
-kırılınca. Hoca bu seviyeyi saatlikte aradığını söylüyor; tam tanımı ve "kapanış mı, iğne mi"
-sorusu cevap bekliyor.
+**Giriş / çıkış seviyesi (saatlik yapı, Hoca'nın ASELS 1s grafiğiyle netleşti).**
+NU70: 2. tepenin saatlik zirvesinden sonra zirveyi geçemeyen saatlik tepe oluşur; zirve ile o tepe
+arasındaki en düşük saatlik fiyat **güven kıran dip**tir. Saatlik kapanış bunun altına inince sat.
+PU30: ayna kural; dibi kıramayan saatlik dip, aradaki en yüksek saatlik fiyat **güven tazeleyen tepe**,
+üzerinde saatlik kapanış = al. Yapı henüz oluşmadıysa seviye "bekleniyor" gösterilir; iki pivot
+arası uç nokta (eski hesap, `ara_bolge_*`) tetik olarak kullanılmaz.
+Doğrulama: ASELS gerçek verisinde zirve 450,00 (6 Mayıs 2026) → güven kıran dip 423,00 → 12 Mayıs
+15:30 saatlik kapanış 421,25 ile kırılım; Hoca: "ASELSAN 423'te sat vermiş" (grafiğinde 423,25;
+fark TradingView/yfinance veri farkı).
 
 **Spot ve VİOP.** BIST spot hissede NU70 bir *satış / çıkış uyarısıdır*; açığa satış yalnızca VİOP
 için geçerlidir. Backtest motoru NU70'i yalnızca çıkış olarak işler.
@@ -46,9 +51,9 @@ için geçerlidir. Backtest motoru NU70'i yalnızca çıkış olarak işler.
 
 1. Dipler fiyatta mı (site, `rsi_uyumsuzluk.py`) yoksa RSI çizgisinde mi (bazı Pine örnekleri) seçiliyor?
 2. Eşit dip / eşit tepe PU30 / NU70 sayılır mı?
-3. "Saatlik güven kırıcı dip" tam olarak hangi nokta, ve kırılım için mum kapanışı mı gerekir?
+3. ~~"Saatlik güven kırıcı dip" hangi nokta?~~ Cevaplandı (ASELS grafiği). Açık kalan: kırılım için kapanış mı, iğne yeterli mi? (Şu an: saatlik kapanış.)
 
-Cevaplar gelene kadar: pivot fiyatta, 2. dip kesin olarak daha düşük, seviye = iki pivot arası uç nokta.
+Cevaplar gelene kadar: pivot fiyatta, 2. dip kesin olarak daha düşük, kırılım saatlik kapanışla.
 
 ## Matriks / İdeal formülleri: yalnızca ön eleme
 

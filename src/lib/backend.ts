@@ -18,7 +18,9 @@ export async function backendRequest(path: string, init: RequestInit = {}): Prom
     const response = await fetch(`${BACKEND_URL}${path}`, { ...init, cache: "no-store", signal: controller.signal });
     const text = await response.text();
     try {
-      return Response.json(JSON.parse(text), { status: response.status });
+      // Pass the engine's CDN cache policy through, so the proxy response is cached too.
+      const cacheControl = response.ok ? response.headers.get("cache-control") : null;
+      return Response.json(JSON.parse(text), { status: response.status, headers: cacheControl ? { "Cache-Control": cacheControl } : undefined });
     } catch {
       // e.g. a platform FUNCTION_INVOCATION_TIMEOUT page: the engine was reached but failed.
       const timedOut = /TIMEOUT/i.test(text);

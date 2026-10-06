@@ -3,7 +3,7 @@
 on numpy/pandas/yfinance -- no ML packages."""
 import os
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 
 from python_bot.engine.signals.rsi_pu30 import scan_universe_rsi_pu30, get_symbol_chart_data
 from python_bot.engine.signals.most_rsi import scan_universe_most_rsi, get_most_rsi_chart_data
@@ -14,9 +14,20 @@ router = APIRouter()
 # I/O-bound (yfinance); more workers keep a 100-symbol scan inside serverless time limits.
 SCAN_MAX_WORKERS = int(os.environ.get("SCAN_MAX_WORKERS", "12"))
 
+# CDN cache (Vercel honours s-maxage on function responses): one 100-symbol scan serves
+# every visitor for 10 minutes instead of each visitor starting a new scan. Payloads carry
+# their own calculated_at, so a cached result is never presented as freshly computed.
+SCAN_CACHE = "public, s-maxage=600, stale-while-revalidate=1800"
+DETAIL_CACHE = "public, s-maxage=300, stale-while-revalidate=900"
+
+
+def _cache(response: Response, value: str, status: str) -> None:
+    if status in ("success", "partial"):
+        response.headers["Cache-Control"] = value
+
 
 @router.get("/api/scan/rsi-pu30")
-def scan_rsi_pu30(interval: str = "4h", signal_type: str = "all"):
+def scan_rsi_pu30(response: Response, interval: str = "4h", signal_type: str = "all"):
     """
     RSI PU30 (Dip/Alış) ve NU70 (Tepe/Satış) uyumsuzluk tarayıcısı.
     Semih Murat Ersoy formülü.
@@ -31,12 +42,13 @@ def scan_rsi_pu30(interval: str = "4h", signal_type: str = "all"):
         result = scan_universe_rsi_pu30(BIST100_SYMBOLS, max_workers=SCAN_MAX_WORKERS, interval=interval, signal_type=signal_type)
         # Top-level status mirrors the scan's own success/partial/error, so a
         # scan where every symbol failed is never reported as "success".
+        _cache(response, SCAN_CACHE, result["status"])
         return {"status": result["status"], "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/api/scan/rsi-pu30/{symbol}")
-def get_rsi_pu30_symbol_detail(symbol: str, interval: str = "4h"):
+def get_rsi_pu30_symbol_detail(response: Response, symbol: str, interval: str = "4h"):
     """Full price+RSI series and PU30 / NU70 divergence pairs. interval: '1d', '4h', or '1h'.
 
     Response includes:
@@ -55,6 +67,7 @@ def get_rsi_pu30_symbol_detail(symbol: str, interval: str = "4h"):
         response_data.setdefault("data_status", "UNKNOWN")
         response_data.setdefault("data_updated_at", None)
         response_data.setdefault("history_limit_note", "")
+        _cache(response, DETAIL_CACHE, "success")
         return {"status": "success", "data": response_data}
     except HTTPException:
         raise
@@ -63,7 +76,7 @@ def get_rsi_pu30_symbol_detail(symbol: str, interval: str = "4h"):
 
 
 @router.get("/api/scan/most-rsi")
-def scan_most_rsi(interval: str = "1h"):
+def scan_most_rsi(response: Response, interval: str = "1h"):
     """
     MOSTRSI (14, close, VAR 5, 9) Bull/Bear scanner.
     Kıvanç Özbilgiç / Anıl Özekşi TradingView formülü.
@@ -73,13 +86,14 @@ def scan_most_rsi(interval: str = "1h"):
         raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
     try:
         result = scan_universe_most_rsi(BIST100_SYMBOLS, interval=interval, max_workers=SCAN_MAX_WORKERS)
+        _cache(response, SCAN_CACHE, result["status"])
         return {"status": result["status"], "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/api/scan/most-rsi/{symbol}")
-def get_most_rsi_detail(symbol: str, interval: str = "1h"):
+def get_most_rsi_detail(response: Response, symbol: str, interval: str = "1h"):
     """
     Tek bir sembol için tam mum ve MOSTRSI (ExMOV, MOST stop seviyeleri) serisi.
     interval: "1h" veya "1d".
@@ -90,6 +104,7 @@ def get_most_rsi_detail(symbol: str, interval: str = "1h"):
         result = get_most_rsi_chart_data(symbol.upper(), interval=interval)
         if result is None:
             raise HTTPException(status_code=404, detail=f"No data for {symbol}")
+        _cache(response, DETAIL_CACHE, "success")
         return {"status": "success", "data": result}
     except HTTPException:
         raise

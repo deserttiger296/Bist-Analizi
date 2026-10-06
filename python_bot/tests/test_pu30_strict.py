@@ -60,7 +60,8 @@ def test_shared_api_scanner_uses_strict_defaults(monkeypatch, bars, first, secon
                                status=DataStatus.FRESH, last_bar_time=str(bars.date.iloc[-1]))
     monkeypatch.setattr(engine, "_fetch_adjusted_bars", fetch)
     monkeypatch.setattr(signal_api, "BIST100_SYMBOLS", ["FIXTURE"])
-    result = signal_api.scan_rsi_pu30(interval="1h", signal_type="pu30")
+    from fastapi import Response
+    result = signal_api.scan_rsi_pu30(Response(), interval="1h", signal_type="pu30")
     assert result["status"] == "success"
     assert result["data"]["scanned"] == 1
     assert result["data"]["matched"] == expected

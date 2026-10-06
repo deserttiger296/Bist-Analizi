@@ -19,7 +19,7 @@ fiyat/RSI değerleriyle** üretti (ISDMR NU, 1g, tepe 62.00/72.32 → 66.25/66.0
 
 **Kaynak kuralların uzlaştırılması.** 2 Ekim: "ilk RSI dibi 30 altında … 2. dibi 30 üzerinde yapıyor → yükseliş sinyali". 5 Ekim: 30 şartı "hiç gerek yok" (kısa vade trend uyumsuzluğu bağlamında). 6 Ekim, 4s PU30 kartları için: "Bu uyumsuzluk değil — kesinlikle ilk 30 altında 2. 30 üstünde olacak". Bu yüzden PU30/NU70 etiketi yalnızca katı kurala verilir; esnek uyumsuzluk ayrı bir tür olarak ele alınır.
 
-**Açık soru (uygulanmadı):** "Güven kırıcı dibi saatlik bazda arıyoruz; 4 saatlik bazda ararsak daha aşağıda sinyal üretir." Şu an güven kıran dip / güven tazeleyen tepe, sinyalin kendi zaman dilimindeki iki pivot arası en düşük/en yüksek noktadır. Saatlik güven kırıcı dibin tam tanımı (son saatlik salınım dibi mi?) netleşmeden tahmine dayalı uygulanmadı.
+**Saatlik güven seviyesi (uygulandı, 6 Ekim 2026):** `hourly_trust_level` — NU70: zirveden sonra zirveyi geçemeyen saatlik tepe, aradaki en düşük saatlik fiyat = güven kıran dip; PU30 ayna kural. Kırılım saatlik kapanışla. Ayrıntı: [PU30_NU70_KARAR_AGACI.md](PU30_NU70_KARAR_AGACI.md).
 | Fiyat / RSI | PU: dip2 fiyat < dip1, dip2 RSI > dip1. NU: tersi | |
 | Ara bölge | Dip 2 iki dip arasındaki en düşük nokta; Tepe 2 en yüksek nokta | |
 | Pivot | sol 5, sağ 2 bar; pivot RSI = pencere içi min/max | |
