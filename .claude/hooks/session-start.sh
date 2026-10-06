@@ -9,17 +9,21 @@ fi
 cd "$CLAUDE_PROJECT_DIR"
 
 # --- Python: python_bot/requirements-lock.txt (Python 3.12 için sabitlenmiş) ---
+# Analitik motor (python_bot.main, port 8000) lock dışındaki paketleri de ister;
+# lock ile aynı çözümde kurulur ki sinyal motorunun sürümleri değişmesin.
+# pandas_ta bilerek yok: numba==0.61.2 ister, lock'taki numba ile çakışır.
+extra_pkgs=(pytest vectorbt QuantLib ccxt statsmodels psycopg2-binary)
 if [ ! -x .venv/bin/python ]; then
   uv venv --python 3.12 .venv -q
 fi
 
-if ! uv pip install -q --python .venv/bin/python -r python_bot/requirements-lock.txt pytest; then
+if ! uv pip install -q --python .venv/bin/python -r python_bot/requirements-lock.txt "${extra_pkgs[@]}"; then
   # download.pytorch.org ağ politikasınca engelliyse torch'u aynı sürümle PyPI'dan kur.
   echo "PyTorch CPU index erişilemedi, torch PyPI'dan kuruluyor." >&2
   tmp_lock="$(mktemp)"
   grep -v "extra-index-url" python_bot/requirements-lock.txt \
     | sed 's/^torch==\([^+]*\)+cpu/torch==\1/' > "$tmp_lock"
-  uv pip install -q --python .venv/bin/python -r "$tmp_lock" pytest
+  uv pip install -q --python .venv/bin/python -r "$tmp_lock" "${extra_pkgs[@]}"
   rm -f "$tmp_lock"
 fi
 

@@ -474,10 +474,21 @@ def scan_all_symbols():
         "calculated_at": datetime.now(timezone.utc).isoformat(),
     }
 
+def _sma_seeded_ema(close, length: int):
+    """EMA seeded with the SMA of the first `length` closes (pandas_ta.ema's
+    default), so values match what pandas_ta produced. pandas_ta itself can't
+    be installed next to the locked numba/numpy."""
+    seeded = close.copy()
+    seeded.iloc[: length - 1] = np.nan
+    if len(close) >= length:
+        seeded.iloc[length - 1] = close.iloc[:length].mean()
+    # Leading NaNs stay NaN; the recursion starts at the SMA seed.
+    return seeded.ewm(span=length, adjust=False).mean()
+
+
 @app.get("/api/chart/{symbol}")
 def get_chart_data(symbol: str):
     import pandas as pd
-    import pandas_ta as ta
     ticker = f"{symbol.upper()}.IS" if not symbol.endswith(".IS") else symbol.upper()
     try:
         df = yf.download(ticker, period="6mo", progress=False)
@@ -487,13 +498,15 @@ def get_chart_data(symbol: str):
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.droplevel(1)
             
-        df['sma50'] = ta.sma(df['Close'], length=50)
-        df['ema9'] = ta.ema(df['Close'], length=9)
-        bb = ta.bbands(df['Close'])
-        if bb is not None and not bb.empty:
-            df['bb_lower'] = bb.iloc[:, 0]
-            df['bb_upper'] = bb.iloc[:, 2]
-            
+        close = df['Close'].astype(np.float64)
+        df['sma50'] = close.rolling(50).mean()
+        df['ema9'] = _sma_seeded_ema(close, 9)
+        # Bollinger(5, 2σ, sample std) -- pandas_ta.bbands defaults.
+        bb_mid = close.rolling(5).mean()
+        bb_std = close.rolling(5).std(ddof=1)
+        df['bb_lower'] = bb_mid - 2 * bb_std
+        df['bb_upper'] = bb_mid + 2 * bb_std
+
         df.dropna(subset=['sma50'], inplace=True)
         
         chart_data = []
