@@ -40,11 +40,26 @@ def classify_regime_hmm(close: pd.Series, n_states: int = 3, random_state: int =
     if len(features) < n_states * 5:
         raise ValueError("Insufficient observations to fit a stable HMM regime model.")
 
-    model = GaussianHMM(n_components=n_states, covariance_type="diag",
-                         n_iter=200, random_state=random_state)
-    model.fit(features)
+    # On short windows (e.g. the 1y history used at prediction time) EM can
+    # collapse a state for an unlucky initialisation and raise "startprob_
+    # must sum to 1 (got nan)". Retry a few fixed seeds; the first seed is
+    # unchanged, so series that already fit get the same result as before.
+    last_error: Exception = ValueError("HMM fit failed")
+    for seed in range(random_state, random_state + 5):
+        model = GaussianHMM(n_components=n_states, covariance_type="diag",
+                             n_iter=200, random_state=seed)
+        try:
+            model.fit(features)
+            states = model.predict(features)
+        except ValueError as e:
+            last_error = e
+            continue
+        if np.isfinite(model.startprob_).all() and np.isfinite(model.transmat_).all():
+            break
+        last_error = ValueError("HMM fit produced non-finite parameters")
+    else:
+        raise last_error
 
-    states = model.predict(features)
     latest_state = int(states[-1])
 
     # Order hidden states by their volatility mean so labels are consistent
