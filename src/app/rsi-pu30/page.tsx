@@ -1,4 +1,5 @@
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 import Link from "next/link";
 import { getMostRsiScan } from "@/lib/rsiPu30Engine";
@@ -35,7 +36,7 @@ export default async function RsiPu30Page() {
 
       {!result ? (
         <div className="rounded-2xl border border-amber-700/40 bg-amber-950/20 p-6 text-amber-300 text-sm">
-          MOSTRSI motoruna ulaşılamadı (main_api.py port 8001&apos;de çalışmıyor olabilir).
+          MOSTRSI taraması şu an yanıt vermedi (zaman aşımı veya motor erişilemiyor). Sonuçlar 10 dakika önbellekte tutulur; birkaç dakika sonra tekrar deneyin.
         </div>
       ) : (
         <>

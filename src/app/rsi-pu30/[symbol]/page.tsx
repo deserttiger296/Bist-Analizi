@@ -1,4 +1,5 @@
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 import Link from "next/link";
 import { getRsiPu30SymbolDetail } from "@/lib/rsiPu30Engine";

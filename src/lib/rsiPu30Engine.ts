@@ -5,7 +5,9 @@
 // pipeline, and the client code mirrors that separation.
 import { BACKEND_URL } from "./backend";
 
-const DEFAULT_TIMEOUT_MS = 10000;
+// Symbol details take 5-20s, full scans 30-150s (yfinance, 100 symbols).
+const DEFAULT_TIMEOUT_MS = 60000;
+const SCAN_TIMEOUT_MS = 280000;
 
 function getBaseUrl(): string {
   return BACKEND_URL;
@@ -58,7 +60,7 @@ export interface Pu30ScanResult {
 }
 
 export async function getRsiPu30Scan(): Promise<Pu30ScanResult | null> {
-  const result = await fetchJson<{ status: string; data: Pu30ScanResult }>("/api/scan/rsi-pu30", 120000);
+  const result = await fetchJson<{ status: string; data: Pu30ScanResult }>("/api/scan/rsi-pu30", SCAN_TIMEOUT_MS);
   return result?.data ?? null;
 }
 
@@ -148,7 +150,7 @@ export interface MostRsiDetail {
 }
 
 export async function getMostRsiScan(interval = "1h"): Promise<MostRsiScanResult | null> {
-  const result = await fetchJson<{ status: string; data: MostRsiScanResult }>(`/api/scan/most-rsi?interval=${interval}`, 120000);
+  const result = await fetchJson<{ status: string; data: MostRsiScanResult }>(`/api/scan/most-rsi?interval=${interval}`, SCAN_TIMEOUT_MS);
   return result?.data ?? null;
 }
 

@@ -56,7 +56,7 @@ export default async function HistoryPage() {
 
       {!history ? (
         <div className="rounded-2xl border border-amber-700/40 bg-amber-950/20 p-6 text-amber-300 text-sm">
-          Sniper motoruna ulaşılamadı (main_api.py port 8001&apos;de çalışmıyor olabilir) veya henüz hiç günlük tarama kaydı yok.
+          Günlük tarama geçmişi bu ortamda yok (yalnızca tam yerel motorda tutulur) ya da henüz hiç kayıt yok.
           Kayıt oluşturmak için <code className="px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300">python_bot/run_daily_scan.py</code> çalıştırılmalı.
         </div>
       ) : (

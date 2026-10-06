@@ -327,7 +327,7 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
                 </>
               ) : (
                 <p className="mt-4 text-sm text-slate-500">
-                  Sniper motoruna ulaşılamadı (main_api.py port 8001&apos;de çalışmıyor olabilir) veya model henüz eğitilmemiş. Aşağıdaki teknik confluans analizi ikincil sinyal olarak gösteriliyor.
+                  ML tahmin motoru bu ortamda yok (canlı sitede RF/LSTM çalışmaz; yalnızca tam yerel motorda) ya da yanıt vermedi. Aşağıdaki teknik confluans analizi ikincil sinyal olarak gösteriliyor.
                 </p>
               )}
             </div>
