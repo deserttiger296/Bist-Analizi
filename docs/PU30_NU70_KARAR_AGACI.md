@@ -80,3 +80,16 @@ Bu formüller **PU30 / NU70 sinyali değildir**, hızlı bir ön eleme filtresid
 
 Kullanım önerisi: Matriks/İdeal'de geniş bir listeyi daraltmak için kullanın; sinyali sitede veya
 `python rsi_divergence_screener.py SEMBOL --interval 1h` ile doğrulayın.
+
+## TradingView ile bilinen farklar (bilgi notu — sisteme uygulanmadı)
+
+Sitedeki motor bu farkları bilerek kendi kuralıyla bırakır; TradingView'da karşılaştırırken dikkat edin:
+
+| Konu | Site motoru | TradingView `ta.rsi` |
+|---|---|---|
+| Fiyat tamamen yatay (hiç değişim yok, örn. işlem durdurma) | RSI = 50 | RSI = 100 |
+| Fiyat verisi | yfinance, temettü/bölünme düzeltmeli | Grafik ayarına bağlı (genelde düzeltmesiz) |
+| Saatlik mum etiketleri | 09:30 … 17:30 (yfinance) | Sağlayıcıya göre 10:00 … 18:00 olabilir |
+
+Bu yüzden aynı mumda kuruş düzeyinde farklar görülebilir (ör. ASELS güven kıran dip: site 423,00,
+TradingView 423,25). Sinyal kuralı aynıdır.

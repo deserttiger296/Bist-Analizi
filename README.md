@@ -66,11 +66,15 @@ npm run dev
 ```
 Modern web arayüzü `http://localhost:3000` adresinde açılır.
 
-### 3. Tek Tıkla Tüm Sistemi Başlatma
-Kök dizindeki PowerShell betiğiyle tüm servisleri (FastAPI, StockSharp, Next.js) tek tıkla başlatabilirsiniz:
+### 3. Tek Tıkla Tam Sürüm (RF + LSTM + FinBERT dahil)
+Canlı Vercel sitesi yalnızca RSI/MOSTRSI motorunu çalıştırır; ML modelleri yalnızca bu bilgisayardaki
+tam sürümde çalışır. Kök dizinden:
 ```powershell
-.\start_all.ps1
+powershell -ExecutionPolicy Bypass -File .\start_full.ps1
 ```
+Python motorunu (8001) ve web arayüzünü (3000) iki ayrı pencerede açar, ~30 sn sonra
+`http://localhost:3000/index.html` adresini tarayıcıda açar. Terminal Status panelinde RF, LSTM ve
+Haber Analizi yeşil görünür.
 
 ---
 
