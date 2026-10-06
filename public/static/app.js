@@ -160,13 +160,16 @@ document.addEventListener('DOMContentLoaded', () => {
         results.innerHTML = '';
         const card = document.createElement('div');
         card.className = 'card';
-        const changePercent = stock.changePercent != null ? stock.changePercent : ((stock.change && stock.lastClose) ? (stock.change / stock.lastClose * 100) : 0);
+        // /api/bist/:symbol (Next, src/lib/bist.ts BistLiveQuote) names the
+        // symbol `ticker` and its `change` is already a percentage.
+        const symbol = stock.symbol || stock.ticker;
+        const changePercent = Number(stock.changePercent ?? stock.change ?? 0);
         const changeSign = changePercent >= 0 ? '+' : '';
         const changeColor = changePercent >= 0 ? 'var(--neon-green)' : 'var(--neon-red)';
         
         card.innerHTML = `
             <div class="card-top">
-                <div class="card-symbol">${stock.symbol}</div>
+                <div class="card-symbol">${symbol}</div>
                 <div class="card-badge" style="color: ${changeColor}; border: 1px solid ${changeColor};">
                     ${changeSign}${changePercent.toFixed(2)}%
                 </div>
@@ -188,12 +191,12 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
 
             <div style="margin-top: 1.5rem; display: flex; gap: 1rem;">
-                <button class="btn-chart" data-symbol="${stock.symbol}">📈 GRAFİĞİ GÖSTER</button>
+                <button class="btn-chart" data-symbol="${symbol}">📈 GRAFİĞİ GÖSTER</button>
             </div>
         `;
 
         const chartBtn = card.querySelector('.btn-chart');
-        chartBtn.addEventListener('click', () => openChart(stock.symbol));
+        chartBtn.addEventListener('click', () => openChart(symbol));
 
         results.appendChild(card);
         results.classList.remove('hidden');
