@@ -28,6 +28,9 @@ def classify_regime_hmm(close: pd.Series, n_states: int = 3, random_state: int =
     :param close: Chronological closing price series.
     :param n_states: Number of hidden regimes (default 3: low/med/high vol).
     """
+    # yfinance can end the series with an unfinalised NaN bar; without this
+    # momentum_20d came out NaN and /api/regime 500'd on JSON encoding.
+    close = close.dropna()
     returns = np.log(close / close.shift(1)).dropna()
     volatility = returns.rolling(20).std().dropna()
 
@@ -40,11 +43,26 @@ def classify_regime_hmm(close: pd.Series, n_states: int = 3, random_state: int =
     if len(features) < n_states * 5:
         raise ValueError("Insufficient observations to fit a stable HMM regime model.")
 
-    model = GaussianHMM(n_components=n_states, covariance_type="diag",
-                         n_iter=200, random_state=random_state)
-    model.fit(features)
+    # On short windows (e.g. the 1y history used at prediction time) EM can
+    # collapse a state for an unlucky initialisation and raise "startprob_
+    # must sum to 1 (got nan)". Retry a few fixed seeds; the first seed is
+    # unchanged, so series that already fit get the same result as before.
+    last_error: Exception = ValueError("HMM fit failed")
+    for seed in range(random_state, random_state + 5):
+        model = GaussianHMM(n_components=n_states, covariance_type="diag",
+                             n_iter=200, random_state=seed)
+        try:
+            model.fit(features)
+            states = model.predict(features)
+        except ValueError as e:
+            last_error = e
+            continue
+        if np.isfinite(model.startprob_).all() and np.isfinite(model.transmat_).all():
+            break
+        last_error = ValueError("HMM fit produced non-finite parameters")
+    else:
+        raise last_error
 
-    states = model.predict(features)
     latest_state = int(states[-1])
 
     # Order hidden states by their volatility mean so labels are consistent
