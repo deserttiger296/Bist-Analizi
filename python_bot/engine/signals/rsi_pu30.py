@@ -567,6 +567,10 @@ def hourly_trust_level(
             out.update(durum="kirildi", kirildi=True, kirilim_date=dates.iloc[k].isoformat())
         else:
             out["durum"] = "bekleniyor_kirilim"
+        # Where price is NOW relative to the level (a broken level can be re-crossed).
+        last = float(closes[-1])
+        out["son_kapanis"] = round(last, 2)
+        out["fiyat_seviyenin"] = "ustunde" if last > level else "altinda"
         return out
     out["durum"] = "bekleniyor_yapi"
     return out
@@ -596,7 +600,9 @@ def _trigger_text(level: Dict[str, Any], bull: bool) -> str:
     structure = "dibi kıramayan saatlik dip" if bull else "zirveyi geçemeyen saatlik tepe"
     durum = level.get("durum")
     if durum == "kirildi":
-        return f"Saatlik {name} {level['price']} {act} ({level.get('kirilim_date', '')[:16]})."
+        back = (bull and level.get("fiyat_seviyenin") == "altinda") or (not bull and level.get("fiyat_seviyenin") == "ustunde")
+        tail = " Fiyat şu an yeniden seviyenin " + ("altında" if bull else "üstünde") + "; teyit zayıfladı." if back else ""
+        return f"Saatlik {name} {level['price']} {act} ({level.get('kirilim_date', '')[:16]}).{tail}"
     if durum == "bekleniyor_kirilim":
         return f"Saatlik {name} {level['price']}: {todo}."
     if durum == "bekleniyor_yapi":

@@ -41,6 +41,13 @@ CLASS_LABELS = {
 }
 
 
+def _class_label(sig):
+    label = CLASS_LABELS.get(sig.get("confluence"), "")
+    if sig.get("tetiklendi"):
+        label = label.replace("saatlik tetik bekleniyor", "saatlik tetik geldi").replace("saatlik güven kıran dip bekleniyor", "saatlik güven kıran dip kırıldı")
+    return label
+
+
 def _level_text(sig, is_pu):
     name = "saatlik güven tazeleyen tepe" if is_pu else "saatlik güven kıran dip"
     lvl = sig.get("saatlik_seviye")
@@ -50,6 +57,9 @@ def _level_text(sig, is_pu):
     if lvl.get("price") is None:
         return f"{name}: {lvl.get('durum')}"
     state = {"kirildi": "aşıldı" if is_pu else "kırıldı", "bekleniyor_kirilim": "bekleniyor"}.get(lvl["durum"], lvl["durum"])
+    back = lvl["durum"] == "kirildi" and lvl.get("fiyat_seviyenin") == ("altinda" if is_pu else "ustunde")
+    if back:
+        state += ", fiyat şu an yeniden " + ("altında" if is_pu else "üstünde")
     return f"{name} {lvl['price']} ({state})"
 
 
@@ -59,7 +69,7 @@ def _row(sig, kind=None, cls=None):
     return {
         "sembol": sig["symbol"],
         "tur": kind or sig["type"],
-        "sinif": cls or CLASS_LABELS.get(sig.get("confluence"), ""),
+        "sinif": cls or _class_label(sig),
         "tf_onay": "+".join(sig.get("confirmed_timeframes", [])),
         "p1": f"{p1['price']:.2f} / RSI {p1['rsi']:.1f} ({p1['date']})",
         "p2": f"{p2['price']:.2f} / RSI {p2['rsi']:.1f} ({p2['date']})",

@@ -43,6 +43,7 @@ def test_asels_example_level_and_break():
     assert lvl["price"] == 423.25                # güven kıran dip
     assert lvl["durum"] == "kirildi" and lvl["kirildi"] is True
     assert lvl["kirilim_date"] == df["date"].iloc[23].isoformat()  # first close below 423.25
+    assert lvl["fiyat_seviyenin"] == "altinda" and lvl["son_kapanis"] < 423.25
 
 
 def test_level_formed_but_not_broken_yet():

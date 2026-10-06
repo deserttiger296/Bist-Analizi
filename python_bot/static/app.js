@@ -663,7 +663,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="target-item" style="border: 1px solid #ef4444; background: rgba(239, 68, 68, 0.12);">
                             <div class="target-label" style="color:#fca5a5;">⚠️ Saatlik Güven Kıran Dip</div>
                             <div class="target-val" style="font-size:1.1rem; color:#ef4444; font-weight:800;">${fmtTR(sig.guven_kiran_dip.price)} ₺</div>
-                            <div style="font-size:0.75rem; color:#fca5a5; margin-top:0.3rem;">${lvl.kirildi ? 'KIRILDI: satış / stop' : 'Altında saatlik kapanışta sat / stop'}</div>
+                            <div style="font-size:0.75rem; color:#fca5a5; margin-top:0.3rem;">${lvl.kirildi ? (lvl.fiyat_seviyenin === 'ustunde' ? 'Kırıldı, fiyat şu an yeniden üstünde' : 'KIRILDI: satış / stop') : 'Altında saatlik kapanışta sat / stop'}</div>
                         </div>
                     `;
                 } else if (!isNU && sig.guven_tazeleyen_tepe) {
@@ -671,7 +671,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="target-item" style="border: 1px solid #10b981; background: rgba(16, 185, 129, 0.12);">
                             <div class="target-label" style="color:#6ee7b7;">🎯 Saatlik Güven Tazeleyen Tepe</div>
                             <div class="target-val" style="font-size:1.1rem; color:#10b981; font-weight:800;">${fmtTR(sig.guven_tazeleyen_tepe.price)} ₺</div>
-                            <div style="font-size:0.75rem; color:#6ee7b7; margin-top:0.3rem;">${lvl.kirildi ? 'AŞILDI: alış teyidi' : 'Üzerinde saatlik kapanışta alış'}</div>
+                            <div style="font-size:0.75rem; color:#6ee7b7; margin-top:0.3rem;">${lvl.kirildi ? (lvl.fiyat_seviyenin === 'altinda' ? 'Aşıldı, fiyat şu an yeniden altında' : 'AŞILDI: alış teyidi') : 'Üzerinde saatlik kapanışta alış'}</div>
                         </div>
                     `;
                 } else if (waitText) {
