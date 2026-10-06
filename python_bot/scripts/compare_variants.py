@@ -57,9 +57,11 @@ def main():
                 raise ValueError(res.error_message if res else "no data")
             days = bars["date"].map(_day)
             start = max(0, int(np.searchsorted(days.to_numpy(), np.datetime64(final_start))) - WARMUP_BARS)
-            frames[sym] = bars.iloc[start:].reset_index(drop=True)
             feat = build_features(_fetch_history(sym, period="3y"), bench)
             feat.index = feat.index.map(_day)
+            # Same universe for every variant: a symbol enters only when both its
+            # prices and its model features are available.
+            frames[sym] = bars.iloc[start:].reset_index(drop=True)
             features[sym] = feat
         except Exception as e:
             errors[sym] = str(e)
@@ -138,7 +140,7 @@ def _write_report(rows, benchmarks, final_start, universe, errors, cfg):
         f"`python -m python_bot.scripts.compare_variants`",
         "",
         f"- Strateji: RSI PU30/NU70 `pu30-strict-v3` / `nu70-strict-v3` (1. dip RSI < 30, 2. dip RSI > 30; NU ayna kural).",
-        f"- Evren: {len(universe)} hisse (veri hatası: {', '.join(errors) or 'yok'}), günlük mumlar.",
+        f"- Evren: {len(universe) - len(errors)}/{len(universe)} hisse kullanıldı (veri/özellik hatası, tüm varyantlardan çıkarıldı: {', '.join(errors) or 'yok'}), günlük mumlar.",
         f"- Girişler yalnızca **{final_start.date()}** sonrasında: RF ve LSTM'in ne eğitildiği ne değerlendirildiği dönem.",
         f"- Ortak işlem varsayımları: spot, yalnız long, NU70 = çıkış uyarısı; stop %{cfg.stop_loss_pct}, hedef %{cfg.target_pct}, "
         f"en fazla {cfg.holding_bars_max} bar; komisyon %{cfg.commission_pct} + kayma %{cfg.slippage_pct} (her yön); "
