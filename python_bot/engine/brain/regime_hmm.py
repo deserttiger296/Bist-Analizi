@@ -28,6 +28,9 @@ def classify_regime_hmm(close: pd.Series, n_states: int = 3, random_state: int =
     :param close: Chronological closing price series.
     :param n_states: Number of hidden regimes (default 3: low/med/high vol).
     """
+    # yfinance can end the series with an unfinalised NaN bar; without this
+    # momentum_20d came out NaN and /api/regime 500'd on JSON encoding.
+    close = close.dropna()
     returns = np.log(close / close.shift(1)).dropna()
     volatility = returns.rolling(20).std().dropna()
 

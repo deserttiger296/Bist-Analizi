@@ -47,3 +47,11 @@ def test_raises_when_every_seed_collapses(monkeypatch):
     with pytest.raises(ValueError, match="startprob_"):
         regime_hmm.classify_regime_hmm(_close())
     assert seen == [42, 43, 44, 45, 46]
+
+
+def test_trailing_nan_bar_does_not_leak_into_result():
+    close = _close()
+    with_nan = pd.concat([close, pd.Series([np.nan], index=[len(close)])])
+    result = regime_hmm.classify_regime_hmm(with_nan)
+    assert np.isfinite(result["momentum_20d"])
+    assert result == regime_hmm.classify_regime_hmm(close)
