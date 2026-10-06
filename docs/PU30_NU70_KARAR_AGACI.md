@@ -10,7 +10,7 @@ Sürüm: `pu30-strict-v3` / `nu70-strict-v3` (6 Ekim 2026). Kaynak: Semih Murat 
               +-------------------------------+-------------------------------+
               |                                                               |
    DİPLER (fiyat düşüyor)                                          TEPELER (fiyat yükseliyor)
-   Fiyat_2 < Fiyat_1   (eşitlik: Hoca'ya soruldu)                  Fiyat_2 > Fiyat_1
+   Fiyat_2 < Fiyat_1   (eşit dip sayılmaz)                         Fiyat_2 > Fiyat_1
    RSI_2   > RSI_1                                                 RSI_2   < RSI_1
    Arada en az %3 tepki; Dip 2 aradaki en düşük nokta              Arada en az %3 geri çekilme; Tepe 2 en yüksek nokta
               |                                                               |
@@ -47,13 +47,20 @@ fark TradingView/yfinance veri farkı).
 **Spot ve VİOP.** BIST spot hissede NU70 bir *satış / çıkış uyarısıdır*; açığa satış yalnızca VİOP
 için geçerlidir. Backtest motoru NU70'i yalnızca çıkış olarak işler.
 
-## Hoca'ya sorulan, cevabı bekleyen 3 soru
+## Kesinleşen kararlar (gerekçeleriyle)
 
-1. Dipler fiyatta mı (site, `rsi_uyumsuzluk.py`) yoksa RSI çizgisinde mi (bazı Pine örnekleri) seçiliyor?
-2. Eşit dip / eşit tepe PU30 / NU70 sayılır mı?
-3. ~~"Saatlik güven kırıcı dip" hangi nokta?~~ Cevaplandı (ASELS grafiği). Açık kalan: kırılım için kapanış mı, iğne yeterli mi? (Şu an: saatlik kapanış.)
+1. **Pivot fiyatta aranır.** Hoca'nın tanımı fiyat üzerinden ("fiyat bir tepki sonrası düşmeye devam
+   ediyor ve 2. dibi … yapıyor"); referans `rsi_uyumsuzluk.py` de fiyat pivotu kullanır. Pivotun RSI
+   değeri, pivot penceresindeki (sol 5 / sağ 2) en düşük / en yüksek RSI'dır; böylece RSI dibi ile
+   fiyat dibi birkaç mum kaysa da doğru RSI değeri okunur.
+2. **Eşit dip / eşit tepe sayılmaz.** "Düşmeye devam ediyor" / "fiyat yükselse de" ifadeleri daha
+   düşük dip / daha yüksek tepe demektir; eşit seviye ikili dip/tepedir, uyumsuzluk değildir.
+3. **Güven seviyesi saatlik yapıdan, kırılım mum kapanışıyla.** Tanım Hoca'nın ASELS grafiğinden
+   (yukarıda). İğne sahte kırılım üretir ve kapanmamış mumdan sinyal üretmemek sistemin temel
+   kuralıdır; ASELS örneği kapanışla birebir tuttu (12 Mayıs 15:30 kapanış 421,25).
 
-Cevaplar gelene kadar: pivot fiyatta, 2. dip kesin olarak daha düşük, kırılım saatlik kapanışla.
+TradingView'da `tradingview/rsi_pu30_nu70_mtf.pine` aynı kuralları uygular; güven seviyesi için
+1 saatlik grafikte, teyit zaman dilimi 240 ile kullanılmalıdır.
 
 ## Matriks / İdeal formülleri: yalnızca ön eleme
 

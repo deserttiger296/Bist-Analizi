@@ -8,6 +8,11 @@
 // Zaman dilimi teyidi (Semih Hoca, 3. bölüm): 1s grafikte PU30 + 4s/G'de de PU30 = ANA DÖNÜŞ,
 //   yalnız 1s = TEPKİ (kısa işlem). Üst TF verisi yalnızca KAPANMIŞ mumdan okunur (repaint yok).
 // Etiket ve alarmlar yalnızca mum kapandığında oluşur.
+// Güven seviyesi (Hoca'nın ASELS 1s grafiği): NU70'te 2. tepeden (zirve) sonra zirveyi geçemeyen
+//   ilk tepe oluşunca aradaki en düşük fiyat = GÜVEN KIRAN DİP; kapanış altına inince SAT.
+//   PU30'da ayna kural = GÜVEN TAZELEYEN TEPE; kapanış üstüne çıkınca AL. Kırılım mum KAPANIŞIYLA.
+//   Hoca seviyeyi saatlikte arıyor: göstergeyi 1 SAATLİK grafikte, teyit TF = 240 ile kullanın.
+// Kararlar: pivot fiyatta; eşit dip/tepe sayılmaz (fiyat "düşmeye devam" etmeli); kırılım kapanışla.
 indicator("RSI PU30 / NU70 [MTF]", shorttitle="PU30/NU70", overlay=true, max_lines_count=500, max_labels_count=500, max_bars_back=500)
 
 rsiLen     = input.int(14, "RSI periyodu", minval=2)
@@ -16,13 +21,13 @@ rb         = input.int(2, "Pivot sağ bar (teyit gecikmesi)", minval=1)
 minGap     = input.int(8, "İki pivot arası min bar", minval=3)
 maxGap     = input.int(60, "İki pivot arası max bar", minval=4)
 minTepki   = input.float(3.0, "Min tepki / geri çekilme %", minval=0.0)
-allowEqual = input.bool(false, "Eşit dip/tepe kabul (Hoca'ya soruldu)")
+allowEqual = input.bool(false, "Eşit dip/tepe kabul (önerilmez: uyumsuzluk değil ikili dip)")
 htfRes     = input.timeframe("240", "Teyit zaman dilimi (1s grafikte 240 veya D)")
 htfLife    = input.int(5, "Teyit TF sinyal ömrü (bar)", minval=1)
 showSoft   = input.bool(false, "Esnek uyumsuzluğu da göster (PU30/NU70 DEĞİLDİR)")
 softDipMax = input.float(55.0, "Esnek: 1. dip RSI <")
 softTopMin = input.float(45.0, "Esnek: 1. tepe RSI >")
-showLevel  = input.bool(true, "Güven tazeleyen tepe / güven kıran dip çizgisi")
+showLevel  = input.bool(true, "Güven kıran dip / güven tazeleyen tepe (yapı seviyesi)")
 
 // Returns [strict, soft, i1, i2, price1, price2, rsi1, rsi2, level] for the pivot confirmed on this bar.
 // bull=true: PU (dipler), false: NU (tepeler). A soft match never hides an older strict pair.
@@ -126,25 +131,102 @@ nuSoft   = showSoft and nuF and confirmed
 f_rsiTxt(float a, float b) =>
     "RSI " + str.tostring(a, "#.#") + " → " + str.tostring(b, "#.#")
 
+// Yapı seviyesi takibi: sinyalin 2. pivotu (zirve / dip) -> zirveyi geçemeyen ilk tepe (PU: dibi
+// kıramayan ilk dip; sol pencere yalnızca zirveden sonraki mumlar) -> aradaki uç fiyat = seviye.
+// Zirve aşılırsa (PU: dip kırılırsa) yapı geçersiz. Site: python_bot hourly_trust_level ile aynı.
+f_struct(bool bull, bool newSig, int sigIdx, float sigPrice) =>
+    var int   z = na
+    var float zp = na
+    var float lvl = na
+    var int   lvlIdx = na
+    var bool  done = false
+    bool formedNow = false
+    bool brokeNow = false
+    bool invalidNow = false
+    if newSig
+        z := sigIdx
+        zp := sigPrice
+        lvl := na
+        lvlIdx := na
+        done := false
+    if barstate.isconfirmed and not na(z) and not done and not newSig
+        if na(lvl) and ((bull and low < zp) or (not bull and high > zp))
+            invalidNow := true
+            z := na
+        else if na(lvl)
+            int p = bar_index - rb
+            int leftN = math.min(lb, p - z - 1)
+            if leftN >= 1
+                float cand = bull ? low[rb] : high[rb]
+                bool isPiv = true
+                for k = 1 to leftN
+                    float v = bull ? low[rb + k] : high[rb + k]
+                    if (bull and v <= cand) or (not bull and v >= cand)
+                        isPiv := false
+                for k = 0 to rb - 1
+                    float v = bull ? low[k] : high[k]
+                    if (bull and v < cand) or (not bull and v > cand)
+                        isPiv := false
+                if isPiv
+                    float ext = na
+                    int extOff = na
+                    for o = rb + 1 to bar_index - z - 1
+                        float v = bull ? high[o] : low[o]
+                        if na(ext) or (bull and v > ext) or (not bull and v < ext)
+                            ext := v
+                            extOff := o
+                    lvl := ext
+                    lvlIdx := bar_index - extOff
+                    formedNow := true
+        else
+            if (bull and close > lvl) or (not bull and close < lvl)
+                brokeNow := true
+                done := true
+    [lvl, lvlIdx, formedNow, brokeNow, invalidNow]
+
+[puLv, puLvIdx, puFormed, puBroke, puInvalid] = f_struct(true, puStrict, puI2, puP2)
+[nuLv, nuLvIdx, nuFormed, nuBroke, nuInvalid] = f_struct(false, nuStrict, nuI2, nuP2)
+
 if puStrict
     line.new(puI1, puP1, puI2, puP2, color=color.green, width=2)
-    if showLevel
-        line.new(puI2, puLvl, bar_index + 20, puLvl, color=color.green, style=line.style_dotted)
-    label.new(puI2, puP2, "PU30\n" + (htfBull ? "ANA DÖNÜŞ (teyit TF'de de PU30)" : "TEPKİ (kısa işlem)") + "\n" + f_rsiTxt(puR1, puR2) + "\nGiriş seviyesi: " + str.tostring(puLvl, format.mintick), style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+    label.new(puI2, puP2, "PU30
+" + (htfBull ? "ANA DÖNÜŞ (teyit TF'de de PU30)" : "TEPKİ (kısa işlem)") + "
+" + f_rsiTxt(puR1, puR2) + "
+Güven tazeleyen tepe: bekleniyor", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
 
 if nuStrict
     line.new(nuI1, nuP1, nuI2, nuP2, color=color.red, width=2)
-    if showLevel
-        line.new(nuI2, nuLvl, bar_index + 20, nuLvl, color=color.red, style=line.style_dotted)
-    label.new(nuI2, nuP2, "NU70\n" + (htfBear ? "ANA ZİRVE (spot: çık, VİOP: short)" : "KISA DÜZELTME") + "\n" + f_rsiTxt(nuR1, nuR2) + "\nGüven kıran dip: " + str.tostring(nuLvl, format.mintick), style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+    label.new(nuI2, nuP2, "NU70
+" + (htfBear ? "ANA ZİRVE (spot: çık, VİOP: short)" : "KISA DÜZELTME") + "
+" + f_rsiTxt(nuR1, nuR2) + "
+Güven kıran dip: bekleniyor", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+
+if showLevel and puFormed
+    line.new(puLvIdx, puLv, bar_index + 30, puLv, color=color.green, style=line.style_dotted, width=2)
+    label.new(bar_index, puLv, "Güven tazeleyen tepe " + str.tostring(puLv, format.mintick) + "
+(üstünde kapanış = AL)", style=label.style_label_left, color=color.new(color.green, 30), textcolor=color.white, size=size.tiny)
+if showLevel and nuFormed
+    line.new(nuLvIdx, nuLv, bar_index + 30, nuLv, color=color.red, style=line.style_dotted, width=2)
+    label.new(bar_index, nuLv, "Güven kıran dip " + str.tostring(nuLv, format.mintick) + "
+(altında kapanış = SAT)", style=label.style_label_left, color=color.new(color.red, 30), textcolor=color.white, size=size.tiny)
+if puBroke
+    label.new(bar_index, low, "AL: güven tazeleyen tepe aşıldı", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+if nuBroke
+    label.new(bar_index, high, "SAT: güven kıran dip kırıldı", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+if puInvalid
+    label.new(bar_index, low, "PU30 yapısı bozuldu (dip kırıldı)", style=label.style_label_up, color=color.gray, textcolor=color.white, size=size.tiny)
+if nuInvalid
+    label.new(bar_index, high, "NU70 yapısı bozuldu (zirve aşıldı)", style=label.style_label_down, color=color.gray, textcolor=color.white, size=size.tiny)
 
 if puSoft
     line.new(puI1, puP1, puI2, puP2, color=color.teal, width=1, style=line.style_dashed)
-    label.new(puI2, puP2, "PU esnek (PU30 değil)\n" + f_rsiTxt(puR1, puR2), style=label.style_label_up, color=color.teal, textcolor=color.white, size=size.tiny)
+    label.new(puI2, puP2, "PU esnek (PU30 değil)
+" + f_rsiTxt(puR1, puR2), style=label.style_label_up, color=color.teal, textcolor=color.white, size=size.tiny)
 
 if nuSoft
     line.new(nuI1, nuP1, nuI2, nuP2, color=color.orange, width=1, style=line.style_dashed)
-    label.new(nuI2, nuP2, "NU esnek (NU70 değil)\n" + f_rsiTxt(nuR1, nuR2), style=label.style_label_down, color=color.orange, textcolor=color.white, size=size.tiny)
+    label.new(nuI2, nuP2, "NU esnek (NU70 değil)
+" + f_rsiTxt(nuR1, nuR2), style=label.style_label_down, color=color.orange, textcolor=color.white, size=size.tiny)
 
 alertcondition(puStrict, "PU30", "{{ticker}} {{interval}}: PU30 (1. dip RSI < 30, 2. dip RSI > 30)")
 alertcondition(puStrict and htfBull, "PU30 + teyit TF (ana dönüş)", "{{ticker}} {{interval}}: PU30 ve teyit zaman diliminde de PU30")
@@ -153,3 +235,5 @@ alertcondition(nuStrict, "NU70", "{{ticker}} {{interval}}: NU70 (1. tepe RSI > 7
 alertcondition(nuStrict and htfBear, "NU70 + teyit TF (ana zirve)", "{{ticker}} {{interval}}: NU70 ve teyit zaman diliminde de NU70")
 alertcondition(puSoft, "Esnek PU (PU30 değil)", "{{ticker}} {{interval}}: esnek pozitif uyumsuzluk")
 alertcondition(nuSoft, "Esnek NU (NU70 değil)", "{{ticker}} {{interval}}: esnek negatif uyumsuzluk")
+alertcondition(puBroke, "AL: güven tazeleyen tepe aşıldı", "{{ticker}} {{interval}}: PU30 sonrası güven tazeleyen tepe kapanışla aşıldı")
+alertcondition(nuBroke, "SAT: güven kıran dip kırıldı", "{{ticker}} {{interval}}: NU70 sonrası güven kıran dip kapanışla kırıldı")
