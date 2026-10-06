@@ -8,11 +8,16 @@ import { usePathname } from "next/navigation";
 export function ClientNavigation({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const pathname = usePathname();
-  const [isGlobalScanning, setIsGlobalScanning] = useState(false);
+  // Real engine status from /api/health -- never a hard-coded "online" badge.
+  const [engine, setEngine] = useState<"checking" | "online" | "offline">("checking");
 
-  // Global scan status: will be integrated with local API later.
   useEffect(() => {
-    setIsGlobalScanning(false);
+    let cancelled = false;
+    fetch("/api/health", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((h) => { if (!cancelled) setEngine(h?.status === "ok" ? "online" : "offline"); })
+      .catch(() => { if (!cancelled) setEngine("offline"); });
+    return () => { cancelled = true; };
   }, []);
 
   return (
@@ -102,23 +107,21 @@ export function ClientNavigation({ children }: { children: React.ReactNode }) {
 
           {/* Status Badges */}
           <div className="hidden md:flex items-center gap-3">
-            {isGlobalScanning ? (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded border border-sky-500/30 bg-sky-500/10 text-[10px] font-black tracking-widest text-sky-300 animate-pulse">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
-                </span>
-                🔄 TARAMA DEVAM EDİYOR
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded border border-emerald-500/20 bg-emerald-500/10 text-[10px] font-black tracking-widest text-emerald-400">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                LOCAL API BAĞLANTISI: AKTİF
-              </div>
-            )}
+            {(() => {
+              const style = {
+                checking: "border-slate-500/30 bg-slate-500/10 text-slate-400",
+                online: "border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
+                offline: "border-rose-500/30 bg-rose-500/10 text-rose-400",
+              }[engine];
+              const dot = { checking: "bg-slate-400", online: "bg-emerald-500", offline: "bg-rose-500" }[engine];
+              const text = { checking: "SİNYAL MOTORU: KONTROL EDİLİYOR", online: "SİNYAL MOTORU: ÇEVRİMİÇİ", offline: "SİNYAL MOTORU: ERİŞİLEMİYOR" }[engine];
+              return (
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded border text-[10px] font-black tracking-widest ${style}`}>
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${dot}`}></span>
+                  {text}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Right Icons */}
@@ -131,19 +134,6 @@ export function ClientNavigation({ children }: { children: React.ReactNode }) {
             <button className="hover:text-cyan-400 transition ml-1 md:ml-2 bg-white/5 p-1.5 rounded-full border border-white/10">👤</button>
           </div>
         </header>
-
-        {/* Global Scan Progress Banner (visible on all pages, all devices) */}
-        {isGlobalScanning && (
-          <div className="w-full bg-gradient-to-r from-sky-900/80 to-blue-900/80 border-b border-sky-500/30 px-4 py-2 flex items-center gap-3 text-xs font-bold text-sky-300 backdrop-blur-sm">
-            <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-sky-500"></span>
-            </span>
-            <span className="flex-1">
-              🔄 Arka planda piyasa taraması devam ediyor — Sayfalar arasında serbestçe gezinebilirsiniz, tarama durmayacak.
-            </span>
-          </div>
-        )}
 
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
