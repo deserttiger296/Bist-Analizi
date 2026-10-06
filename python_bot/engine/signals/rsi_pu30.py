@@ -83,6 +83,7 @@ INTERVALS = {
 
 _EPOCH = pd.Timestamp("1970-01-01")
 MIN_BARS_REQUIRED = 25
+_TF_LABEL = {"1h": "1s", "4h": "4s", "1d": "Günlük"}
 
 
 def _epoch_seconds(ts: Any) -> int:
@@ -562,15 +563,18 @@ def scan_universe_rsi_pu30(
                     if has_cross_pu:
                         sig_pu["confluence"] = "DOUBLE_BULL"
                         sig_pu["confluence_badge"] = f"💎 {' + '.join(sig_pu['confirmed_timeframes'])} ÇİFTE ONAY (ANA RALLİ)"
-                        sig_pu["strategy_action"] = "Hem 1s hem 4s teyitli ana dip dönüşü. Büyük trend potansiyeli!"
+                        sig_pu["strategy_action"] = f"{' + '.join(_TF_LABEL.get(t, t) for t in sig_pu['confirmed_timeframes'])} teyitli ana dip dönüşü (Semih Hoca: 1s + 4s/G = ana dönüş)."
                     elif interval == "1h":
                         sig_pu["confluence"] = "SCALP_1H"
                         sig_pu["confluence_badge"] = "⚡ 1s TEPKİ YÜKSELİŞİ (KISA VADE)"
                         sig_pu["strategy_action"] = "Düşüş trendi içinde ara tepkidir (4s teyidi henüz yok). Kısa vadeli gir-çık yapılmalı."
                     else:
                         sig_pu["confluence"] = "MACRO_4H"
-                        sig_pu["confluence_badge"] = "🏛️ 4s ANA DÖNÜŞ (Saatlik Tetik Bekleniyor)"
-                        sig_pu["strategy_action"] = "4 saatlikte güçlü dip oluştu. Saatlik bazda güven kıran dip aşılınca giriş yapılabilir."
+                        sig_pu["confluence_badge"] = f"🏛️ {_TF_LABEL.get(interval, interval)} ANA DÖNÜŞ (Saatlik Tetik Bekleniyor)"
+                        sig_pu["strategy_action"] = (
+                            f"{_TF_LABEL.get(interval, interval)} grafikte PU30 oluştu. Saatlik bazda güven tazeleyen tepe "
+                            f"({sig_pu['guven_tazeleyen_tepe']['price']}) aşılınca giriş yapılabilir."
+                        )
 
                     found.append(sig_pu)
 
@@ -605,8 +609,8 @@ def scan_universe_rsi_pu30(
                         )
                     else:
                         sig_nu["confluence"] = "MACRO_BEAR"
-                        sig_nu["confluence_badge"] = "🔴 4s TEPE YORULMASI"
-                        sig_nu["strategy_action"] = "4 saatlikte tepe uyumsuzluğu. 1 saatlikte güven kıran dip aranmalı."
+                        sig_nu["confluence_badge"] = f"🔴 {_TF_LABEL.get(interval, interval)} TEPE YORULMASI"
+                        sig_nu["strategy_action"] = f"{_TF_LABEL.get(interval, interval)} grafikte NU70 oluştu. Saatlik bazda güven kıran dip aranmalı (spot hissede çıkış uyarısı)."
 
                     found.append(sig_nu)
 

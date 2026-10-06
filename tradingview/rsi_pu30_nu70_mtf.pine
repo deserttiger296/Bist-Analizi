@@ -1,0 +1,155 @@
+//@version=5
+// RSI PU30 / NU70 [MTF] -- BIST Quantum Sniper sitesiyle aynı kural
+// Kaynak kural: python_bot/engine/signals/rsi_pu30.py (pu30-strict-v3 / nu70-strict-v3)
+//   PU30: 1. dip RSI < 30, 2. dip RSI > 30 (tam 30 sayılmaz), 2. dip fiyatı daha düşük,
+//         iki dip arasında en az %3 tepki, 2. dip aradaki en düşük nokta.
+//   NU70: ayna kural (1. tepe RSI > 70, 2. tepe RSI < 70).
+//   Pivotlar FİYATTA aranır (sol 5 / sağ 2 bar); pivot RSI'ı pivot penceresindeki en düşük/yüksek RSI'dır.
+// Zaman dilimi teyidi (Semih Hoca, 3. bölüm): 1s grafikte PU30 + 4s/G'de de PU30 = ANA DÖNÜŞ,
+//   yalnız 1s = TEPKİ (kısa işlem). Üst TF verisi yalnızca KAPANMIŞ mumdan okunur (repaint yok).
+// Etiket ve alarmlar yalnızca mum kapandığında oluşur.
+indicator("RSI PU30 / NU70 [MTF]", shorttitle="PU30/NU70", overlay=true, max_lines_count=500, max_labels_count=500, max_bars_back=500)
+
+rsiLen     = input.int(14, "RSI periyodu", minval=2)
+lb         = input.int(5, "Pivot sol bar", minval=1)
+rb         = input.int(2, "Pivot sağ bar (teyit gecikmesi)", minval=1)
+minGap     = input.int(8, "İki pivot arası min bar", minval=3)
+maxGap     = input.int(60, "İki pivot arası max bar", minval=4)
+minTepki   = input.float(3.0, "Min tepki / geri çekilme %", minval=0.0)
+allowEqual = input.bool(false, "Eşit dip/tepe kabul (Hoca'ya soruldu)")
+htfRes     = input.timeframe("240", "Teyit zaman dilimi (1s grafikte 240 veya D)")
+htfLife    = input.int(5, "Teyit TF sinyal ömrü (bar)", minval=1)
+showSoft   = input.bool(false, "Esnek uyumsuzluğu da göster (PU30/NU70 DEĞİLDİR)")
+softDipMax = input.float(55.0, "Esnek: 1. dip RSI <")
+softTopMin = input.float(45.0, "Esnek: 1. tepe RSI >")
+showLevel  = input.bool(true, "Güven tazeleyen tepe / güven kıran dip çizgisi")
+
+// Returns [strict, soft, i1, i2, price1, price2, rsi1, rsi2, level] for the pivot confirmed on this bar.
+// bull=true: PU (dipler), false: NU (tepeler). A soft match never hides an older strict pair.
+f_div(bool bull) =>
+    r    = ta.rsi(close, rsiLen)
+    pl   = ta.pivotlow(low, lb, rb)
+    ph   = ta.pivothigh(high, lb, rb)
+    rLo  = ta.lowest(r, lb + rb + 1)
+    rHi  = ta.highest(r, lb + rb + 1)
+    piv  = bull ? pl : ph
+    rExt = bull ? rLo : rHi
+    var idx = array.new_int()
+    var prc = array.new_float()
+    var rsv = array.new_float()
+    bool strict = false
+    bool soft = false
+    int i1 = na
+    int i2 = na
+    float p1 = na
+    float p2 = na
+    float r1 = na
+    float r2 = na
+    float level = na
+    if not na(piv) and not na(rExt)
+        int   pNow = bar_index - rb
+        float prNow = piv
+        float rNow = rExt
+        int n = array.size(idx)
+        if n > 0
+            for k = n - 1 to 0
+                int   pOld  = array.get(idx, k)
+                int   gap   = pNow - pOld
+                if gap > maxGap
+                    break
+                if gap < minGap or gap < rb + 2
+                    continue
+                float prOld = array.get(prc, k)
+                float rOld  = array.get(rsv, k)
+                bool priceOk = bull ? (allowEqual ? prNow <= prOld : prNow < prOld) : (allowEqual ? prNow >= prOld : prNow > prOld)
+                bool rsiOk   = bull ? rNow > rOld : rNow < rOld
+                if not (priceOk and rsiOk)
+                    continue
+                float loB = na
+                float hiB = na
+                for o = rb + 1 to bar_index - pOld - 1
+                    loB := na(loB) ? low[o] : math.min(loB, low[o])
+                    hiB := na(hiB) ? high[o] : math.max(hiB, high[o])
+                bool regionOk = bull ? loB >= prNow : hiB <= prNow
+                float tepki = bull ? (hiB / prOld - 1) * 100 : (1 - loB / prOld) * 100
+                if not regionOk or tepki < minTepki
+                    continue
+                bool isStrict = bull ? (rOld < 30 and rNow > 30) : (rOld > 70 and rNow < 70)
+                bool isSoft   = bull ? rOld < softDipMax : rOld > softTopMin
+                if isStrict
+                    strict := true
+                    soft := false
+                    i1 := pOld
+                    i2 := pNow
+                    p1 := prOld
+                    p2 := prNow
+                    r1 := rOld
+                    r2 := rNow
+                    level := bull ? hiB : loB
+                    break
+                if isSoft and not soft
+                    soft := true
+                    i1 := pOld
+                    i2 := pNow
+                    p1 := prOld
+                    p2 := prNow
+                    r1 := rOld
+                    r2 := rNow
+                    level := bull ? hiB : loB
+        array.push(idx, pNow)
+        array.push(prc, prNow)
+        array.push(rsv, rNow)
+        if array.size(idx) > 100
+            array.shift(idx)
+            array.shift(prc)
+            array.shift(rsv)
+    [strict, soft, i1, i2, p1, p2, r1, r2, level]
+
+// Teyit TF'de son `htfLife` bar içinde KATI uyumsuzluk var mı? [1] + lookahead_on = yalnızca kapanmış mum.
+f_tfConfirm(bool bull) =>
+    [st, so, a1, a2, b1, b2, c1, c2, lv] = f_div(bull)
+    bool recent = ta.barssince(st) <= htfLife
+    recent[1]
+
+htfBull = request.security(syminfo.tickerid, htfRes, f_tfConfirm(true), lookahead=barmerge.lookahead_on)
+htfBear = request.security(syminfo.tickerid, htfRes, f_tfConfirm(false), lookahead=barmerge.lookahead_on)
+
+[puS, puF, puI1, puI2, puP1, puP2, puR1, puR2, puLvl] = f_div(true)
+[nuS, nuF, nuI1, nuI2, nuP1, nuP2, nuR1, nuR2, nuLvl] = f_div(false)
+
+bool confirmed = barstate.isconfirmed
+puStrict = puS and confirmed
+nuStrict = nuS and confirmed
+puSoft   = showSoft and puF and confirmed
+nuSoft   = showSoft and nuF and confirmed
+
+f_rsiTxt(float a, float b) =>
+    "RSI " + str.tostring(a, "#.#") + " → " + str.tostring(b, "#.#")
+
+if puStrict
+    line.new(puI1, puP1, puI2, puP2, color=color.green, width=2)
+    if showLevel
+        line.new(puI2, puLvl, bar_index + 20, puLvl, color=color.green, style=line.style_dotted)
+    label.new(puI2, puP2, "PU30\n" + (htfBull ? "ANA DÖNÜŞ (teyit TF'de de PU30)" : "TEPKİ (kısa işlem)") + "\n" + f_rsiTxt(puR1, puR2) + "\nGiriş seviyesi: " + str.tostring(puLvl, format.mintick), style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+
+if nuStrict
+    line.new(nuI1, nuP1, nuI2, nuP2, color=color.red, width=2)
+    if showLevel
+        line.new(nuI2, nuLvl, bar_index + 20, nuLvl, color=color.red, style=line.style_dotted)
+    label.new(nuI2, nuP2, "NU70\n" + (htfBear ? "ANA ZİRVE (spot: çık, VİOP: short)" : "KISA DÜZELTME") + "\n" + f_rsiTxt(nuR1, nuR2) + "\nGüven kıran dip: " + str.tostring(nuLvl, format.mintick), style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+
+if puSoft
+    line.new(puI1, puP1, puI2, puP2, color=color.teal, width=1, style=line.style_dashed)
+    label.new(puI2, puP2, "PU esnek (PU30 değil)\n" + f_rsiTxt(puR1, puR2), style=label.style_label_up, color=color.teal, textcolor=color.white, size=size.tiny)
+
+if nuSoft
+    line.new(nuI1, nuP1, nuI2, nuP2, color=color.orange, width=1, style=line.style_dashed)
+    label.new(nuI2, nuP2, "NU esnek (NU70 değil)\n" + f_rsiTxt(nuR1, nuR2), style=label.style_label_down, color=color.orange, textcolor=color.white, size=size.tiny)
+
+alertcondition(puStrict, "PU30", "{{ticker}} {{interval}}: PU30 (1. dip RSI < 30, 2. dip RSI > 30)")
+alertcondition(puStrict and htfBull, "PU30 + teyit TF (ana dönüş)", "{{ticker}} {{interval}}: PU30 ve teyit zaman diliminde de PU30")
+alertcondition(puStrict and not htfBull, "PU30 tepki (kısa işlem)", "{{ticker}} {{interval}}: PU30, teyit zaman diliminde yok -> tepki")
+alertcondition(nuStrict, "NU70", "{{ticker}} {{interval}}: NU70 (1. tepe RSI > 70, 2. tepe RSI < 70)")
+alertcondition(nuStrict and htfBear, "NU70 + teyit TF (ana zirve)", "{{ticker}} {{interval}}: NU70 ve teyit zaman diliminde de NU70")
+alertcondition(puSoft, "Esnek PU (PU30 değil)", "{{ticker}} {{interval}}: esnek pozitif uyumsuzluk")
+alertcondition(nuSoft, "Esnek NU (NU70 değil)", "{{ticker}} {{interval}}: esnek negatif uyumsuzluk")
