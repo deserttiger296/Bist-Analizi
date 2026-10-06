@@ -300,19 +300,26 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await fetch(`/api/chart/${symbol}`);
             const json = await res.json();
-            
-            if (json.status === 'success') {
-                const data = json.data;
-                const cData = data.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close }));
-                const sData = data.filter(d => d.sma50 !== null).map(d => ({ time: d.time, value: d.sma50 }));
-                const eData = data.filter(d => d.ema9 !== null).map(d => ({ time: d.time, value: d.ema9 }));
-                
-                candleSeries.setData(cData);
-                smaSeries.setData(sData);
-                emaSeries.setData(eData);
-                chart.timeScale().fitContent();
+
+            // Two backends answer /api/chart: the Python engine returns
+            // {status:'success', data:[{time,...,sma50,ema9}]}, while on Vercel
+            // next.config rewrites it to /api/bist/:symbol/chart, which returns
+            // {data:{chartData:[{date,...,sma50}]}} (no status, no ema9).
+            const data = json.status === 'success' ? json.data : (json.data && json.data.chartData);
+            if (!res.ok || !Array.isArray(data) || data.length === 0) {
+                throw new Error(json.detail || json.error || `${symbol} grafik verisi alınamadı.`);
             }
+            const rows = data.map(d => ({ ...d, time: d.time || d.date }));
+            const cData = rows.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close }));
+            const sData = rows.filter(d => d.sma50 != null).map(d => ({ time: d.time, value: d.sma50 }));
+            const eData = rows.filter(d => d.ema9 != null).map(d => ({ time: d.time, value: d.ema9 }));
+
+            candleSeries.setData(cData);
+            smaSeries.setData(sData);
+            emaSeries.setData(eData);
+            chart.timeScale().fitContent();
         } catch (e) {
+            chartTitle.textContent = `${symbol} - ${e.message}`;
             console.error("Chart load failed", e);
         }
     }
