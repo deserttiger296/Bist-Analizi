@@ -1,6 +1,6 @@
 # Sinyal Kuralları ve Doğrulama Durumu
 
-Son güncelleme: 2026-10-05. Bu belge kodla birebir uyumlu tutulmalıdır; kaynak:
+Son güncelleme: 2026-10-13. Bu belge kodla birebir uyumlu tutulmalıdır; kaynak:
 `python_bot/engine/signals/rsi_pu30.py`, `most_rsi.py`, `engine/data/provider.py`,
 `engine/backtest/backtest_engine.py`.
 
@@ -63,6 +63,7 @@ için sessizce "sinyal yok"** döndürüyordu; düzeltildi. Doğrulanmış perfo
 | Haber analizi | FinBERT, Claude ve sözlük ayrı motor olarak raporlanır (`engine` alanı). Haber yokluğu veya analiz hatası **teyit sayılmaz**. |
 | Varyant karşılaştırması | **Esnek kurallarla (`rsi-divergence-v2`, artık geçersiz)** — [VARIANT_COMPARISON_rsi-divergence-v2.md](VARIANT_COMPARISON_rsi-divergence-v2.md) (2026-04-02 → 2026-10-05, modellerin görmediği dönem, 26 hisse, günlük). Yalnız RSI: 32 işlem, net **+%4.40**, işlem başı +%0.11, PF 1.06, maks. düşüş %5.3. +MOSTRSI: 2 işlem, +%0.82. +RF: **0 işlem**. +LSTM: 6 işlem, hepsi zararlı, **−%5.43**. Eşit ağırlık al-tut +%3.30, XU100 −%4.66. Sonuç: hiçbir filtre RSI tabanına kanıtlanmış katkı yapmadı; RSI tabanının al-tuta üstünlüğü de az işlemle istatistiksel olarak kanıtlanmış değil. Haber filtresi zaman damgalı geçmiş haber olmadığı için **test edilemedi**. |
 | Varyant karşılaştırması (katı `pu30-strict-v3`, güncel) | [VARIANT_COMPARISON.md](VARIANT_COMPARISON.md) (2026-04-02 → 2026-10-05, 25 hisse, günlük). Yalnız RSI: 11 işlem, net **−%0.93**, PF 0.89, maks. düşüş %4.3. +MOSTRSI: 0 işlem. +RF: 0 işlem. +LSTM: 2 işlem, ikisi de zararlı, −%2.15. Eşit ağırlık al-tut +%2.75, XU100 −%5.19. **Örneklem çok küçük:** tek bir hissenin (ISCTR) dahil edilip edilmemesi Yalnız RSI sonucunu +%1.0 ile −%0.9 arasında değiştirdi. Katı kuralın da, filtrelerin de kanıtlanmış bir üstünlüğü yok; daha uzun dönem / daha geniş evren gerekir. |
+| Uzun dönem, yalnız RSI (katı `pu30-strict-v3`, 2026-10-13) | [PU30_LONG_HISTORY.md](PU30_LONG_HISTORY.md) (2016-10 → 2026-10, 96 BIST100 hissesi, günlük, **735 işlem**). Kurallı işlem (stop %3 / hedef %6 / 20 bar): işlem başı **+%0.14**, PF 1.07; aynı hisselerde rastgele günlerde giriş **+%0.18** (p = 0.61). Sabit 10 / 20 gün tutma: sinyal +%0.46 / +%1.75, rastgele +%1.06 / +%2.82; aynı gün evrenin geri kalanına göre **−%0.40 / −%0.56** (gün bazında t ≈ −2.2). Sonuç: katı PU30 girişi rastgele zamanlamadan **daha iyi değil**; sabit tutuşta evrenin gerisinde kalıyor. Pozitif getiriler TL'nin genel yükselişinden geliyor, sinyalden değil. 2018 (151 işlem, PF 0.73) ve 2026 zayıf. Survivorship bias'lı evren (bugünkü BIST100). |
 | İleriye dönük (canlı) performans | **Bugün ölçülemez.** `engine/journal/daily_history.py` değiştirilemez karar kaydını ve ayrı sonuç olaylarını tutar; veri birikmeden sonuç raporlanmamalıdır. |
 
 `docs/` altındaki 2026-10-05 öncesi performans raporları başlarındaki bantla

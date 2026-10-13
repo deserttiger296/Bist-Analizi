@@ -1,0 +1,267 @@
+{
+  "period": "10y",
+  "draws": 2000,
+  "seed": 20261013,
+  "metrics": {
+    "rule": {
+      "label": "Kurallı işlem (stop/hedef/20 bar, NU70 çıkış)",
+      "signal": {
+        "n": 735,
+        "mean": 0.13555139103918848,
+        "median": -3.2422092907092637,
+        "win_rate": 37.95918367346939,
+        "profit_factor": 1.0669221210079365
+      },
+      "random_mean": 0.1821661688040563,
+      "random_p05": -0.07925203332996959,
+      "random_p95": 0.4574727797384453,
+      "p_value": 0.6086956521739131,
+      "same_day_excess": {
+        "n": 735,
+        "days": 320,
+        "mean": 0.06460331140725024,
+        "median": -0.7303329310221178,
+        "beat_rate": 38.63945578231293,
+        "daily_mean": -0.012503219587359444,
+        "t_by_day": -0.06935807269119376
+      }
+    },
+    "10": {
+      "label": "Sabit 10 gün tutma",
+      "signal": {
+        "n": 727,
+        "mean": 0.45550193575233416,
+        "median": -0.06329037972050422,
+        "win_rate": 49.10591471801926,
+        "profit_factor": 1.1617643936628328
+      },
+      "random_mean": 1.0635063625029522,
+      "random_p05": 0.4278493227298222,
+      "random_p95": 1.7117010193515465,
+      "p_value": 0.9430284857571214,
+      "same_day_excess": {
+        "n": 727,
+        "days": 315,
+        "mean": -0.40009065690994605,
+        "median": -0.696748670133502,
+        "beat_rate": 43.053645116918844,
+        "daily_mean": -0.7220250063521442,
+        "t_by_day": -2.216351316736853
+      }
+    },
+    "20": {
+      "label": "Sabit 20 gün tutma",
+      "signal": {
+        "n": 702,
+        "mean": 1.752984495933297,
+        "median": 0.3631937793864837,
+        "win_rate": 51.42450142450142,
+        "profit_factor": 1.4730944051391712
+      },
+      "random_mean": 2.824589206570982,
+      "random_p05": 1.8279997664001784,
+      "random_p95": 3.802297238907822,
+      "p_value": 0.9610194902548725,
+      "same_day_excess": {
+        "n": 702,
+        "days": 312,
+        "mean": -0.5629932181296567,
+        "median": -1.2764385512421164,
+        "beat_rate": 42.02279202279202,
+        "daily_mean": -1.1218892740233046,
+        "t_by_day": -2.23319585726153
+      }
+    }
+  },
+  "by_year": {
+    "2016": {
+      "n": 7,
+      "mean": 1.2801556182257408,
+      "median": 1.6812325670828798,
+      "win_rate": 57.14285714285714,
+      "profit_factor": 1.9212945581334173
+    },
+    "2017": {
+      "n": 43,
+      "mean": 0.8236821211576837,
+      "median": -3.2422092907092637,
+      "win_rate": 44.18604651162791,
+      "profit_factor": 1.4783108596599892
+    },
+    "2018": {
+      "n": 151,
+      "mean": -0.6367224352488926,
+      "median": -3.2422092907092748,
+      "win_rate": 28.47682119205298,
+      "profit_factor": 0.7252822354829158
+    },
+    "2019": {
+      "n": 44,
+      "mean": 0.8461012021512798,
+      "median": -2.5814525785639972,
+      "win_rate": 47.72727272727273,
+      "profit_factor": 1.5082431198862654
+    },
+    "2020": {
+      "n": 7,
+      "mean": -0.6772015841301398,
+      "median": -3.2422092907092748,
+      "win_rate": 28.57142857142857,
+      "profit_factor": 0.7075814258817359
+    },
+    "2021": {
+      "n": 47,
+      "mean": 0.75166103794301,
+      "median": -3.2422092907092637,
+      "win_rate": 44.680851063829785,
+      "profit_factor": 1.4190882680446413
+    },
+    "2022": {
+      "n": 11,
+      "mean": -0.7937928435200994,
+      "median": -3.2422092907092748,
+      "win_rate": 27.27272727272727,
+      "profit_factor": 0.6633575867641279
+    },
+    "2023": {
+      "n": 42,
+      "mean": 1.1340806836000725,
+      "median": -3.2422092907092583,
+      "win_rate": 47.61904761904761,
+      "profit_factor": 1.6677740173777817
+    },
+    "2024": {
+      "n": 140,
+      "mean": 0.1464920437634242,
+      "median": -3.2422092907092637,
+      "win_rate": 37.857142857142854,
+      "profit_factor": 1.0718573907757998
+    },
+    "2025": {
+      "n": 133,
+      "mean": 0.38368743901661895,
+      "median": -3.2422092907092637,
+      "win_rate": 41.35338345864661,
+      "profit_factor": 1.1941438640723174
+    },
+    "2026": {
+      "n": 110,
+      "mean": -0.24417412671466104,
+      "median": -3.2422092907092748,
+      "win_rate": 34.54545454545455,
+      "profit_factor": 0.8860513758418747
+    }
+  },
+  "exit_reasons": {
+    "STOP": 433,
+    "TARGET": 242,
+    "TARGET_GAP": 22,
+    "STOP_GAP": 18,
+    "HOLDING_EXPIRY": 17,
+    "END_OF_DATA": 3
+  },
+  "trades_per_symbol": {
+    "AGHOL": 6,
+    "AKBNK": 9,
+    "AKCNS": 6,
+    "AKFGY": 11,
+    "AKSA": 6,
+    "AKSEN": 7,
+    "ALARK": 12,
+    "ALBRK": 9,
+    "ALFAS": 11,
+    "ARCLK": 20,
+    "ASELS": 3,
+    "ASTOR": 5,
+    "ASUZU": 14,
+    "AYDEM": 7,
+    "BAGFS": 9,
+    "BERA": 6,
+    "BIMAS": 5,
+    "BRISA": 10,
+    "BRSAN": 6,
+    "BUCIM": 10,
+    "CANTE": 11,
+    "CCOLA": 6,
+    "CEMAS": 7,
+    "CIMSA": 5,
+    "DOAS": 11,
+    "DOHOL": 3,
+    "ECILC": 10,
+    "EGEEN": 9,
+    "EKGYO": 5,
+    "ENJSA": 5,
+    "ENKAI": 1,
+    "ERBOS": 8,
+    "EREGL": 5,
+    "EUREN": 7,
+    "EUPWR": 10,
+    "FROTO": 6,
+    "GARAN": 11,
+    "GENIL": 1,
+    "GESAN": 6,
+    "GLYHO": 2,
+    "GUBRF": 10,
+    "GWIND": 4,
+    "HALKB": 11,
+    "HEKTS": 15,
+    "HLGYO": 8,
+    "ISCTR": 9,
+    "ISDMR": 5,
+    "ISGYO": 5,
+    "ISMEN": 3,
+    "IZMDC": 11,
+    "KARSN": 4,
+    "KCAER": 3,
+    "KCHOL": 8,
+    "KMPUR": 5,
+    "KONTR": 7,
+    "KONYA": 12,
+    "KORDS": 7,
+    "KRDMD": 2,
+    "KZBGY": 3,
+    "MAVI": 7,
+    "MGROS": 9,
+    "MIATK": 3,
+    "ODAS": 7,
+    "OTKAR": 10,
+    "OYAKC": 9,
+    "PENTA": 6,
+    "PETKM": 3,
+    "PGSUS": 14,
+    "PSGYO": 2,
+    "QUAGR": 8,
+    "SAHOL": 4,
+    "SASA": 10,
+    "SELEC": 14,
+    "SISE": 10,
+    "SMRTG": 9,
+    "SNGYO": 7,
+    "SOKM": 9,
+    "TABGD": 3,
+    "TAVHL": 10,
+    "TCELL": 4,
+    "THYAO": 7,
+    "TKFEN": 2,
+    "TOASO": 11,
+    "TSKB": 3,
+    "TTKOM": 14,
+    "TTRAK": 14,
+    "TUKAS": 9,
+    "TUPRS": 3,
+    "ULKER": 12,
+    "VAKBN": 10,
+    "VESBE": 13,
+    "VESTL": 12,
+    "YEOTK": 4,
+    "YKBNK": 6,
+    "YYLGD": 4,
+    "ZOREN": 20
+  },
+  "errors": {
+    "CWCME": "CWCME için yfinance'ten veri alınamadı (Hisse kottan çıkmış veya sembol geçersiz olabilir).",
+    "IPEKE": "IPEKE için yfinance'ten veri alınamadı (Hisse kottan çıkmış veya sembol geçersiz olabilir).",
+    "KOZAA": "KOZAA için yfinance'ten veri alınamadı (Hisse kottan çıkmış veya sembol geçersiz olabilir).",
+    "KOZAL": "KOZAL için yfinance'ten veri alınamadı (Hisse kottan çıkmış veya sembol geçersiz olabilir)."
+  }
+}
