@@ -1,5 +1,11 @@
 # PU30 / NU70 Karar Ağacı
 
+> Güncel mimari: MTF yalnız ayrı laboratuvarda çalışır. Klasik motor MTF öncesi davranışına döndürülmüştür. Geçerli entegrasyon: [MTF_LAB_IZOLE_ENTEGRASYON.md](MTF_LAB_IZOLE_ENTEGRASYON.md). Aşağıdaki önceki MTF bağlama anlatımları tarihsel nottur.
+
+> Güncel PU30 işlem statüsü: 15 Ekim kullanıcı talebiyle [PU30_MTF_V4.md](PU30_MTF_V4.md) uygulanır. Aşağıdaki eski çapraz kontrol ve saatlik tepe açıklamaları güncel PU30 alım durumunu tek başına tanımlamaz. NU70 ayrı kalır.
+
+> Kaynak kontrolü (15 Ekim 2026): Aşağıdaki ağaç mevcut uygulamayı anlatır. Hocanın açık sözleri ile uygulama parametreleri ve yorum gerektiren noktalar [SEMIH_KAYNAK_KURALLAR.md](SEMIH_KAYNAK_KURALLAR.md) içinde ayrılmıştır. Ağacın her ayrıntısının hocanın doğrudan ifadesi olduğu doğrulanmış değildir.
+
 Sürüm: `pu30-strict-v3` / `nu70-strict-v3` (6 Ekim 2026). Kaynak: Semih Murat Ersoy mesajları
 (2, 5 ve 6 Ekim 2026). Kod karşılığı: `python_bot/engine/signals/rsi_pu30.py`; komut satırı:
 `python rsi_divergence_screener.py`; TradingView: `tradingview/rsi_pu30_nu70_mtf.pine`.

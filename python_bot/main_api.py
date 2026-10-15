@@ -2,6 +2,8 @@ import os
 import sys
 import time
 import json
+import math
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -84,8 +86,14 @@ class PredictionRequest(BaseModel):
     symbol: str
 
 @app.get("/")
+@app.get("/index.html")
 def root():
     return FileResponse(str(_PYTHON_BOT_ROOT / "static" / "index.html"))
+
+
+@app.get("/mtf-lab.html")
+def mtf_lab_page():
+    return FileResponse(str(_PYTHON_BOT_ROOT / "static" / "mtf-lab.html"))
 
 
 @app.get("/api/health")
@@ -135,21 +143,33 @@ def health_check():
 from python_bot.engine.universe import BIST100_SYMBOLS
 
 # USD Rate Cache
-_USD_RATE = 34.0
+_USD_RATE = None
 _USD_LAST_FETCH = 0
+_USD_LAST_ATTEMPT = None
+_USD_LOCK = threading.Lock()
 
 def get_usd_rate():
-    global _USD_RATE, _USD_LAST_FETCH
-    # Fetch once every hour to save API calls
-    if time.time() - _USD_LAST_FETCH > 3600:
+    """Return a validated rate cached for at most one hour, or None."""
+    global _USD_RATE, _USD_LAST_FETCH, _USD_LAST_ATTEMPT
+    # Scan workers share the cache; retry outages at most once per minute.
+    with _USD_LOCK:
+        now = time.time()
+        if _USD_RATE is not None and now - _USD_LAST_FETCH < 3600:
+            return _USD_RATE
+        if _USD_LAST_ATTEMPT is not None and now - _USD_LAST_ATTEMPT < 60:
+            return None
+        _USD_LAST_ATTEMPT = now
         try:
-            usd_data = yf.Ticker("USDTRY=X").history(period="1d")
+            usd_data = yf.Ticker("USDTRY=X").history(period="1d", timeout=10)
             if not usd_data.empty:
-                _USD_RATE = usd_data['Close'].iloc[-1]
-                _USD_LAST_FETCH = time.time()
-        except:
+                rate = float(usd_data['Close'].iloc[-1])
+                if math.isfinite(rate) and rate > 0:
+                    _USD_RATE = rate
+                    _USD_LAST_FETCH = time.time()
+                    return rate
+        except Exception:
             pass
-    return _USD_RATE
+        return None
 
 
 # ─── SHAP Feature Name → Turkish XAI Label Mapping ──────────────────────────
@@ -264,12 +284,14 @@ def _process_prediction(result, symbol=""):
     lstm_threshold = meta_weights.get("lstm_threshold", 0.60)
 
     prob_up = result["class_probabilities"].get("UP", 0)
+    rf_threshold_passed = prob_up >= rf_threshold
+    decision_enabled = MODEL_DECISION_MODE == "decide"
 
-    if prob_up >= rf_threshold:
+    if rf_threshold_passed:
         # In shadow mode the RF score is recorded but never presented as a buy decision:
         # its out-of-sample contribution has not been demonstrated (docs/SIGNAL_AND_VALIDATION_STATUS.md).
-        sniper_label = "GÖLGE: RF skoru eşik üstü (doğrulanmamış)" if MODEL_DECISION_MODE == "shadow" else "AL (GÜÇLÜ YÜKSELİŞ)"
-        sniper_approved = True
+        sniper_label = "AL (GÜÇLÜ YÜKSELİŞ)" if decision_enabled else "GÖLGE: RF skoru eşik üstü (doğrulanmamış)"
+        sniper_approved = decision_enabled
     else:
         sniper_label = "İZLE (RİSKLİ/YATAY)"
         sniper_approved = False
@@ -277,6 +299,7 @@ def _process_prediction(result, symbol=""):
     result["decision_mode"] = MODEL_DECISION_MODE
     result["sniper_label"] = sniper_label
     result["sniper_approved"] = sniper_approved
+    result["rf_threshold_passed"] = rf_threshold_passed
     result["sniper_threshold"] = rf_threshold
     result["meta_weights"] = meta_weights
     
@@ -339,10 +362,10 @@ def _process_prediction(result, symbol=""):
     # --- DUAL-ENGINE CROSS CHECK (Derin Öğrenme Entegrasyonu) ---
     lstm_prob = None
     quantum_approved = False
-    # approved | rejected | not_run (RF didn't approve) | unavailable (no torch/model) | error: ...
+    # approved | shadow | rejected | not_run (RF below threshold) | unavailable | error: ...
     lstm_status = "not_run"
 
-    if sniper_approved and symbol != "":
+    if rf_threshold_passed and symbol != "":
         try:
             lstm_prob = predict_lstm(symbol)
             if lstm_prob is None:
@@ -350,8 +373,8 @@ def _process_prediction(result, symbol=""):
             else:
                 result["lstm_probability"] = lstm_prob
                 if lstm_prob > lstm_threshold:
-                    quantum_approved = True
-                    lstm_status = "approved"
+                    quantum_approved = decision_enabled
+                    lstm_status = "approved" if decision_enabled else "shadow"
                     reasons.append(f"[LSTM %{int(lstm_prob*100)} - doğrulanmamış model]: Derin öğrenme skoru eşiğin üzerinde (kalibre edilmiş olasılık değildir).")
                 else:
                     lstm_status = "rejected"
@@ -370,8 +393,8 @@ def _process_prediction(result, symbol=""):
         sentiment_label = sentiment_data.get("sentiment_label", "NEUTRAL")
 
         if sentiment_score > 0.0:
-            sentiment_approved = True
-            reasons.append(f"[HABER DUYGU ANALİZİ: {sentiment_label} ({sentiment_score:+.2f})]: Piyasadaki son haberler pozitif yönlü. Sentiment onayı alındı ✅")
+            sentiment_approved = decision_enabled
+            reasons.append(f"[HABER DUYGU ANALİZİ: {sentiment_label} ({sentiment_score:+.2f})]: Piyasadaki son haberler pozitif yönlü.")
         elif sentiment_score < -0.1:
             reasons.append(f"[DİKKAT - HABER ANALİZİ: {sentiment_label} ({sentiment_score:+.2f})]: Piyasadaki haberler negatif. Sentiment onayı alınamadı ⚠️")
         else:
@@ -388,6 +411,8 @@ def _process_prediction(result, symbol=""):
         1: "TEKLİ ONAY ✅",
         0: "ONAY YOK ❌",
     }.get(confluence_engines, "ONAY YOK ❌")
+    if not decision_enabled:
+        result["confluence_label"] = "GÖLGE MOD: model skorları karar üretmez"
 
     result["explanation"] = reasons
     
@@ -398,14 +423,16 @@ def _process_prediction(result, symbol=""):
     if current_price > 0 and atr > 0:
         target_tl = current_price + (2.5 * atr)
         usd_rate = get_usd_rate()
-        target_usd = target_tl / usd_rate
+        target_usd = target_tl / usd_rate if usd_rate is not None else None
         
         result["target_price_tl"] = target_tl
         result["target_price_usd"] = target_usd
         result["usd_rate"] = usd_rate
+        result["usd_rate_status"] = "available" if usd_rate is not None else "unavailable"
         result["potential_roi"] = ((target_tl - current_price) / current_price) * 100
         
-        reasons.append(f"[Matematiksel Hedef]: Volatilite (ATR) hesaplamasına göre formasyon kâr alma seviyesi {target_tl:.2f} TL (veya {target_usd:.2f} Dolar) olarak belirlendi.")
+        usd_text = f" (veya {target_usd:.2f} Dolar)" if target_usd is not None else " (kur verisi alınamadığı için dolar hedefi hesaplanmadı)"
+        reasons.append(f"[Matematiksel Hedef]: Volatilite (ATR) hesaplamasına göre formasyon kâr alma seviyesi {target_tl:.2f} TL{usd_text} olarak belirlendi.")
         
         # Log to Journal if it's an approved buy signal
         if sniper_approved and quantum_approved and symbol != "":
@@ -440,7 +467,8 @@ def _scan_one(sym: str):
     try:
         raw_result = predict_rf(sym)
         result = _process_prediction(raw_result, sym)
-        return None, (result if result["sniper_approved"] else None)
+        # Keep experimental candidates visible in the radar without approving them.
+        return None, (result if result["rf_threshold_passed"] else None)
     except Exception as e:
         return str(e), None
 
@@ -571,6 +599,8 @@ def get_daily_history(days: int = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 app.include_router(signal_router)
+from python_bot.mtf_lab_api import router as mtf_lab_router
+app.include_router(mtf_lab_router)
 
 
 if __name__ == "__main__":

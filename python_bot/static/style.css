@@ -36,6 +36,7 @@ body {
     padding: 2rem 1.5rem;
     position: fixed;
     height: 100vh;
+    overflow-y: auto;
 }
 
 .logo {
@@ -211,10 +212,27 @@ button {
 /* MODAL */
 .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000;}
 .modal.hidden { display: none; }
-.modal-content { background: var(--bg-panel); width: 80%; max-width: 1000px; border-radius: 12px; border: 1px solid var(--border-color); padding: 2rem;}
-.modal-header { display: flex; justify-content: space-between; margin-bottom: 1.5rem;}
+.modal-content { background: var(--bg-panel); width: 90%; max-width: 1000px; max-height: 90dvh; overflow-y: auto; border-radius: 12px; border: 1px solid var(--border-color); padding: 1rem;}
+.modal-header { display: flex; align-items: center; gap: 1rem; justify-content: space-between; margin-bottom: 1.5rem; position: sticky; top: -1rem; background: var(--bg-panel); z-index: 2; padding: 0.5rem 0;}
+.modal-header .close-btn { flex-shrink: 0; }
 .close-btn { background: none; color: white; font-size: 1.5rem; padding: 0; margin: 0; width: 30px; height: 30px;}
 .close-btn:hover { background: rgba(255,0,0,0.2); color: red;}
 
 .hidden { display: none !important; }
 .alert-box { text-align: center; background: rgba(59, 130, 246, 0.1); padding: 2rem; border-radius: 12px; border: 1px solid var(--accent); margin-bottom: 2rem; color: var(--accent);}
+
+@media (max-width: 900px) {
+    body { flex-direction: column; }
+    .sidebar { position: relative; width: 100%; height: auto; padding: 1rem; }
+    .logo { margin-bottom: 1rem; }
+    .nav-links { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+    .nav-links li { margin-bottom: 0; }
+    .nav-links a { padding: 0.6rem; font-size: 0.85rem; }
+    .system-status { margin-top: 1rem; }
+    .main-content { margin-left: 0; padding: 1rem; min-width: 0; }
+    .top-bar { flex-wrap: wrap; gap: 1rem; padding: 1rem; }
+    .search-box { width: 100%; min-width: 0; }
+    .search-box input { min-width: 0; }
+    .architecture-grid, .target-grid, .dip-grid { grid-template-columns: 1fr; }
+    .interval-toggle { flex-wrap: wrap; }
+}

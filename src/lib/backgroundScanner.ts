@@ -125,7 +125,7 @@ async function mergeSniperResults(results: TrackerResult[]): Promise<TrackerResu
     // sniper's own threshold gating already happened server-side, so this
     // is about surfacing agreement, not letting one engine invent a signal
     // the other found no support for at all.
-    if (sniperPrediction.sniper_approved && result.confluenceScore >= 45 && result.status !== "AL") {
+    if (sniperPrediction.decision_mode === "decide" && sniperPrediction.sniper_approved && result.confluenceScore >= 45 && result.status !== "AL") {
       result.status = "AL";
       result.alert = true;
       result.reasons = [

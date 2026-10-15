@@ -1,0 +1,16 @@
+#mtf-lab-container { min-width: 0; }
+#mtf-lab-container h2, #mtf-lab-container h3 { margin-bottom: 0.75rem; }
+#mtf-lab-container p { margin: 0.5rem 0; overflow-wrap: anywhere; }
+#mtf-lab-container .lab-controls, #mtf-lab-container .lab-filters { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1rem 0; }
+#mtf-lab-container form { display: flex; flex-wrap: wrap; gap: 0.5rem; min-width: 0; }
+#mtf-lab-container input { min-width: 0; max-width: 100%; }
+#mtf-lab-container button { background: #27272a; color: #f4f4f5; border: 1px solid #52525b; }
+#mtf-lab-container button[aria-pressed="true"] { outline: 2px solid #a78bfa; }
+#mtf-lab-container [data-lab-filter="EARLY_REACTION"] { color: #fbbf24; }
+#mtf-lab-container [data-lab-filter="FULL_CONFIRMATION"] { color: #34d399; }
+#mtf-lab-container [data-lab-filter="LOWER_TF_NU_PRESSURE"] { color: #fb7185; }
+#mtf-lab-container .lab-card, #mtf-lab-container [data-lab-detail] { margin: 1rem 0; padding: 1rem; border: 1px solid #52525b; border-radius: 12px; background: #18181b; }
+#mtf-lab-container .lab-card[data-state="EARLY_REACTION"] { border-color: #fbbf24; }
+#mtf-lab-container .lab-card[data-state="FULL_CONFIRMATION"] { border-color: #34d399; }
+#mtf-lab-container .lab-card[data-state="LOWER_TF_NU_PRESSURE"] { border-color: #fb7185; }
+#mtf-lab-container [data-lab-status] { color: #c4b5fd; }

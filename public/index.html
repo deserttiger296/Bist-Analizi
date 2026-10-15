@@ -4,10 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BIST Quantum Sniper | Algorithmic Trading Desk</title>
-    <link rel="stylesheet" href="/static/style.css?v=20261006b">
+    <link rel="stylesheet" href="/static/style.css?v=20261015-pages3">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <!-- TradingView Lightweight Charts -->
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <link rel="stylesheet" href="/static/strategy-pages.css?v=20261015-pages3">
 </head>
 <body>
     
@@ -19,10 +20,12 @@
         </div>
         
         <ul class="nav-links">
-            <li class="active"><a href="#dashboard">📊 Piyasa Radarı</a></li>
+            <li><a href="/">← Ana uygulamaya dön</a></li>
+            <li><a href="#rsipu30">📈 Uyumsuzluk ekranı</a></li>
+            <li><a href="#dashboard">📊 Piyasa Radarı</a></li>
             <li><a href="#architecture">🧠 Sistem Mimarisi</a></li>
             <li><a href="#weights">⚖️ AI Ağırlıkları</a></li>
-            <li><a href="#rsipu30">📉 RSI PU30 (Ayrı Motor)</a></li>
+            <li class="active"><a href="#rsipu30">📉 Klasik RSI PU30 / NU70</a></li>
         </ul>
         
         <div class="system-status">
@@ -35,6 +38,12 @@
     </nav>
 
     <main class="main-content">
+        <nav class="strategy-pages" aria-label="Strateji sayfalari">
+            <a href="/index.html#rsipu30" aria-current="page">🎯 Klasik RSI Radarı (Ana Sistem)</a>
+            <a href="/mtf-lab.html">🧪 MTF Strateji Laboratuvarı (Test)</a>
+        </nav>
+        <div id="classic-system-container" role="tabpanel">
+        <div id="market-radar-controls" hidden>
         <header class="top-bar">
             <div class="search-box">
                 <input type="text" id="symbolInput" placeholder="Tek Hisse Ara (Örn: THYAO)" autocomplete="off">
@@ -56,8 +65,10 @@
         </div>
         <div id="errorMsg" class="error hidden"></div>
 
+        </div>
+
         <!-- MAIN DASHBOARD -->
-        <section id="dashboard" class="view-section active">
+        <section id="dashboard" class="view-section">
             
             <div id="radarResults" class="hidden">
                 <div class="section-header">
@@ -138,7 +149,7 @@
         </section>
 
         <!-- RSI PU30 & NU70 -->
-        <section id="rsipu30" class="view-section">
+        <section id="rsipu30" class="view-section active">
             <div class="section-header">
                 <h2>📉 RSI Uyumsuzluk Radarı (PU30 & NU70)</h2>
                 <p><strong>Semih Murat Ersoy Formülü:</strong> Fiyat düşerken 1. dipte RSI &lt; 30, 2. dipte RSI &gt; 30 kalırsa <span style="color:#10b981; font-weight:bold;">🟢 PU30 (Yükseliş / Dip Sinyali)</span>. Fiyat yükselirken 1. tepede RSI &gt; 70, 2. tepede RSI &lt; 70 kalırsa <span style="color:#f43f5e; font-weight:bold;">🔴 NU70 (Düşüş / Tepe Satış Sinyali)</span>.</p>
@@ -185,6 +196,8 @@
                 <div id="rsiPu30Grid" class="cards-grid"></div>
             </div>
         </section>
+        </div>
+
     </main>
 
     <!-- Chart Modal -->
@@ -192,7 +205,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3 id="chartTitle">THYAO - TradingView Analizi</h3>
-                <button id="closeModal" class="close-btn">&times;</button>
+                <button id="closeModal" class="close-btn" aria-label="Grafiği kapat">&times;</button>
             </div>
             <div id="tvchart" style="width: 100%; height: 500px;"></div>
         </div>
@@ -203,7 +216,7 @@
         <div class="modal-content" style="max-width: 1100px;">
             <div class="modal-header">
                 <h3 id="rsiPu30ChartTitle">RSI PU30 Uyumsuzluk Grafiği</h3>
-                <button id="rsiPu30CloseModal" class="close-btn">&times;</button>
+                <button id="rsiPu30CloseModal" class="close-btn" aria-label="Uyumsuzluk grafiğini kapat">&times;</button>
             </div>
             <div id="rsiPu30SignalInfo" class="dip-grid" style="margin-top: 0; margin-bottom: 1.5rem;"></div>
             <div id="rsiPu30PriceChart" style="width: 100%; height: 320px;"></div>
@@ -211,6 +224,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=20261006b"></script>
+    <script src="/static/app.js?v=20261015-pages3"></script>
 </body>
 </html>

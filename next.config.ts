@@ -11,6 +11,26 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
+        source: "/news",
+        destination: "/index.html#rsipu30",
+        permanent: false,
+      },
+      {
+        source: "/backtest",
+        destination: "/index.html#rsipu30",
+        permanent: false,
+      },
+      {
+        source: "/rsi-pu30",
+        destination: "/index.html#rsipu30",
+        permanent: false,
+      },
+      {
+        source: "/rsi-pu30/:symbol",
+        destination: "/index.html?symbol=:symbol#rsipu30",
+        permanent: false,
+      },
+      {
         source: "/",
         destination: "/index.html",
         permanent: false,

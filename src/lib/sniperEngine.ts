@@ -77,6 +77,8 @@ export interface SniperPrediction {
   features: Record<string, number>;
 
   sniper_label: string;
+  decision_mode?: string;
+  rf_threshold_passed?: boolean;
   sniper_approved: boolean;
   sniper_threshold: number;
   meta_weights: Record<string, any>;
@@ -97,8 +99,9 @@ export interface SniperPrediction {
   confluence_label: string;
 
   target_price_tl?: number;
-  target_price_usd?: number;
-  usd_rate?: number;
+  target_price_usd?: number | null;
+  usd_rate?: number | null;
+  usd_rate_status?: "available" | "unavailable";
   potential_roi?: number;
 }
 
@@ -126,8 +129,8 @@ export interface SniperScanResult {
 }
 
 /**
- * Runs the sniper engine across the full BIST100 universe, returning only
- * symbols that cleared the sniper's approval threshold. This is a heavier
+ * Runs the sniper engine across the full BIST100 universe, returning
+ * threshold candidates, including experimental scores in shadow mode. This is a heavier
  * call (up to ~100 symbols, parallelized server-side) -- give it a longer
  * timeout than a single-symbol prediction.
  */

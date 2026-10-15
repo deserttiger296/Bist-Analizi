@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from python_bot.signal_api import router as signal_router  # noqa: E402
+from python_bot.mtf_lab_api import router as mtf_lab_router  # noqa: E402
 
 DEPLOYMENT = "vercel-lite"
 ML_UNAVAILABLE = (
@@ -27,6 +28,7 @@ ML_UNAVAILABLE = (
 
 engine = FastAPI(title="BIST Signal Engine (Vercel lite)", docs_url=None, redoc_url=None, openapi_url=None)
 engine.include_router(signal_router)
+engine.include_router(mtf_lab_router)
 
 
 @engine.get("/api/health")

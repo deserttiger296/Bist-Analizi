@@ -61,20 +61,33 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Navigation
-    const navLinks = document.querySelectorAll('.nav-links a');
+    const navLinks = document.querySelectorAll('.nav-links a[href^="#"]');
     const sections = document.querySelectorAll('.view-section');
 
-    navLinks.forEach(link => {
-        link.addEventListener('click', (e) => {
-            e.preventDefault();
-            const targetId = link.getAttribute('href').substring(1);
-            
-            navLinks.forEach(l => l.parentElement.classList.remove('active'));
-            link.parentElement.classList.add('active');
+    function showSectionFromHash() {
+        const targetId = window.location.hash.slice(1) || 'rsipu30';
+        const target = Array.from(sections).find(section => section.id === targetId);
+        if (!target) return;
+        navLinks.forEach(link => link.parentElement.classList.toggle(
+            'active', link.getAttribute('href') === `#${targetId}`));
+        sections.forEach(section => section.classList.toggle('active', section === target));
+        const marketControls = document.getElementById('market-radar-controls');
+        if (marketControls) marketControls.hidden = targetId !== 'dashboard';
+    }
+    // Native anchors keep browser Back/Forward and direct section links working.
+    window.addEventListener('hashchange', showSectionFromHash);
+    showSectionFromHash();
 
-            sections.forEach(sec => sec.classList.remove('active'));
-            document.getElementById(targetId).classList.add('active');
+    const modals = document.querySelectorAll('.modal');
+    modals.forEach(modal => {
+        modal.addEventListener('click', event => {
+            if (event.target === modal) modal.classList.add('hidden');
         });
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            modals.forEach(modal => modal.classList.add('hidden'));
+        }
     });
 
     // Elements
@@ -844,4 +857,10 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error("RSI PU30 chart load failed", e);
         }
     }
+    // Legacy symbol URLs open the original chart rather than a different UI.
+    const requestedSymbol = new URLSearchParams(window.location.search).get('symbol')?.trim().toUpperCase();
+    if (requestedSymbol && /^[A-Z0-9]{2,12}(?:\.IS)?$/.test(requestedSymbol)) {
+        openRsiPu30Chart(requestedSymbol);
+    }
+
 });

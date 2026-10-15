@@ -1,5 +1,9 @@
 # Sinyal Kuralları ve Doğrulama Durumu
 
+> Güncel mimari: MTF yalnız ayrı laboratuvarda çalışır. Klasik motor MTF öncesi davranışına döndürülmüştür. Geçerli entegrasyon: [MTF_LAB_IZOLE_ENTEGRASYON.md](MTF_LAB_IZOLE_ENTEGRASYON.md). Aşağıdaki önceki MTF bağlama anlatımları tarihsel nottur.
+
+> 15 Ekim 2026 güncellemesi: PU30 iptal, açık mum veto kontrolü, 1S/4S/1G kararları ve makro Fibonacci için [PU30_MTF_V4.md](PU30_MTF_V4.md) esas alınır. Aşağıdaki eski periyot teyidi ve backtest sonuçları v4 performans doğrulaması değildir.
+
 Son güncelleme: 2026-10-05. Bu belge kodla birebir uyumlu tutulmalıdır; kaynak:
 `python_bot/engine/signals/rsi_pu30.py`, `most_rsi.py`, `engine/data/provider.py`,
 `engine/backtest/backtest_engine.py`.

@@ -21,6 +21,8 @@ class FinBertSentimentAnalyzer:
         self.model_loaded = False
         self.pipeline = None
         self.sentiment_memory = deque(maxlen=5000) # Store (timestamp, score, headline)
+        # Inference can fail even after the model loaded successfully.
+        self._init_financial_lexicon()
         
         
         try:
@@ -38,7 +40,6 @@ class FinBertSentimentAnalyzer:
         except Exception:
             # Graceful cascade to highly optimized institutional financial vocabulary lexicon
             print("[SentimentPipeline] INFO: Transformers library not found or offline. Activating high-performance local Financial Lexicon engine.")
-            self._init_financial_lexicon()
 
     def _init_financial_lexicon(self):
         """

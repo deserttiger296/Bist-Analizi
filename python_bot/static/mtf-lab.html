@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MTF Strateji Laboratuvarı | Test</title>
+    <link rel="stylesheet" href="/static/style.css?v=20261015-pages2">
+    <link rel="stylesheet" href="/static/strategy-pages.css?v=20261015-pages2">
+    <link rel="stylesheet" href="/static/mtf-lab.css?v=20261015-pages2">
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo"><span class="icon">🧪</span><h1>MTF LABORATUVARI</h1><p class="subtitle">DENEYSEL STRATEJİ EKRANI</p></div>
+        <ul class="nav-links">
+            <li><a href="/">← Ana uygulamaya dön</a></li>
+            <li><a href="/index.html#rsipu30">🎯 Klasik RSI PU30 / NU70</a></li>
+            <li class="active"><a href="/mtf-lab.html">🧪 MTF Laboratuvarı (Test)</a></li>
+        </ul>
+    </nav>
+    <main class="main-content">
+        <nav class="strategy-pages" aria-label="Strateji sayfalari">
+            <a href="/index.html#rsipu30">🎯 Klasik RSI Radarı (Ana Sistem)</a>
+            <a href="/mtf-lab.html" aria-current="page">🧪 MTF Strateji Laboratuvarı (Test)</a>
+        </nav>
+        <section id="mtf-lab-container" aria-label="MTF Strateji Laboratuvari">
+            <h2>🧪 MTF Strateji Laboratuvarı (Test)</h2>
+            <p>1S/4S/1G durumları · 15D/1S NU ve RSI trendi · Fiyat bazlı MOST EMA(9), %1,1. Bu deneysel ekran klasik radardan bağımsızdır.</p>
+            <div class="lab-controls">
+                <button type="button" data-lab-scan>BIST100 Laboratuvar Taraması</button>
+                <form data-lab-symbol-form>
+                    <input data-lab-symbol aria-label="Laboratuvar hisse sembolü" placeholder="Örn. ISCTR" value="ISCTR" maxlength="15">
+                    <button type="submit">Tek Hisse İncele</button>
+                </form>
+            </div>
+            <p data-lab-status role="status">Taramayı başlat veya tek bir hisse incele.</p>
+            <div class="lab-filters" role="group" aria-label="Laboratuvar evre filtresi">
+                <button type="button" data-lab-filter="EARLY_REACTION" aria-pressed="true">🟡 EVRE 1 · Saatlik Tepki</button>
+                <button type="button" data-lab-filter="FULL_CONFIRMATION" aria-pressed="false">🟢 EVRE 2 · Tam Onaylı Ralli</button>
+                <button type="button" data-lab-filter="LOWER_TF_NU_PRESSURE" aria-pressed="false">🔴 EVRE 3 · Alt Periyot NU Baskısı</button>
+            </div>
+            <div data-lab-list></div>
+            <details><summary>Günlük veto / eksik veri / diğer bekleyen durumlar ve gerekçeleri</summary><div data-lab-other-list></div></details>
+            <section data-lab-detail hidden aria-label="Laboratuvar hisse detayı"></section>
+        </section>
+    </main>
+    <script src="/static/mtf-lab.js?v=20261015-pages2"></script>
+</body>
+</html>
