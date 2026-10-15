@@ -117,14 +117,19 @@ export default function RsiPu30Chart({ bars, signal }: Props) {
     rsiChart.timeScale().subscribeVisibleLogicalRangeChange(syncFrom(rsiChart, priceChart));
 
     // ── Sync crosshair (hover one pane, see the matching point on the other) ──
-    priceChart.subscribeCrosshairMove((param) => {
-      if (param.time) rsiChart.setCrosshairPosition(0, param.time, rsiSeries);
-      else rsiChart.clearCrosshairPosition();
-    });
-    rsiChart.subscribeCrosshairMove((param) => {
-      if (param.time) priceChart.setCrosshairPosition(0, param.time, candleSeries);
-      else priceChart.clearCrosshairPosition();
-    });
+    // setCrosshairPosition throws "Value is null" when the target series has no
+    // point at that time (e.g. RSI warm-up bars), so fall back to clearing it.
+    const syncCrosshair = (target: IChartApi, targetSeries: ISeriesApi<"Candlestick"> | ISeriesApi<"Line">) =>
+      (param: { time?: unknown }) => {
+        try {
+          if (param.time) target.setCrosshairPosition(0, param.time as Time, targetSeries);
+          else target.clearCrosshairPosition();
+        } catch {
+          target.clearCrosshairPosition();
+        }
+      };
+    priceChart.subscribeCrosshairMove(syncCrosshair(rsiChart, rsiSeries));
+    rsiChart.subscribeCrosshairMove(syncCrosshair(priceChart, candleSeries));
 
     const handleResize = () => {
       if (priceRef.current) priceChart.applyOptions({ width: priceRef.current.clientWidth });
