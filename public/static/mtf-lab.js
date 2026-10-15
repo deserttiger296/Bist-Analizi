@@ -47,6 +47,7 @@ window.initMtfLab = function () {
             for (const level of d.macro_fibonacci.levels) line(detail, `${level.label}: ${money(level.price)} ₺`);
         }
         line(detail, `Veri: ${Object.entries(row.data_statuses).map(([tf, status]) => `${tf}: ${status}`).join(' · ')}`);
+        for (const note of row.data_notes || []) line(detail, `Veri notu: ${note}`);
         detail.hidden = false;
     }
     function render() {

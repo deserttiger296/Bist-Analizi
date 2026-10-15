@@ -582,3 +582,18 @@ def daily_structure(df, state):
         return dict(info, status="BROKEN", reason="Günlük destek kırıldı ve RSI önceki dip RSI değerinin üzerinde değil")
     return dict(info, status="INTACT", reason="Günlük dip korunuyor, RSI ≥30 ve NU70 yok")
 ```
+
+## 16 Ekim 2026 düzeltmeleri (yalnız laboratuvar)
+
+- **Tüketilmiş 4S PU:** Bir 4S PU'nun direnci ilk kapanışla kırması üzerinden
+  `SESSION_BREAKOUT_LIFETIME_BARS` (5, klasik sinyal ömrüyle aynı sayı — deneysel
+  varsayım, hocaya atfedilmez) kapanmış 4S bardan fazla geçtiyse seanslık uyum
+  sayılmaz (`timeframes.4h.consumed`, `first_breakout_at`, `bars_since_breakout`).
+  Örnek: ISCTR'nin Ağustos 4S PU'su 26 Ağustos'ta kırılmıştı; 15 Ekim'de hâlâ
+  FULL_CONFIRMATION görünüyor ve 1S NU baskısını gizliyordu. Artık
+  LOWER_TF_NU_PRESSURE. `breakout_at` son barı değil ilk kapanış kırılımını gösterir.
+- **Gece NaN günlük satırı:** Yahoo bitmiş seansın günlük satırını gece yarısından
+  sonra fiyatsız gönderebiliyor; sağlayıcı satırı silince günlük STALE olup tüm
+  lab DATA_UNAVAILABLE dönüyordu (16 Ekim 00:05'te 100/100). Lab artık yalnız o
+  eksik seansı, 17:30 barı dahil tamamı kapanmış 1S barlarından kurar ve
+  `data_notes` ile belirtir. Eksik/açık seans uydurulmaz; klasik sağlayıcı değişmedi.

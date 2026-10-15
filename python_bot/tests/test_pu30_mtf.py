@@ -384,3 +384,47 @@ def test_forming_daily_pu_does_not_remove_independent_nu70_veto(monkeypatch):
     monkeypatch.setattr(mtf, "detect_rsi_nu70", lambda *args, **kwargs: {"type": "NU70"})
     result = mtf.daily_structure(df, {"data_status": "FRESH", "valid_pu30": False, "current_rsi": 33.1})
     assert result["status"] == "BROKEN" and "NU70" in result["reason"]
+
+
+class _FrozenNow:
+    @staticmethod
+    def now(tz=None):
+        return pd.Timestamp("2026-10-16 00:05", tz="Europe/Istanbul").to_pydatetime()
+
+
+def _daily_and_hourly(last_hour=17):
+    daily = pd.DataFrame({"date": pd.to_datetime(["2026-10-13", "2026-10-14"]),
+                          "open": 13., "high": 13.2, "low": 12.9, "close": 13., "volume": 1e6, "is_closed": True})
+    hours = pd.date_range("2026-10-15 09:30", f"2026-10-15 {last_hour}:30", freq="h", tz="Europe/Istanbul")
+    hourly = pd.DataFrame({"date": hours, "open": np.linspace(13., 13.2, len(hours)), "high": 13.3,
+                           "low": 12.8, "close": np.linspace(13.05, 13.1, len(hours)), "volume": 10., "is_closed": True})
+    hourly.loc[3, ["high", "low"]] = [13.5, 12.6]
+    stale = DataResult(symbol="ISCTR", interval="1d", df=daily, status=DataStatus.STALE)
+    fresh = DataResult(symbol="ISCTR", interval="1h", df=hourly, status=DataStatus.FRESH)
+    return daily, hourly, stale, fresh
+
+
+def test_nan_daily_row_is_rebuilt_from_complete_closed_hourly_session(monkeypatch):
+    # 2026-10-16 00:05: Yahoo sent the Oct 15 daily row with NaN prices and
+    # all 100 lab rows turned DATA_UNAVAILABLE.
+    monkeypatch.setattr(mtf, "datetime", _FrozenNow)
+    daily, hourly, stale, fresh = _daily_and_hourly()
+    frame, result = mtf._rebuild_missing_daily(daily, hourly, stale, fresh)
+    assert result.status == DataStatus.FRESH and mtf.DAILY_REBUILT_NOTE in result.warnings
+    last = frame.iloc[-1]
+    assert pd.Timestamp(last.date) == pd.Timestamp("2026-10-15") and bool(last.is_closed)
+    assert (last.open, last.high, last.low, last.close, last.volume) == (13., 13.5, 12.6, 13.1, 90.)
+    assert len(daily) == 2, "the provider frame is not mutated"
+
+
+@pytest.mark.parametrize("case", ["incomplete_session", "open_hourly_bar", "daily_not_stale", "hourly_stale"])
+def test_daily_rebuild_never_invents_an_incomplete_or_unneeded_session(monkeypatch, case):
+    monkeypatch.setattr(mtf, "datetime", _FrozenNow)
+    daily, hourly, stale, fresh = _daily_and_hourly(last_hour=15 if case == "incomplete_session" else 17)
+    if case == "open_hourly_bar":
+        hourly.loc[len(hourly) - 1, "is_closed"] = False
+    if case == "daily_not_stale":
+        stale = DataResult(symbol="ISCTR", interval="1d", df=daily, status=DataStatus.FRESH)
+    if case == "hourly_stale":
+        fresh = DataResult(symbol="ISCTR", interval="1h", df=hourly, status=DataStatus.STALE)
+    assert mtf._rebuild_missing_daily(daily, hourly, stale, fresh) is None

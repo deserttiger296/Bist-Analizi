@@ -93,7 +93,44 @@ def _load_pu30_frames(symbol, interval="4h", period=None):
             frame, result = None, DataResult(symbol=symbol, interval=tf, status=DataStatus.ERROR, error_message=str(error))
         frames[tf] = frame.reset_index(drop=True) if frame is not None else None
         results[tf] = result
+    rebuilt = _rebuild_missing_daily(frames.get("1d"), frames.get("1h"), results.get("1d"), results.get("1h"))
+    if rebuilt is not None:
+        frames["1d"], results["1d"] = rebuilt
     return frames, results
+
+
+DAILY_REBUILT_NOTE = ("Son günlük bar Yahoo'da fiyatsız (NaN) geldi; aynı seansın kapanmış 1S "
+                      "barlarından kuruldu. Kapanış seansı nedeniyle küçük fark olabilir.")
+
+
+def _rebuild_missing_daily(daily, hourly, daily_result, hourly_result):
+    """Yahoo can publish a finished session's daily row with NaN prices (seen
+    after midnight on 2026-10-16); the provider drops that row and every lab
+    decision would turn DATA_UNAVAILABLE. Rebuild only that one session, only
+    from its complete set of closed 1h bars, and only if that cures staleness."""
+    if (daily is None or hourly is None or not len(daily) or not len(hourly)
+            or daily_result is None or hourly_result is None
+            or daily_result.status != DataStatus.STALE or hourly_result.status != DataStatus.FRESH):
+        return None
+    hours = _istanbul_times(hourly.date)
+    day = hours.iloc[-1].normalize()
+    session = hourly[(hours.dt.normalize() == day).to_numpy()]
+    # The 17:30 bar is the session's last hourly bar; without it the day is incomplete.
+    if hours.iloc[-1].hour < 17 or not session.is_closed.astype(bool).all():
+        return None
+    if _istanbul_times(daily.date).iloc[-1].normalize() >= day:
+        return None
+    naive = pd.to_datetime(daily.date).dt.tz is None
+    row = {"date": day.tz_localize(None) if naive else day,
+           "open": float(session.open.iloc[0]), "high": float(session.high.max()),
+           "low": float(session.low.min()), "close": float(session.close.iloc[-1]),
+           "volume": float(session.volume.sum()), "is_closed": is_bar_closed(day, "1d")}
+    frame = pd.concat([daily, pd.DataFrame([{c: row.get(c, np.nan) for c in daily.columns}])], ignore_index=True)
+    if source_is_delayed(frame.date.iloc[-1], datetime.now(ISTANBUL_TZ), "1d"):
+        return None
+    return frame, replace(daily_result, df=frame, status=DataStatus.FRESH, bar_count=len(frame),
+                          last_bar_time=pd.Timestamp(frame.date.iloc[-1]).isoformat(),
+                          warnings=list(daily_result.warnings) + [DAILY_REBUILT_NOTE])
 
 def detect_rsi_pu30(
     df: pd.DataFrame,
@@ -611,8 +648,9 @@ def get_symbol_mtf_lab_data(symbol):
     statuses = {tf: result.status.value if result else "ERROR" for tf, result in quality.items()}
     frames["15m"], statuses["15m"] = _fetch_lab_15m(symbol)
     decision = build_mtf_decision(frames, statuses)
+    notes = [DAILY_REBUILT_NOTE] if quality.get("1d") and DAILY_REBUILT_NOTE in quality["1d"].warnings else []
     return {"symbol": clean_symbol_display(symbol), "engine": "mtf-lab-v1",
-            "decision": decision, "data_statuses": statuses,
+            "decision": decision, "data_statuses": statuses, "data_notes": notes,
             "calculated_at": pd.Timestamp.now(tz="UTC").isoformat()}
 
 
