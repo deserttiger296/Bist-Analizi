@@ -21,6 +21,17 @@ class PU30Config(ClassicPU30Config):
 
 DEFAULT_PU30_CONFIG = PU30Config()
 
+# A 4h PU stops counting as session alignment once its first closed breakout
+# is older than this many closed 4h bars (the rally it promised already ran).
+# Experimental lab assumption reusing the classic 5-bar signal lifetime; it is
+# not attributed to the source methodology.
+SESSION_BREAKOUT_LIFETIME_BARS = DEFAULT_PU30_CONFIG.signal_lifetime_bars
+
+
+def _istanbul_times(dates):
+    times = pd.to_datetime(dates)
+    return times.dt.tz_localize(ISTANBUL_TZ) if times.dt.tz is None else times.dt.tz_convert(ISTANBUL_TZ)
+
 
 def source_is_delayed(last_source, now_ist, interval):
     """Regular weekday sessions only; holidays remain explicitly uncertified."""
@@ -400,7 +411,8 @@ def build_mtf_decision(frames, statuses=None):
     resistance, resistance_broken, breakout_at = None, False, None
     if session["valid_pu30"]:
         resistance = four["guven_tazeleyen_tepe"]["price"]
-        confirmations = []
+        knowable = pd.Timestamp(four["knowable_at"])
+        confirmations, breakouts = [], []
         for tf in ("1h", "4h"):
             frame = frames.get(tf)
             if frame is None or states[tf]["data_status"] != "FRESH": continue
@@ -408,12 +420,29 @@ def build_mtf_decision(frames, statuses=None):
             if len(eligible):
                 row = eligible.iloc[-1]
                 close_at = bar_close_time(row.date, tf)
-                if close_at >= pd.Timestamp(four["knowable_at"]):
+                if close_at >= knowable:
                     confirmations.append((close_at, float(row.close)))
+                # Bars opening before knowable_at cannot close after it.
+                recent = eligible[(_istanbul_times(eligible.date) >= knowable - pd.Timedelta(hours=8))
+                                  & (eligible.close > resistance)]
+                closes_at = [bar_close_time(t, tf) for t in recent.date]
+                breakouts += [t for t in closes_at if t >= knowable][:1]
         if confirmations:
             close_at, price = max(confirmations, key=lambda item: item[0])
             resistance_broken = price > resistance
-            breakout_at = close_at.isoformat() if resistance_broken else None
+        if breakouts:
+            first = min(breakouts)
+            closed_4h = frames["4h"][frames["4h"].is_closed.astype(bool)]
+            age = sum(bar_close_time(t, "4h") > first for t in
+                      closed_4h.date[_istanbul_times(closed_4h.date) >= first - pd.Timedelta(hours=8)])
+            breakout_at = first.isoformat() if resistance_broken else None
+            if age > SESSION_BREAKOUT_LIFETIME_BARS:
+                # The 4h PU already delivered its breakout; it is not a current
+                # session alignment any more (e.g. ISCTR: Aug PU, Aug 26 breakout).
+                session = states["4h"] = dict(session, valid_pu30=False, consumed=True,
+                    first_breakout_at=first.isoformat(), bars_since_breakout=int(age),
+                    pu30=dict(four, is_active=False, consumed=True,
+                              label="PU30 TÜKENDİ: direnç kırılımı eski"))
     fresh = all(s["data_status"] == "FRESH" for s in states.values())
     price_frame = frames.get("1h")
     current_price = float(price_frame.close.iloc[-1]) if price_frame is not None and len(price_frame) else None

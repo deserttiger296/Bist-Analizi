@@ -85,7 +85,10 @@ def pair(df, first=20, second=40):
 @pytest.fixture
 def machine(monkeypatch):
     frames = {"1h": frame(240, "h"), "4h": frame(60), "1d": frame(60, "D")}
-    signals = {"1h": pair(frames["1h"], 100, 120), "4h": pair(frames["4h"]), "1d": pair(frames["1d"])}
+    # Fresh breakout: closes stay under the 21.34 resistance until the last bars.
+    frames["1h"].loc[:235, "close"] = 21.2
+    frames["4h"].loc[:57, "close"] = 21.2
+    signals ={"1h": pair(frames["1h"], 100, 120), "4h": pair(frames["4h"]), "1d": pair(frames["1d"])}
     control = {"prior": True}
     def detect(df, interval="4h", **kwargs):
         if interval == "1h" and len(df) < len(frames["1h"]) and not control["prior"]:
@@ -221,6 +224,31 @@ def test_lower_pressure_does_not_hide_unknown_daily_structure(machine, monkeypat
     monkeypatch.setattr(mtf, "detect_lower_tf_nu_and_rsi_trend", lambda *args: {
         "nu_pressure": True, "rsi_trend_broken": False, "timeframes": {}})
     assert decide(machine)["state"] == "DATA_UNAVAILABLE"
+
+
+def test_fresh_breakout_reports_first_closed_breakout_time(machine):
+    result = decide(machine)
+    assert result["state"] == "FULL_CONFIRMATION"
+    # First closed 1h bar above resistance (index 236), not the latest bar.
+    assert result["breakout_at"] == bar_close_time(machine[0]["1h"].date.iloc[236], "1h").isoformat()
+
+
+def test_old_breakout_consumes_session_pu_and_exposes_lower_tf_pressure(machine, monkeypatch):
+    # ISCTR 2026-10-15: August 4h PU broke resistance on Aug 26; weeks later
+    # the 1h NU must not be hidden behind that consumed session alignment.
+    frames, _, _ = machine
+    frames["1h"]["close"] = 22.
+    frames["4h"]["close"] = 22.
+    result = decide(machine)
+    assert result["state"] != "FULL_CONFIRMATION" and not result["is_active_buy"]
+    assert result["layer_flags"]["4S_PU"] is False
+    session = result["timeframes"]["4h"]
+    assert session["consumed"] and session["bars_since_breakout"] > mtf.SESSION_BREAKOUT_LIFETIME_BARS
+    assert result["macro_fibonacci"]["levels"] == []
+    frames["15m"] = frame(60)
+    monkeypatch.setattr(mtf, "detect_lower_tf_nu_and_rsi_trend", lambda *args: {
+        "nu_pressure": True, "rsi_trend_broken": False, "timeframes": {}})
+    assert decide(machine)["state"] == "LOWER_TF_NU_PRESSURE"
 
 
 def test_macro_0382_uses_confirmed_high_before_first_dip():

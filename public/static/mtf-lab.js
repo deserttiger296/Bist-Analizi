@@ -24,7 +24,9 @@ window.initMtfLab = function () {
     function dailySummary(d) {
         const daily = d.daily_structure;
         const pu = value => value == null ? 'bilinmiyor' : value ? 'var' : 'yok';
-        return `1S PU: ${pu(d.layer_flags['1S_PU'])} · 4S PU: ${pu(d.layer_flags['4S_PU'])} · Günlük: ${daily.status} (${daily.source || daily.support_source || 'bilinmiyor'}) · Günlük RSI: ${money(daily.current_rsi)} · Önceki dip RSI: ${money(daily.d1_rsi)} · Destek: ${money(daily.support)} ₺ · Son günlük Low: ${money(daily.current_low)} ₺ · Gerekçe: ${daily.reason || 'bilinmiyor'}`;
+        const session = d.timeframes?.['4h'];
+        const sessionPu = session?.consumed ? `tüketildi (ilk direnç kırılımı ${session.first_breakout_at}, ${session.bars_since_breakout} 4S bar önce)` : pu(d.layer_flags['4S_PU']);
+        return `1S PU: ${pu(d.layer_flags['1S_PU'])} · 4S PU: ${sessionPu} · Günlük: ${daily.status} (${daily.source || daily.support_source || 'bilinmiyor'}) · Günlük RSI: ${money(daily.current_rsi)} · Önceki dip RSI: ${money(daily.d1_rsi)} · Destek: ${money(daily.support)} ₺ · Son günlük Low: ${money(daily.current_low)} ₺ · Gerekçe: ${daily.reason || 'bilinmiyor'}`;
     }
     function renderDetail(row) {
         detail.replaceChildren();
