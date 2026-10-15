@@ -597,3 +597,21 @@ def daily_structure(df, state):
   lab DATA_UNAVAILABLE dönüyordu (16 Ekim 00:05'te 100/100). Lab artık yalnız o
   eksik seansı, 17:30 barı dahil tamamı kapanmış 1S barlarından kurar ve
   `data_notes` ile belirtir. Eksik/açık seans uydurulmaz; klasik sağlayıcı değişmedi.
+
+## Öğrenen test mekanizması (16 Ekim 2026)
+
+Repo kökünden:
+
+```
+.venv/bin/python -m python_bot.research.mtf_backtest --universe all   # veri + geçmiş karar tekrarı (~35 dk, 4 çekirdek)
+.venv/bin/python -m python_bot.research.mtf_learn                     # BIST30 + BIST100 walk-forward öğrenme ve rapor (~30 sn)
+```
+
+- `mtf_backtest`: her hisse ve her kapanmış 4S blok için lab'ın kendi `build_mtf_decision`
+  fonksiyonunu o ana kadarki veriyle çalıştırır (geleceğe bakış testi: `test_mtf_research.py`).
+  Son karar noktası canlı lab ile BIST30'da 30/30 aynı çıktı.
+- `mtf_learn`: getirileri aynı bloktaki evren ortalamasına göre ölçer; sinyal yaşı parametrelerini
+  ve bir gradient boosting skorlayıcısını çeyrek çeyrek, yalnız geçmişten öğrenip görülmemiş çeyrekte
+  test eder. Rapor `docs/MTF_LAB_OGRENME_RAPORU.md`, öğrenilenler
+  `python_bot/research/learned/mtf_lab_params.json` (`adopt` yalnız OOS kanıtla `true` olur; lab bu
+  dosyayı henüz okumaz). Veri yenilendikçe yeniden çalıştırmak sistemi yeniden öğretir.

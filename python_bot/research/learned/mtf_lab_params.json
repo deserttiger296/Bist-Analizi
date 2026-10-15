@@ -1,0 +1,51 @@
+{
+ "generated_from": [
+  "2024-05-15 14:30:00+03:00",
+  "2026-10-15 18:30:00+03:00"
+ ],
+ "current_lab": {
+  "hourly_max_age": null,
+  "session_pending_max_age": null,
+  "consumed_after": 5
+ },
+ "universes": {
+  "bist30": {
+   "learned": {
+    "hourly_max_age": 20,
+    "session_pending_max_age": null,
+    "consumed_after": 5
+   },
+   "adopt": false,
+   "oos_full_confirmation": {
+    "n": 51,
+    "mean_excess": -0.0031150683803819064,
+    "ci95": [
+     -0.012004600801391528,
+     0.0064859360112317485
+    ],
+    "hit_rate": 0.4117647058823529,
+    "mean_raw": 0.0018417086246026448,
+    "mae_5": -0.0347678750926319
+   }
+  },
+  "bist100": {
+   "learned": {
+    "hourly_max_age": 10,
+    "session_pending_max_age": null,
+    "consumed_after": 10
+   },
+   "adopt": false,
+   "oos_full_confirmation": {
+    "n": 217,
+    "mean_excess": -0.0007529044489220295,
+    "ci95": [
+     -0.008083360532684257,
+     0.006615429892011729
+    ],
+    "hit_rate": 0.45161290322580644,
+    "mean_raw": -0.0005052199172282198,
+    "mae_5": -0.04339957810019827
+   }
+  }
+ }
+}

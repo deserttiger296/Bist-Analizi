@@ -446,6 +446,7 @@ def build_mtf_decision(frames, statuses=None):
     four = session.get("pu30")
     # A closed 1h bar or a closed 4h bar must clear the BETWEEN-DIPS resistance.
     resistance, resistance_broken, breakout_at = None, False, None
+    first_breakout_at, bars_since_breakout = None, None
     if session["valid_pu30"]:
         resistance = four["guven_tazeleyen_tepe"]["price"]
         knowable = pd.Timestamp(four["knowable_at"])
@@ -473,6 +474,7 @@ def build_mtf_decision(frames, statuses=None):
             age = sum(bar_close_time(t, "4h") > first for t in
                       closed_4h.date[_istanbul_times(closed_4h.date) >= first - pd.Timedelta(hours=8)])
             breakout_at = first.isoformat() if resistance_broken else None
+            first_breakout_at, bars_since_breakout = first.isoformat(), int(age)
             if age > SESSION_BREAKOUT_LIFETIME_BARS:
                 # The 4h PU already delivered its breakout; it is not a current
                 # session alignment any more (e.g. ISCTR: Aug PU, Aug 26 breakout).
@@ -510,6 +512,7 @@ def build_mtf_decision(frames, statuses=None):
             "current_price": current_price, "price_above_resistance": above,
             "layer_flags": {"1G_Saglam": daily["status"] == "INTACT",
                             "1S_PU": hourly["valid_pu30"], "4S_PU": session["valid_pu30"]},
+            "first_breakout_at": first_breakout_at, "bars_since_breakout": bars_since_breakout,
             "macro_fibonacci": macro}
     if "15m" in frames:
         lower = detect_lower_tf_nu_and_rsi_trend(frames.get("15m"), frames.get("1h"))
