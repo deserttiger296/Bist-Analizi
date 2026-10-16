@@ -23,6 +23,8 @@ from python_bot.engine.journal import daily_history as dh
 def _isolated_journal_files(tmp_path, monkeypatch):
     monkeypatch.setattr(dh, "DECISIONS_FILE", tmp_path / "daily_scan_log.csv")
     monkeypatch.setattr(dh, "OUTCOMES_FILE", tmp_path / "daily_scan_outcomes.csv")
+    monkeypatch.setattr(dh, "SIGNAL_DECISIONS_FILE", tmp_path / "pu30_signal_log.csv")
+    monkeypatch.setattr(dh, "SIGNAL_OUTCOMES_FILE", tmp_path / "pu30_signal_outcomes.csv")
     yield
 
 
@@ -117,3 +119,52 @@ def test_get_history_joins_decisions_and_outcomes_and_computes_accuracy(monkeypa
     # Yalnızca THYAO sniper_approved=True idi
     assert history["approved_only_count"] == 1
     assert history["approved_only_accuracy_pct"] == pytest.approx(0.0)
+
+
+def test_log_pu30_signals_and_resolve_outcomes_immutably(monkeypatch):
+    sig_untriggered = {
+        "symbol": "ASELS",
+        "type": "PU30",
+        "confirm_date": "2026-10-01 14:30",
+        "knowable_at": "2026-10-01T18:10:00+03:00",
+        "last_close": 80.0,
+        "tetiklendi": False,
+        "saatlik_seviye": {"price": 82.5, "durum": "bekleniyor_kirilim", "kirildi": False},
+        "confirmed_timeframes": ["4h"],
+    }
+    assert dh.log_pu30_signals([sig_untriggered], interval="4h") == 1
+    assert dh.log_pu30_signals([sig_untriggered], interval="4h") == 0  # duplicate skipped
+
+    # Later the hourly trust level breaks -> logged as a separate immutable event
+    sig_triggered = {
+        **sig_untriggered,
+        "last_close": 83.0,
+        "tetiklendi": True,
+        "saatlik_seviye": {"price": 82.5, "durum": "kirildi", "kirildi": True},
+    }
+    assert dh.log_pu30_signals([sig_triggered], interval="4h") == 1
+
+    rows = dh._read_csv(dh.SIGNAL_DECISIONS_FILE)
+    assert len(rows) == 2
+    assert rows[0]["tetiklendi"] == "False" and rows[1]["tetiklendi"] == "True"
+
+    # Backdate both rows so they are past the 5-day horizon
+    old_date = (datetime.now(timezone.utc).date() - timedelta(days=10)).isoformat()
+    for r in rows:
+        r["date"] = old_date
+    with open(dh.SIGNAL_DECISIONS_FILE, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=dh.SIGNAL_DECISION_FIELDNAMES)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    monkeypatch.setattr(dh, "_fetch_actual_price", lambda sym: 90.0)
+    resolved = dh.resolve_pending_signal_outcomes()
+    assert resolved == 2
+
+    hist = dh.get_history()
+    assert hist["pu30_total_rows"] == 2
+    assert hist["pu30_resolved_rows"] == 2
+    assert hist["pu30_triggered_count"] == 1
+    assert hist["pu30_overall_accuracy_pct"] == pytest.approx(100.0)
+    assert hist["pu30_triggered_accuracy_pct"] == pytest.approx(100.0)
+

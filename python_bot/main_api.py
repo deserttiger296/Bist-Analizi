@@ -13,13 +13,21 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import joblib
-from python_bot.engine.brain.local_classifier import predict as predict_rf, MODEL_PATH as RF_MODEL_PATH
+from python_bot.engine.brain.local_classifier import (
+    predict as predict_rf,
+    load_rf_payload,
+    MODEL_PATH as RF_MODEL_PATH,
+)
 from python_bot.engine.brain.deep_model import predict_lstm, TORCH_AVAILABLE
 from python_bot.engine.brain.logger import log_prediction
 from python_bot.engine.brain.finbert_sentiment import FinBertSentimentAnalyzer
 from python_bot.engine.brain.meta_learning import MetaLearningCalibrationEngine
-from python_bot.engine.journal.daily_history import get_history, resolve_pending_outcomes
-from python_bot.signal_api import router as signal_router
+from python_bot.engine.journal.daily_history import (
+    get_history,
+    resolve_pending_outcomes,
+    resolve_pending_signal_outcomes,
+)
+from python_bot.signal_api import router as signal_router, _run_coalesced
 import yfinance as yf
 import numpy as np
 
@@ -70,7 +78,7 @@ def _init_shap_explainer():
     if _shap_available and _shap_explainer is None:
         try:
             if MODEL_PATH.exists():
-                payload = joblib.load(MODEL_PATH)
+                payload = load_rf_payload()
                 model = payload["model"]
                 # shap.TreeExplainer wraps the model in an internal TreeEnsemble
                 # that has no .classes_ -- capture it from the real sklearn model
@@ -105,7 +113,7 @@ def health_check():
     rf_model = {"present": RF_MODEL_PATH.exists()}
     if rf_model["present"]:
         try:
-            payload = joblib.load(RF_MODEL_PATH)
+            payload = load_rf_payload()
             rf_model.update({
                 "model_version": payload.get("model_version"),
                 "feature_schema_version": payload.get("feature_schema_version"),
@@ -245,13 +253,29 @@ def _compute_shap_explanation(result: dict) -> dict:
         return {}
 
 
+import threading as _threading
+
+_SENTIMENT_CACHE_LOCK = _threading.Lock()
+_SENTIMENT_CACHE: dict = {}
+SENTIMENT_CACHE_TTL_SEC = 300.0
+
+
 def _fetch_news_sentiment(symbol: str) -> dict:
     """Fetch recent news for a symbol and compute sentiment score."""
+    norm_sym = f"{symbol.upper()}.IS" if not symbol.upper().endswith(".IS") else symbol.upper()
+    now = time.monotonic()
+    with _SENTIMENT_CACHE_LOCK:
+        cached = _SENTIMENT_CACHE.get(norm_sym)
+        if cached is not None and (now - cached[0]) < SENTIMENT_CACHE_TTL_SEC:
+            return dict(cached[1])
     try:
-        ticker = yf.Ticker(f"{symbol}.IS" if not symbol.endswith(".IS") else symbol)
+        ticker = yf.Ticker(norm_sym)
         news = ticker.news
         if not news:
-            return {"sentiment_score": 0.0, "sentiment_label": "NEUTRAL", "news_count": 0, "engine": "No_News"}
+            res = {"sentiment_score": 0.0, "sentiment_label": "NEUTRAL", "news_count": 0, "engine": "No_News"}
+            with _SENTIMENT_CACHE_LOCK:
+                _SENTIMENT_CACHE[norm_sym] = (time.monotonic(), res)
+            return dict(res)
 
         headlines = []
         for item in news[:10]:  # Last 10 news items
@@ -260,18 +284,24 @@ def _fetch_news_sentiment(symbol: str) -> dict:
                 headlines.append(title)
 
         if not headlines:
-            return {"sentiment_score": 0.0, "sentiment_label": "NEUTRAL", "news_count": 0, "engine": "No_News"}
+            res = {"sentiment_score": 0.0, "sentiment_label": "NEUTRAL", "news_count": 0, "engine": "No_News"}
+            with _SENTIMENT_CACHE_LOCK:
+                _SENTIMENT_CACHE[norm_sym] = (time.monotonic(), res)
+            return dict(res)
 
         agg_score = sentiment_analyzer.aggregate_news_sentiment(headlines)
         label = "POSITIVE" if agg_score > 0.1 else ("NEGATIVE" if agg_score < -0.1 else "NEUTRAL")
 
-        return {
+        res = {
             "sentiment_score": round(agg_score, 4),
             "sentiment_label": label,
             "news_count": len(headlines),
             "engine": "FinBERT_Lexicon",
             "headlines_analyzed": headlines[:3],  # Return top 3 for UI display
         }
+        with _SENTIMENT_CACHE_LOCK:
+            _SENTIMENT_CACHE[norm_sym] = (time.monotonic(), res)
+        return dict(res)
     except Exception as e:
         print(f"[Sentiment] Error for {symbol}: {e}")
         return {"sentiment_score": 0.0, "sentiment_label": "NEUTRAL", "news_count": 0, "engine": "Error"}
@@ -466,18 +496,17 @@ def _scan_one(sym: str):
     just not approved' instead of silently collapsing both into the same None."""
     try:
         raw_result = predict_rf(sym)
+        rf_threshold = meta_engine.weights.get("rf_threshold", 0.60)
+        if raw_result["class_probabilities"].get("UP", 0) < rf_threshold:
+            return None, None
         result = _process_prediction(raw_result, sym)
         # Keep experimental candidates visible in the radar without approving them.
         return None, (result if result["rf_threshold_passed"] else None)
     except Exception as e:
         return str(e), None
 
-@app.get("/api/scan_all")
-def scan_all_symbols():
-    # yfinance/HTTP calls are I/O-bound and release the GIL, so a thread pool
-    # gives a real wall-clock speedup here without needing an async rewrite of
-    # predict_rf/predict_lstm (which are also called individually by
-    # /api/predict and /api/shap, so their sync contract stays as-is).
+
+def _run_scan_all():
     approved_list = []
     errors = []
     with ThreadPoolExecutor(max_workers=SCAN_ALL_MAX_WORKERS) as pool:
@@ -502,14 +531,25 @@ def scan_all_symbols():
         "calculated_at": datetime.now(timezone.utc).isoformat(),
     }
 
+
+@app.get("/api/scan_all")
+def scan_all_symbols():
+    # yfinance/HTTP calls are I/O-bound and release the GIL, so a thread pool
+    # gives a real wall-clock speedup here without needing an async rewrite of
+    # predict_rf/predict_lstm (which are also called individually by
+    # /api/predict and /api/shap, so their sync contract stays as-is).
+    return _run_coalesced(("scan_all", tuple(BIST100_SYMBOLS)), _run_scan_all)
+
+
 @app.get("/api/chart/{symbol}")
 def get_chart_data(symbol: str):
     import pandas as pd
     import pandas_ta as ta
+    from python_bot.engine.brain.local_classifier import _download_daily_cached
     ticker = f"{symbol.upper()}.IS" if not symbol.endswith(".IS") else symbol.upper()
     try:
-        df = yf.download(ticker, period="6mo", progress=False)
-        if df.empty:
+        df = _download_daily_cached(ticker, period="6mo")
+        if df is None or df.empty:
             raise HTTPException(status_code=404, detail="Data not found")
             
         if isinstance(df.columns, pd.MultiIndex):
@@ -524,19 +564,30 @@ def get_chart_data(symbol: str):
             
         df.dropna(subset=['sma50'], inplace=True)
         
-        chart_data = []
-        for date, row in df.iterrows():
-            chart_data.append({
-                "time": date.strftime("%Y-%m-%d"),
-                "open": float(row["Open"]),
-                "high": float(row["High"]),
-                "low": float(row["Low"]),
-                "close": float(row["Close"]),
-                "sma50": float(row["sma50"]) if pd.notna(row.get("sma50")) else None,
-                "ema9": float(row["ema9"]) if pd.notna(row.get("ema9")) else None,
-                "bb_lower": float(row["bb_lower"]) if pd.notna(row.get("bb_lower")) else None,
-                "bb_upper": float(row["bb_upper"]) if pd.notna(row.get("bb_upper")) else None,
-            })
+        times = pd.to_datetime(df.index).strftime("%Y-%m-%d").tolist()
+        opens = df["Open"].to_numpy(dtype=float).tolist()
+        highs = df["High"].to_numpy(dtype=float).tolist()
+        lows = df["Low"].to_numpy(dtype=float).tolist()
+        closes = df["Close"].to_numpy(dtype=float).tolist()
+        sma50 = df["sma50"].to_numpy(dtype=float) if "sma50" in df.columns else None
+        ema9 = df["ema9"].to_numpy(dtype=float) if "ema9" in df.columns else None
+        bb_lo = df["bb_lower"].to_numpy(dtype=float) if "bb_lower" in df.columns else None
+        bb_hi = df["bb_upper"].to_numpy(dtype=float) if "bb_upper" in df.columns else None
+
+        chart_data = [
+            {
+                "time": times[i],
+                "open": opens[i],
+                "high": highs[i],
+                "low": lows[i],
+                "close": closes[i],
+                "sma50": float(sma50[i]) if sma50 is not None and not np.isnan(sma50[i]) else None,
+                "ema9": float(ema9[i]) if ema9 is not None and not np.isnan(ema9[i]) else None,
+                "bb_lower": float(bb_lo[i]) if bb_lo is not None and not np.isnan(bb_lo[i]) else None,
+                "bb_upper": float(bb_hi[i]) if bb_hi is not None and not np.isnan(bb_hi[i]) else None,
+            }
+            for i in range(len(df))
+        ]
             
         return {"status": "success", "data": chart_data}
     except HTTPException:
@@ -594,6 +645,7 @@ def get_daily_history(days: int = None):
     """
     try:
         resolve_pending_outcomes()
+        resolve_pending_signal_outcomes()
         return {"status": "success", "data": get_history(limit_days=days)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

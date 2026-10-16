@@ -1,0 +1,102 @@
+{
+  "generated_at": "2026-10-16T01:44:57+00:00",
+  "window_start": "2023-11-17",
+  "window_end": "2026-10-15",
+  "symbols_tested": 96,
+  "symbols_attempted": 100,
+  "rows": [
+    {
+      "variant": "4s Yalnız PU30 (Katı 30/70)",
+      "interval": "4h",
+      "trades": 13,
+      "winning_trades": 0,
+      "losing_trades": 13,
+      "win_rate_pct": 0.0,
+      "net_return_pct": -10.38248376328662,
+      "expectancy_pct": -3.2422092907092814,
+      "avg_win_pct": 0.0,
+      "avg_loss_pct": -3.2422092907092814,
+      "profit_factor": 0.0,
+      "max_drawdown_pct": 10.390747679037126,
+      "exposure_pct": 0.8264462809917356
+    },
+    {
+      "variant": "4s PU30 + Saatlik Güven Tazeleyen Tepe Kırılımı",
+      "interval": "4h",
+      "trades": 365,
+      "winning_trades": 160,
+      "losing_trades": 205,
+      "win_rate_pct": 43.83561643835616,
+      "net_return_pct": 22.355679946629216,
+      "expectancy_pct": 0.5203381629433957,
+      "avg_win_pct": 5.331184195592948,
+      "avg_loss_pct": -3.2344684966855226,
+      "profit_factor": 1.2864321462653714,
+      "max_drawdown_pct": 27.783373889049635,
+      "exposure_pct": 67.28650137741047
+    },
+    {
+      "variant": "4s PU30 + 1s PU30 Çapraz Teyit (DOUBLE_BULL)",
+      "interval": "4h",
+      "trades": 49,
+      "winning_trades": 16,
+      "losing_trades": 33,
+      "win_rate_pct": 32.6530612244898,
+      "net_return_pct": -6.257885108625272,
+      "expectancy_pct": -0.3579577623745673,
+      "avg_win_pct": 5.019512438458575,
+      "avg_loss_pct": -2.9652160415663946,
+      "profit_factor": 0.8207506523467829,
+      "max_drawdown_pct": 9.753448383783125,
+      "exposure_pct": 19.00826446280992
+    },
+    {
+      "variant": "4s PU30 + 1s MOSTRSI Bull",
+      "interval": "4h",
+      "trades": 181,
+      "winning_trades": 69,
+      "losing_trades": 112,
+      "win_rate_pct": 38.12154696132597,
+      "net_return_pct": -10.279216275347148,
+      "expectancy_pct": 0.001251390095316196,
+      "avg_win_pct": 5.338085688956267,
+      "avg_loss_pct": -3.286619740452948,
+      "profit_factor": 1.0006153239311948,
+      "max_drawdown_pct": 21.032573428181557,
+      "exposure_pct": 45.38567493112948
+    },
+    {
+      "variant": "1s Yalnız PU30 (SCALP_1H)",
+      "interval": "1h",
+      "trades": 22,
+      "winning_trades": 2,
+      "losing_trades": 20,
+      "win_rate_pct": 9.090909090909092,
+      "net_return_pct": -12.50927877637793,
+      "expectancy_pct": -2.173957170465121,
+      "avg_win_pct": 5.735317682317713,
+      "avg_loss_pct": -2.964884655743405,
+      "profit_factor": 0.19344151116326175,
+      "max_drawdown_pct": 14.133537778625982,
+      "exposure_pct": 1.424275993036873
+    },
+    {
+      "variant": "1g Yalnız PU30 (Günlük Katı 30/70)",
+      "interval": "1d",
+      "trades": 49,
+      "winning_trades": 15,
+      "losing_trades": 34,
+      "win_rate_pct": 30.612244897959183,
+      "net_return_pct": -10.932140148450065,
+      "expectancy_pct": -0.6874759413678817,
+      "avg_win_pct": 5.759519042940959,
+      "avg_loss_pct": -3.5317384344453107,
+      "profit_factor": 0.7194655920348482,
+      "max_drawdown_pct": 19.692466993468805,
+      "exposure_pct": 16.334661354581673
+    }
+  ],
+  "benchmarks": {
+    "BIST100 Eşit Ağırlık Al-Tut (2023-11-17 → 2026-10-15)": 29.139747256289898
+  }
+}

@@ -2,6 +2,7 @@
 (main_api.py) and the lightweight Vercel function (api/index.py). Depends only
 on numpy/pandas/yfinance -- no ML packages."""
 import os
+import threading
 
 from fastapi import APIRouter, HTTPException, Response
 
@@ -19,6 +20,40 @@ SCAN_MAX_WORKERS = int(os.environ.get("SCAN_MAX_WORKERS", "12"))
 # their own calculated_at, so a cached result is never presented as freshly computed.
 SCAN_CACHE = "public, s-maxage=600, stale-while-revalidate=1800"
 DETAIL_CACHE = "public, s-maxage=300, stale-while-revalidate=900"
+
+_INFLIGHT_SCANS_LOCK = threading.Lock()
+_INFLIGHT_SCANS: dict = {}
+
+
+def _run_coalesced(key: tuple, fn):
+    """Single-flight deduplication: concurrent callers for the same scan key
+    share one in-flight scan execution instead of multiplying Yahoo Finance load."""
+    with _INFLIGHT_SCANS_LOCK:
+        entry = _INFLIGHT_SCANS.get(key)
+        if entry is None:
+            entry = {"event": threading.Event(), "result": None, "error": None}
+            _INFLIGHT_SCANS[key] = entry
+            is_leader = True
+        else:
+            is_leader = False
+
+    if not is_leader:
+        entry["event"].wait()
+        if entry["error"] is not None:
+            raise entry["error"]
+        return entry["result"]
+
+    try:
+        res = fn()
+        entry["result"] = res
+        return res
+    except Exception as exc:
+        entry["error"] = exc
+        raise
+    finally:
+        with _INFLIGHT_SCANS_LOCK:
+            _INFLIGHT_SCANS.pop(key, None)
+        entry["event"].set()
 
 
 def _cache(response: Response, value: str, status: str) -> None:
@@ -39,7 +74,18 @@ def scan_rsi_pu30(response: Response, interval: str = "4h", signal_type: str = "
     if signal_type not in ("all", "pu30", "nu70"):
         raise HTTPException(status_code=400, detail=f"Unsupported signal_type: {signal_type}")
     try:
-        result = scan_universe_rsi_pu30(BIST100_SYMBOLS, max_workers=SCAN_MAX_WORKERS, interval=interval, signal_type=signal_type)
+        result = _run_coalesced(
+            ("rsi_pu30", interval, signal_type, tuple(BIST100_SYMBOLS)),
+            lambda: scan_universe_rsi_pu30(
+                BIST100_SYMBOLS, max_workers=SCAN_MAX_WORKERS, interval=interval, signal_type=signal_type
+            ),
+        )
+        if len(BIST100_SYMBOLS) > 1 and result.get("signals"):
+            try:
+                from python_bot.engine.journal.daily_history import log_pu30_signals
+                log_pu30_signals(result["signals"], interval=interval)
+            except Exception:
+                pass
         # Top-level status mirrors the scan's own success/partial/error, so a
         # scan where every symbol failed is never reported as "success".
         _cache(response, SCAN_CACHE, result["status"])
@@ -85,7 +131,10 @@ def scan_most_rsi(response: Response, interval: str = "1h"):
     if interval not in ("1d", "1h"):
         raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
     try:
-        result = scan_universe_most_rsi(BIST100_SYMBOLS, interval=interval, max_workers=SCAN_MAX_WORKERS)
+        result = _run_coalesced(
+            ("most_rsi", interval, tuple(BIST100_SYMBOLS)),
+            lambda: scan_universe_most_rsi(BIST100_SYMBOLS, interval=interval, max_workers=SCAN_MAX_WORKERS),
+        )
         _cache(response, SCAN_CACHE, result["status"])
         return {"status": result["status"], "data": result}
     except Exception as e:

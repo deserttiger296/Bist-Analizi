@@ -20,8 +20,15 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
-from python_bot.engine.signals.rsi_pu30 import _fetch_adjusted_bars, wilder_rsi, _epoch_seconds, INTERVALS
-from python_bot.engine.data.provider import DataStatus
+from python_bot.engine.signals.rsi_pu30 import (
+    _fetch_adjusted_bars,
+    _DEFAULT_FETCH_ADJUSTED_BARS,
+    wilder_rsi,
+    _epoch_seconds,
+    _EPOCH,
+    INTERVALS,
+)
+from python_bot.engine.data.provider import DataStatus, are_bars_closed, get_default_provider
 
 
 @dataclass(frozen=True)
@@ -58,13 +65,22 @@ def calc_tradingview_var(src: np.ndarray, length: int = 5, cmo_len: int = 9) -> 
         return vma
         
     vma[start_idx - 1] = src[start_idx - 1]
-    
-    for i in range(start_idx, n):
-        vud = np.sum(up[i - cmo_len + 1:i + 1])
-        vdd = np.sum(dn[i - cmo_len + 1:i + 1])
-        denom = vud + vdd
-        vcmo = abs(vud - vdd) / denom if denom > 0 else 0.0
-        alpha = valpha * vcmo
+
+    cs_up = np.empty(n + 1, dtype=np.float64)
+    cs_dn = np.empty(n + 1, dtype=np.float64)
+    cs_up[0] = 0.0
+    cs_dn[0] = 0.0
+    np.cumsum(up, out=cs_up[1:])
+    np.cumsum(dn, out=cs_dn[1:])
+
+    vud_arr = cs_up[start_idx + 1:] - cs_up[start_idx + 1 - cmo_len:n + 1 - cmo_len]
+    vdd_arr = cs_dn[start_idx + 1:] - cs_dn[start_idx + 1 - cmo_len:n + 1 - cmo_len]
+    denom_arr = vud_arr + vdd_arr
+    vcmo_arr = np.where(denom_arr > 0, np.abs(vud_arr - vdd_arr) / np.where(denom_arr > 0, denom_arr, 1.0), 0.0)
+    alpha_arr = valpha * vcmo_arr
+
+    for k, i in enumerate(range(start_idx, n)):
+        alpha = alpha_arr[k]
         prev = vma[i - 1] if not np.isnan(vma[i - 1]) else src[i]
         vma[i] = alpha * src[i] + (1.0 - alpha) * prev
         
@@ -120,9 +136,10 @@ def detect_most_rsi(df: pd.DataFrame, cfg: MOSTRSIConfig = DEFAULT_MOSTRSI_CONFI
     if df is None or len(df) < (cfg.rsi_length + cfg.cmo_length + 10):
         return None
         
-    from python_bot.engine.data.provider import is_bar_closed
-    df = df.loc[[is_bar_closed(t, interval) for t in df.date]].copy()
-    if "is_closed" in df: df = df[df.is_closed]
+    if "is_closed" in df.columns:
+        df = df[df["is_closed"]].copy()
+    else:
+        df = df.loc[are_bars_closed(df["date"], interval)].copy()
     if len(df) < 30: return None
     closes = df["close"].to_numpy(dtype=float)
     rsi = wilder_rsi(closes, cfg.rsi_length)
@@ -164,7 +181,15 @@ def scan_universe_most_rsi(symbols: List[str], cfg: MOSTRSIConfig = DEFAULT_MOST
     En yeni sinyalden en eskiye doğru sıralar.
     """
     from concurrent.futures import ThreadPoolExecutor
-    
+
+    if len(symbols) > 1 and _fetch_adjusted_bars is _DEFAULT_FETCH_ADJUSTED_BARS:
+        provider = get_default_provider()
+        if hasattr(provider, "prefetch_ohlcv_batch"):
+            try:
+                provider.prefetch_ohlcv_batch(symbols, interval=interval)
+            except Exception:
+                pass
+
     signals = []
     errors = []
     
@@ -218,48 +243,66 @@ def get_most_rsi_chart_data(symbol: str, cfg: MOSTRSIConfig = DEFAULT_MOSTRSI_CO
     if df is None:
         return None
         
-    from python_bot.engine.data.provider import is_bar_closed
-    df = df.loc[[is_bar_closed(t, interval) for t in df.date]].copy()
-    if "is_closed" in df: df = df[df.is_closed]
+    if "is_closed" in df.columns:
+        df = df[df["is_closed"]].copy()
+    else:
+        df = df.loc[are_bars_closed(df["date"], interval)].copy()
     if len(df) < 30: return None
     closes = df["close"].to_numpy(dtype=float)
     rsi = wilder_rsi(closes, cfg.rsi_length)
     vma = calc_tradingview_var(rsi, cfg.var_length, cfg.cmo_length)
     most, trend, bull, bear = calc_tradingview_most(vma, cfg.percent)
     
-    bars = []
-    for i in range(len(df)):
-        ts = pd.Timestamp(df["date"].iloc[i])
-        bars.append({
-            "time": _epoch_seconds(ts),
-            "date": ts.strftime(date_fmt),
-            "open": float(df["open"].iloc[i]),
-            "high": float(df["high"].iloc[i]),
-            "low": float(df["low"].iloc[i]),
-            "close": float(df["close"].iloc[i]),
-            "rsi": None if np.isnan(rsi[i]) else round(float(rsi[i]), 2),
-            "exmov": None if np.isnan(vma[i]) else round(float(vma[i]), 2),
-            "most": None if np.isnan(most[i]) else round(float(most[i]), 2),
-            "trend": int(trend[i]),
-            "bull": bool(bull[i]),
-            "bear": bool(bear[i]),
-        })
+    dt_ser = pd.to_datetime(df["date"])
+    date_strs = dt_ser.dt.strftime(date_fmt).tolist()
+    dt_utc = dt_ser.dt.tz_convert("UTC").dt.tz_localize(None) if dt_ser.dt.tz is not None else dt_ser
+    epochs = ((dt_utc - _EPOCH) // pd.Timedelta(seconds=1)).to_numpy(dtype=np.int64).tolist()
+    opens = df["open"].to_numpy(dtype=float).tolist()
+    highs = df["high"].to_numpy(dtype=float).tolist()
+    lows = df["low"].to_numpy(dtype=float).tolist()
+    closes_list = closes.tolist()
+    rsi_nan = np.isnan(rsi)
+    vma_nan = np.isnan(vma)
+    most_nan = np.isnan(most)
+    rsi_rounded = np.round(rsi, 2).tolist()
+    vma_rounded = np.round(vma, 2).tolist()
+    most_rounded = np.round(most, 2).tolist()
+    trend_list = trend.astype(int).tolist()
+    bull_list = bull.tolist()
+    bear_list = bear.tolist()
+
+    bars = [
+        {
+            "time": epochs[i],
+            "date": date_strs[i],
+            "open": opens[i],
+            "high": highs[i],
+            "low": lows[i],
+            "close": closes_list[i],
+            "rsi": None if rsi_nan[i] else rsi_rounded[i],
+            "exmov": None if vma_nan[i] else vma_rounded[i],
+            "most": None if most_nan[i] else most_rounded[i],
+            "trend": trend_list[i],
+            "bull": bull_list[i],
+            "bear": bear_list[i],
+        }
+        for i in range(len(df))
+    ]
         
     # En son Bull sinyali
     bull_indices = np.where(bull)[0]
     last_bull = None
     if len(bull_indices) > 0:
-        b_idx = bull_indices[-1]
-        b_ts = pd.Timestamp(df["date"].iloc[b_idx])
+        b_idx = int(bull_indices[-1])
         last_bull = {
-            "index": int(b_idx),
-            "date": b_ts.strftime(date_fmt),
-            "time": _epoch_seconds(b_ts),
-            "price": float(df["close"].iloc[b_idx]),
+            "index": b_idx,
+            "date": date_strs[b_idx],
+            "time": epochs[b_idx],
+            "price": closes_list[b_idx],
             "bars_ago": int((len(df) - 1) - b_idx),
-            "rsi": round(float(rsi[b_idx]), 2),
-            "exmov": round(float(vma[b_idx]), 2),
-            "most": round(float(most[b_idx]), 2),
+            "rsi": rsi_rounded[b_idx],
+            "exmov": vma_rounded[b_idx],
+            "most": most_rounded[b_idx],
         }
         
     return {

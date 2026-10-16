@@ -119,23 +119,60 @@ def _rsi(close: pd.Series, period: int = 14) -> pd.Series:
     return pd.Series(wilder_rsi(close.to_numpy(dtype=np.float64), period), index=close.index)
 
 
+import threading
+import time as _time
+
+_HIST_CACHE_LOCK = threading.Lock()
+_HIST_CACHE: Dict[ tuple, tuple ] = {}
+_HIST_INFLIGHT: Dict[ tuple, threading.Lock ] = {}
+HIST_CACHE_TTL_SEC = 120.0
+
+
+def _download_daily_cached(ticker: str, period: str) -> pd.DataFrame:
+    key = (id(yf.download), ticker, period)
+    now = _time.monotonic()
+    with _HIST_CACHE_LOCK:
+        cached = _HIST_CACHE.get(key)
+        if cached is not None and (now - cached[0]) < HIST_CACHE_TTL_SEC:
+            return cached[1].copy()
+        lock = _HIST_INFLIGHT.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _HIST_INFLIGHT[key] = lock
+
+    with lock:
+        now = _time.monotonic()
+        with _HIST_CACHE_LOCK:
+            cached = _HIST_CACHE.get(key)
+            if cached is not None and (now - cached[0]) < HIST_CACHE_TTL_SEC:
+                return cached[1].copy()
+
+        df = yf.download(ticker, period=period, progress=False, auto_adjust=True, timeout=15)
+        if isinstance(df.columns, pd.MultiIndex):
+            df = df.copy()
+            df.columns = df.columns.droplevel(1)
+        if df is not None and not df.empty:
+            with _HIST_CACHE_LOCK:
+                _HIST_CACHE[key] = (_time.monotonic(), df)
+            return df.copy()
+        return df
+
+
 def _fetch_history(symbol: str, period: str = "3y") -> pd.DataFrame:
     ticker = _normalize_symbol(symbol)
-    df = yf.download(ticker, period=period, progress=False, auto_adjust=True, timeout=15)
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.droplevel(1)
-    from python_bot.engine.data.provider import is_bar_closed
+    df = _download_daily_cached(ticker, period)
+    from python_bot.engine.data.provider import are_bars_closed
     # yfinance sometimes returns the latest day with NaN OHLC (volume filled) before the
     # bar is finalised; such a row would poison every rolling feature of the last row.
     df = df.dropna(subset=["Open", "High", "Low", "Close"])
-    return df.loc[[is_bar_closed(t, "1d") for t in df.index]]
+    if df.empty:
+        return df
+    return df.loc[are_bars_closed(df.index, "1d")]
 
 
 def _fetch_benchmark_close(period: str = "3y") -> pd.Series:
     """Fetch the XU100 index close series used for relative-momentum features."""
-    df = yf.download(BENCHMARK_TICKER, period=period, progress=False, auto_adjust=True, timeout=15)
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.droplevel(1)
+    df = _download_daily_cached(BENCHMARK_TICKER, period)
     return df["Close"].dropna()
 
 
@@ -184,10 +221,13 @@ def _engineer_base_features(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def build_features(df, benchmark_close):
-    """Single causal feature path for RF and LSTM, both training and inference."""
+def build_features(df, benchmark_close, tail_rows: Optional[int] = None):
+    """Single causal feature path for RF and LSTM, both training and inference.
+    When `tail_rows` is given at inference time, only the HMM refit blocks
+    covering the last `tail_rows` rows are evaluated (producing bit-identical
+    values for those rows without refitting historical blocks that won't be read)."""
     out = _engineer_base_features(df)
-    out = out.join(_rolling_regime_features(df.Close))
+    out = out.join(_rolling_regime_features(df.Close, tail_rows=tail_rows))
     out = out.join(_relative_momentum_features(df.Close, benchmark_close))
     return out.replace([np.inf, -np.inf], np.nan)
 
@@ -233,9 +273,9 @@ REGIME_MIN_HISTORY = 150
 REGIME_REFIT_EVERY = 20
 
 
-def _rolling_regime_features(close: pd.Series) -> pd.DataFrame:
+def _rolling_regime_features(close: pd.Series, tail_rows: Optional[int] = None) -> pd.DataFrame:
     """
-    Time-safe regime features for training rows.
+    Time-safe regime features for training and inference rows.
 
     `_regime_features_for_symbol` fits on the whole series handed to it and
     reports only the *last* bar's regime -- fine for live prediction ("as of
@@ -247,18 +287,22 @@ def _rolling_regime_features(close: pd.Series) -> pd.DataFrame:
 
     This instead refits the HMM every REGIME_REFIT_EVERY bars using only an
     *expanding* window up to and including that point (never beyond it), and
-    forward-fills the classification until the next refit. Refitting every
-    single bar would be the theoretically cleanest version but is far too
-    slow for a "trains in well under a minute" pipeline; refitting
-    periodically is the practical middle ground -- still strictly
-    backward-looking, just piecewise-constant between refits instead of
-    updated daily.
+    forward-fills the classification until the next refit. When `tail_rows`
+    is specified (e.g. 1 for RF inference, 30 for LSTM inference), we jump
+    directly to the refit block covering `n - tail_rows`, producing bit-for-bit
+    identical values for the last `tail_rows` rows in 1-2 HMM fits.
     """
     n = len(close)
     codes = pd.Series(np.nan, index=close.index)
     confidences = pd.Series(np.nan, index=close.index)
 
-    i = REGIME_MIN_HISTORY
+    if tail_rows is not None and tail_rows > 0 and n > REGIME_MIN_HISTORY:
+        target_start = max(REGIME_MIN_HISTORY, n - tail_rows)
+        offset = ((target_start - REGIME_MIN_HISTORY) // REGIME_REFIT_EVERY) * REGIME_REFIT_EVERY
+        i = REGIME_MIN_HISTORY + offset
+    else:
+        i = REGIME_MIN_HISTORY
+
     while i < n:
         window = close.iloc[: i + 1]
         try:
@@ -442,18 +486,39 @@ def train_and_save(symbols: List[str]) -> None:
     logger.info(f"Saved model to {MODEL_PATH}")
 
 
+_RF_CACHE_LOCK = threading.Lock()
+_RF_CACHE: Dict[str, Any] = {"key": None, "payload": None}
+
+
+def load_rf_payload() -> Dict[str, Any]:
+    """Loads and validates the RF artifact from disk, caching in memory by (path, mtime, size)."""
+    if not MODEL_PATH.exists():
+        raise FileNotFoundError(
+            f"No trained model found at {MODEL_PATH}. Run train_and_save(symbols) first."
+        )
+    stat = MODEL_PATH.stat()
+    key = (str(MODEL_PATH), stat.st_mtime_ns, stat.st_size)
+    with _RF_CACHE_LOCK:
+        if _RF_CACHE["key"] == key and _RF_CACHE["payload"] is not None:
+            return _RF_CACHE["payload"]
+    payload = joblib.load(MODEL_PATH)
+    validate_artifact(payload)
+    # Single-row inference inside ThreadPoolExecutor is ~100x faster with n_jobs=1
+    # than spawning nested joblib worker pools per symbol.
+    if hasattr(payload.get("model"), "n_jobs"):
+        payload["model"].n_jobs = 1
+    with _RF_CACHE_LOCK:
+        _RF_CACHE["key"] = key
+        _RF_CACHE["payload"] = payload
+    return payload
+
+
 def predict(symbol: str) -> Dict[str, Any]:
     """
     Loads the saved model and returns a prediction for `symbol` "as of today"
     (the latest available daily bar from yfinance).
     """
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(
-            f"No trained model found at {MODEL_PATH}. Run train_and_save(symbols) first."
-        )
-
-    payload = joblib.load(MODEL_PATH)
-    validate_artifact(payload)
+    payload = load_rf_payload()
     model = payload["model"]
     feature_columns = payload["feature_columns"]
 
@@ -461,7 +526,7 @@ def predict(symbol: str) -> Dict[str, Any]:
     if df.empty or len(df) < 60:
         raise ValueError(f"Not enough recent history for {symbol} to compute features.")
 
-    feat = build_features(df, _fetch_benchmark_close(period="1y"))
+    feat = build_features(df, _fetch_benchmark_close(period="1y"), tail_rows=1)
     latest = feat.iloc[-1]
     if latest[feature_columns].isna().any():
         raise ValueError("DATA_INSUFFICIENT: latest feature row is incomplete")

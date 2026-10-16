@@ -81,33 +81,118 @@ class BacktestSummary:
     average_loss_pct: float = 0.0
 
 
-def run_portfolio_backtest(frames, config=None, pu30_cfg=None, nu70_cfg=None, signal_filter=None):
+def run_portfolio_backtest(
+    frames,
+    config=None,
+    pu30_cfg=None,
+    nu70_cfg=None,
+    signal_filter=None,
+    entry_trigger=None,
+):
     """Spot, long-only, shared cash. Stops first on ambiguous bars; liquidate at data end.
 
     `signal_filter(symbol, history, signal)` must use only the supplied prefix.
+    `entry_trigger(symbol, history, signal)` (optional) can trigger an entry on any bar
+    within `signal_lifetime_bars` after a PU30 confirmation (e.g. when the hourly trust
+    level breaks on a subsequent bar).
     NU70 is an exit warning, never an implicit short sale.
     """
     from python_bot.engine.data.provider import bar_close_time
+    from python_bot.engine.signals.rsi_pu30 import (
+        wilder_rsi,
+        find_confirmed_pivot_lows,
+        find_confirmed_pivot_highs,
+        _dip_rsi,
+        _peak_rsi,
+    )
+
     cfg = config or BacktestConfig()
     if not (cfg.initial_capital > 0 and 0 < cfg.stop_loss_pct < 100 and cfg.target_pct > 0
             and 0 < cfg.risk_per_trade_pct <= 100 and 0 < cfg.max_exposure_pct <= 100
             and cfg.max_positions >= 1 and 0 < cfg.max_loss_pct <= 100
             and 0 <= cfg.commission_pct < 100 and 0 <= cfg.slippage_pct < 100):
         raise ValueError("Invalid risk or execution configuration")
+    pu_c = pu30_cfg or DEFAULT_PU30_CONFIG
+    nu_c = nu70_cfg or DEFAULT_NU70_CONFIG
     cash = cfg.initial_capital
     positions, pending, marks = {}, {}, {}
     trades, curve = [], [{"time": "initial", "equity": cash, "cash": cash, "unrealized_pnl": 0.0}]
     fee, slip = cfg.commission_pct / 100, cfg.slippage_pct / 100
     timeline = {}
+    pu_candidate_bars = {}
+    nu_candidate_bars = {}
     for symbol, df in frames.items():
         if not df.date.is_monotonic_increasing or df.date.duplicated().any():
             raise ValueError("Bars must be unique and ordered")
-        for i, row in df.iterrows():
-            if "is_closed" in row and not row.is_closed:
+        closes_arr = df["close"].to_numpy(dtype=np.float64)
+        lows_arr = df["low"].to_numpy(dtype=np.float64)
+        highs_arr = df["high"].to_numpy(dtype=np.float64)
+        if len(lows_arr) >= 30:
+            rsi_pu = wilder_rsi(closes_arr, pu_c.rsi_length)
+            rsi_nu = rsi_pu if nu_c.rsi_length == pu_c.rsi_length else wilder_rsi(closes_arr, nu_c.rsi_length)
+            piv_lo = find_confirmed_pivot_lows(lows_arr, pu_c.pivot_left_bars, pu_c.pivot_right_bars)
+            piv_hi = find_confirmed_pivot_highs(highs_arr, nu_c.pivot_left_bars, nu_c.pivot_right_bars)
+            lo_rsi = [_dip_rsi(rsi_pu, p, pu_c.pivot_left_bars, pu_c.pivot_right_bars) for p in piv_lo]
+            hi_rsi = [_peak_rsi(rsi_nu, p, nu_c.pivot_left_bars, nu_c.pivot_right_bars) for p in piv_hi]
+            valid_pu_pivots = []
+            for idx2, p2 in enumerate(piv_lo):
+                r2 = lo_rsi[idx2]
+                if np.isnan(r2):
+                    continue
+                if (pu_c.rsi2_above_threshold or pu_c.strict_threshold) and r2 <= pu_c.rsi_threshold:
+                    continue
+                for idx1 in range(idx2 - 1, -1, -1):
+                    p1 = piv_lo[idx1]
+                    gap = p2 - p1
+                    if gap < pu_c.min_gap_bars:
+                        continue
+                    if gap > pu_c.max_gap_bars:
+                        break
+                    r1 = lo_rsi[idx1]
+                    if not np.isnan(r1) and (not pu_c.strict_threshold or r1 < pu_c.rsi_threshold) and (not pu_c.require_higher_rsi or r2 > r1):
+                        valid_pu_pivots.append(p2)
+                        break
+            if entry_trigger is None:
+                pu_candidate_bars[symbol] = {p + pu_c.pivot_right_bars for p in valid_pu_pivots}
+            else:
+                life = min(int(pu_c.signal_lifetime_bars), len(lows_arr))
+                cand = set()
+                for p in valid_pu_pivots:
+                    c_idx = p + pu_c.pivot_right_bars
+                    cand.update(range(c_idx, min(len(lows_arr), c_idx + life + 1)))
+                pu_candidate_bars[symbol] = cand
+            valid_nu_pivots = []
+            for idx2, p2 in enumerate(piv_hi):
+                r2 = hi_rsi[idx2]
+                if np.isnan(r2):
+                    continue
+                if (nu_c.rsi2_below_threshold or nu_c.strict_threshold) and r2 >= nu_c.rsi_threshold:
+                    continue
+                for idx1 in range(idx2 - 1, -1, -1):
+                    p1 = piv_hi[idx1]
+                    gap = p2 - p1
+                    if gap < nu_c.min_gap_bars:
+                        continue
+                    if gap > nu_c.max_gap_bars:
+                        break
+                    r1 = hi_rsi[idx1]
+                    if not np.isnan(r1) and (not nu_c.strict_threshold or r1 > nu_c.rsi_threshold) and (not nu_c.require_lower_rsi or r2 < r1):
+                        valid_nu_pivots.append(p2)
+                        break
+            nu_candidate_bars[symbol] = {p + nu_c.pivot_right_bars for p in valid_nu_pivots}
+        else:
+            pu_candidate_bars[symbol] = set()
+            nu_candidate_bars[symbol] = set()
+
+        has_closed = "is_closed" in df.columns
+        closed_arr = df["is_closed"].to_numpy(dtype=bool) if has_closed else None
+        dt_idx = pd.DatetimeIndex(df["date"])
+        dt_idx = dt_idx.tz_localize(ISTANBUL_TZ) if dt_idx.tz is None else dt_idx.tz_convert(ISTANBUL_TZ)
+        for pos_idx, row in enumerate(df.itertuples(index=False)):
+            if closed_arr is not None and not closed_arr[pos_idx]:
                 continue
-            ts = pd.Timestamp(row.date)
-            ts = ts.tz_localize(ISTANBUL_TZ) if ts.tzinfo is None else ts.tz_convert(ISTANBUL_TZ)
-            timeline.setdefault(ts, []).append((symbol, df.index.get_loc(i), row))
+            ts = dt_idx[pos_idx]
+            timeline.setdefault(ts, []).append((symbol, pos_idx, row))
     occupied = 0
     for ts, bars in sorted(timeline.items()):
         # Update opening marks before allocations; no future close used for sizing.
@@ -155,17 +240,27 @@ def run_portfolio_backtest(frames, config=None, pu30_cfg=None, nu70_cfg=None, si
                     del positions[symbol]
             marks[symbol] = float(row.close)
             if i >= 30 and i+1 < len(df):
-                prefix = df.iloc[:i+1]
                 if symbol in positions:
-                    sell = detect_rsi_nu70(prefix, cfg=nu70_cfg or DEFAULT_NU70_CONFIG, interval=cfg.interval)
-                    if sell and sell["confirm_index"] == i:
-                        positions[symbol]["exit_pending"] = True
-                elif symbol not in pending:
-                    sig = detect_rsi_pu30(prefix, cfg=pu30_cfg or DEFAULT_PU30_CONFIG, interval=cfg.interval)
-                    if sig and sig["confirm_index"] == i and (signal_filter is None or signal_filter(symbol, prefix, sig)):
-                        available = pd.Timestamp(sig.get("knowable_at", bar_close_time(row.date, cfg.interval)))
-                        if available.tzinfo is None: available = available.tz_localize(ISTANBUL_TZ)
-                        pending[symbol] = {"available": available}
+                    if i in nu_candidate_bars[symbol]:
+                        prefix = df.iloc[:i+1]
+                        sell = detect_rsi_nu70(prefix, cfg=nu_c, interval=cfg.interval)
+                        if sell and sell["confirm_index"] == i:
+                            positions[symbol]["exit_pending"] = True
+                elif symbol not in pending and i in pu_candidate_bars[symbol]:
+                    prefix = df.iloc[:i+1]
+                    sig = detect_rsi_pu30(prefix, cfg=pu_c, interval=cfg.interval)
+                    if sig is not None:
+                        if entry_trigger is not None:
+                            if entry_trigger(symbol, prefix, sig) and (signal_filter is None or signal_filter(symbol, prefix, sig)):
+                                available = pd.Timestamp(bar_close_time(row.date, cfg.interval))
+                                if available.tzinfo is None:
+                                    available = available.tz_localize(ISTANBUL_TZ)
+                                pending[symbol] = {"available": available}
+                        elif sig["confirm_index"] == i and (signal_filter is None or signal_filter(symbol, prefix, sig)):
+                            available = pd.Timestamp(sig.get("knowable_at", bar_close_time(row.date, cfg.interval)))
+                            if available.tzinfo is None:
+                                available = available.tz_localize(ISTANBUL_TZ)
+                            pending[symbol] = {"available": available}
         equity = cash+sum(p["qty"]*marks[s] for s,p in positions.items())
         occupied += bool(positions)
         curve.append({"time": str(ts), "equity": equity, "cash": cash, "unrealized_pnl": sum(p["qty"]*marks[s]-p["cost"] for s,p in positions.items())})

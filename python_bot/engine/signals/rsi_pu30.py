@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 
 from python_bot.engine.data.provider import (
+    are_bars_closed,
     bar_close_time,
     is_bar_closed,
     DataProvider,
@@ -148,18 +149,16 @@ def find_confirmed_pivot_lows(
     Look-ahead bias önlemi: Sağdaki rb adet mum kesinleşmeden pivot üretilmez.
     """
     n = len(lows)
-    pivots: List[int] = []
-    max_p = n - rb
-    for p in range(lb, max_p):
-        if is_closed is not None:
-            # Sağ teyit barlarından herhangi biri kapanmamışsa bu pivot kesinleşmiş sayılamaz
-            if not np.all(is_closed[p - lb:p + rb + 1]):
-                continue
-        left = lows[p - lb:p]
-        right = lows[p + 1:p + rb + 1]
-        if np.all(lows[p] < left) and np.all(lows[p] <= right):
-            pivots.append(p)
-    return pivots
+    w = lb + rb + 1
+    if n < w:
+        return []
+    windows = np.lib.stride_tricks.sliding_window_view(lows, w)
+    center = windows[:, lb:lb + 1]
+    mask = np.all(center < windows[:, :lb], axis=1) & np.all(center <= windows[:, lb + 1:], axis=1)
+    if is_closed is not None:
+        closed_win = np.lib.stride_tricks.sliding_window_view(is_closed, w)
+        mask &= np.all(closed_win, axis=1)
+    return (np.flatnonzero(mask) + lb).tolist()
 
 
 def find_confirmed_pivot_highs(
@@ -170,17 +169,16 @@ def find_confirmed_pivot_highs(
     Look-ahead bias önlemi: Sağdaki rb adet mum kesinleşmeden pivot üretilmez.
     """
     n = len(highs)
-    pivots: List[int] = []
-    max_p = n - rb
-    for p in range(lb, max_p):
-        if is_closed is not None:
-            if not np.all(is_closed[p - lb:p + rb + 1]):
-                continue
-        left = highs[p - lb:p]
-        right = highs[p + 1:p + rb + 1]
-        if np.all(highs[p] > left) and np.all(highs[p] >= right):
-            pivots.append(p)
-    return pivots
+    w = lb + rb + 1
+    if n < w:
+        return []
+    windows = np.lib.stride_tricks.sliding_window_view(highs, w)
+    center = windows[:, lb:lb + 1]
+    mask = np.all(center > windows[:, :lb], axis=1) & np.all(center >= windows[:, lb + 1:], axis=1)
+    if is_closed is not None:
+        closed_win = np.lib.stride_tricks.sliding_window_view(is_closed, w)
+        mask &= np.all(closed_win, axis=1)
+    return (np.flatnonzero(mask) + lb).tolist()
 
 
 def _dip_rsi(rsi: np.ndarray, p: int, lb: int, rb: int) -> float:
@@ -213,7 +211,7 @@ def detect_rsi_pu30(
     lows = df["low"].to_numpy(dtype=float)
     highs = df["high"].to_numpy(dtype=float)
     dates = df["date"].to_numpy()
-    is_closed_arr = df["is_closed"].to_numpy(dtype=bool) if "is_closed" in df.columns else np.array([is_bar_closed(t, interval) for t in dates])
+    is_closed_arr = df["is_closed"].to_numpy(dtype=bool) if "is_closed" in df.columns else are_bars_closed(dates, interval)
 
     rsi = wilder_rsi(closes, cfg.rsi_length)
     pivot_indices = find_confirmed_pivot_lows(lows, cfg.pivot_left_bars, cfg.pivot_right_bars, is_closed_arr)
@@ -355,7 +353,7 @@ def detect_rsi_nu70(
     highs = df["high"].to_numpy(dtype=float)
     lows = df["low"].to_numpy(dtype=float)
     dates = df["date"].to_numpy()
-    is_closed_arr = df["is_closed"].to_numpy(dtype=bool) if "is_closed" in df.columns else np.array([is_bar_closed(t, interval) for t in dates])
+    is_closed_arr = df["is_closed"].to_numpy(dtype=bool) if "is_closed" in df.columns else are_bars_closed(dates, interval)
 
     rsi = wilder_rsi(closes, cfg.rsi_length)
     pivot_indices = find_confirmed_pivot_highs(highs, cfg.pivot_left_bars, cfg.pivot_right_bars, is_closed_arr)
@@ -494,6 +492,9 @@ def _fetch_adjusted_bars(
     return result.df, result
 
 
+_DEFAULT_FETCH_ADJUSTED_BARS = _fetch_adjusted_bars
+
+
 def hourly_trust_level(
     h1: pd.DataFrame, pivot_open: Any, interval: str, bull: bool,
     lb: int = 5, rb: int = 2,
@@ -623,6 +624,14 @@ def scan_universe_rsi_pu30(
     Çoklu zaman dilimi (1s ve 4s) çapraz kontrolünü uygular.
     """
     from concurrent.futures import ThreadPoolExecutor
+
+    if len(symbols) > 1 and _fetch_adjusted_bars is _DEFAULT_FETCH_ADJUSTED_BARS:
+        provider = get_default_provider()
+        if hasattr(provider, "prefetch_ohlcv_batch"):
+            try:
+                provider.prefetch_ohlcv_batch(symbols, interval=interval)
+            except Exception:
+                pass
 
     results: List[Dict[str, Any]] = []
     errors: List[Dict[str, str]] = []
@@ -780,21 +789,36 @@ def get_symbol_chart_data(
             if sig:
                 apply_hourly_trust_level(sig, df, h1, interval)
 
-    bars = []
-    for i in range(len(df)):
-        ts = pd.Timestamp(df["date"].iloc[i])
-        bars.append({
-            "time": _epoch_seconds(ts),
-            "date": ts.strftime(date_fmt),
-            "open": float(df["open"].iloc[i]),
-            "high": float(df["high"].iloc[i]),
-            "low": float(df["low"].iloc[i]),
-            "close": float(df["close"].iloc[i]),
-            "volume": float(df["volume"].iloc[i]) if "volume" in df.columns else 0.0,
-            "rsi": None if np.isnan(rsi[i]) else round(float(rsi[i]), 2),
-            "rsi_sma": None if np.isnan(rsi_sma[i]) else round(float(rsi_sma[i]), 2),
-            "is_closed": bool(df["is_closed"].iloc[i]) if "is_closed" in df.columns else True,
-        })
+    dt_ser = pd.to_datetime(df["date"])
+    date_strs = dt_ser.dt.strftime(date_fmt).tolist()
+    dt_utc = dt_ser.dt.tz_convert("UTC").dt.tz_localize(None) if dt_ser.dt.tz is not None else dt_ser
+    epochs = ((dt_utc - _EPOCH) // pd.Timedelta(seconds=1)).to_numpy(dtype=np.int64).tolist()
+    opens = df["open"].to_numpy(dtype=float).tolist()
+    highs = df["high"].to_numpy(dtype=float).tolist()
+    lows = df["low"].to_numpy(dtype=float).tolist()
+    closes_list = closes.tolist()
+    volumes = df["volume"].to_numpy(dtype=float).tolist() if "volume" in df.columns else [0.0] * len(df)
+    is_closed_list = df["is_closed"].to_numpy(dtype=bool).tolist() if "is_closed" in df.columns else [True] * len(df)
+    rsi_nan = np.isnan(rsi)
+    rsi_sma_nan = np.isnan(rsi_sma)
+    rsi_rounded = np.round(rsi, 2).tolist()
+    rsi_sma_rounded = np.round(rsi_sma, 2).tolist()
+
+    bars = [
+        {
+            "time": epochs[i],
+            "date": date_strs[i],
+            "open": opens[i],
+            "high": highs[i],
+            "low": lows[i],
+            "close": closes_list[i],
+            "volume": volumes[i],
+            "rsi": None if rsi_nan[i] else rsi_rounded[i],
+            "rsi_sma": None if rsi_sma_nan[i] else rsi_sma_rounded[i],
+            "is_closed": is_closed_list[i],
+        }
+        for i in range(len(df))
+    ]
 
     # En güncel teyit edilen sinyali birincil olarak seç
     if sig_pu and sig_nu:

@@ -29,6 +29,8 @@ from python_bot.engine.data.provider import normalize_bist_symbol
 _JOURNAL_DIR = Path(__file__).resolve().parent
 DECISIONS_FILE = _JOURNAL_DIR / "daily_scan_log.csv"
 OUTCOMES_FILE = _JOURNAL_DIR / "daily_scan_outcomes.csv"
+SIGNAL_DECISIONS_FILE = _JOURNAL_DIR / "pu30_signal_log.csv"
+SIGNAL_OUTCOMES_FILE = _JOURNAL_DIR / "pu30_signal_outcomes.csv"
 
 RESOLVE_AFTER_DAYS = 5  # matches local_classifier.FORWARD_HORIZON_DAYS
 
@@ -37,6 +39,16 @@ DECISION_FIELDNAMES = [
     "sniper_approved", "confluence_level", "resolve_after_days",
 ]
 OUTCOME_FIELDNAMES = ["date", "symbol", "actual_price", "actual_return_pct", "was_correct", "resolved_at"]
+
+SIGNAL_DECISION_FIELDNAMES = [
+    "date", "symbol", "interval", "signal_type", "confirm_date", "knowable_at",
+    "entry_price", "trust_level_price", "trust_level_durum", "tetiklendi",
+    "confirmed_timeframes", "resolve_after_days",
+]
+SIGNAL_OUTCOME_FIELDNAMES = [
+    "date", "symbol", "interval", "signal_type", "confirm_date", "tetiklendi",
+    "actual_price", "actual_return_pct", "was_correct", "resolved_at",
+]
 
 _lock = threading.Lock()
 
@@ -83,6 +95,75 @@ def log_daily_scan(predictions: List[Dict[str, Any]]) -> int:
             existing_keys.add(key)
         if rows:
             _append_csv(DECISIONS_FILE, DECISION_FIELDNAMES, rows)
+        return len(rows)
+
+
+def _signal_key(row: Dict[str, Any]) -> tuple:
+    return (
+        str(row.get("symbol", "")),
+        str(row.get("interval", "")),
+        str(row.get("signal_type", "")),
+        str(row.get("confirm_date", "")),
+        str(row.get("tetiklendi", "")),
+    )
+
+
+def log_pu30_signals(signals: List[Dict[str, Any]], interval: str = "4h") -> int:
+    """Appends one immutable decision row per unique (symbol, interval, signal_type,
+    confirm_date, tetiklendi) event. If a signal is first observed with
+    tetiklendi=False and later breaks its hourly trust level (tetiklendi=True),
+    the break is logged as a new immutable event without modifying the earlier row."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    with _lock:
+        existing_keys = {_signal_key(d) for d in _read_csv(SIGNAL_DECISIONS_FILE)}
+        rows = []
+        for s in signals:
+            sym = str(s.get("symbol", ""))
+            sig_interval = str(s.get("interval") or interval)
+            sig_type = str(s.get("type") or s.get("signal_type") or "")
+            confirm_date = str(s.get("confirm_date") or s.get("pivot_date") or "")
+            if not sym or not sig_type or not confirm_date:
+                continue
+            tetiklendi_str = str(bool(s.get("tetiklendi", False)))
+            candidate = {
+                "symbol": sym,
+                "interval": sig_interval,
+                "signal_type": sig_type,
+                "confirm_date": confirm_date,
+                "tetiklendi": tetiklendi_str,
+            }
+            key = _signal_key(candidate)
+            if key in existing_keys:
+                continue
+            saatlik = s.get("saatlik_seviye") or {}
+            trust_price = saatlik.get("price")
+            if trust_price is None:
+                lvl_obj = s.get("guven_tazeleyen_tepe") or s.get("guven_kiran_dip") or {}
+                trust_price = lvl_obj.get("price") if isinstance(lvl_obj, dict) else None
+            trust_durum = saatlik.get("durum") or ("kirildi" if s.get("tetiklendi") else "bekleniyor")
+            confirmed_tfs = s.get("confirmed_timeframes") or [sig_interval]
+            if isinstance(confirmed_tfs, list):
+                confirmed_tfs_str = ",".join(str(x) for x in confirmed_tfs)
+            else:
+                confirmed_tfs_str = str(confirmed_tfs)
+
+            rows.append({
+                "date": today,
+                "symbol": sym,
+                "interval": sig_interval,
+                "signal_type": sig_type,
+                "confirm_date": confirm_date,
+                "knowable_at": str(s.get("knowable_at") or ""),
+                "entry_price": s.get("last_close") or s.get("current_price") or "",
+                "trust_level_price": "" if trust_price is None else trust_price,
+                "trust_level_durum": trust_durum,
+                "tetiklendi": tetiklendi_str,
+                "confirmed_timeframes": confirmed_tfs_str,
+                "resolve_after_days": RESOLVE_AFTER_DAYS,
+            })
+            existing_keys.add(key)
+        if rows:
+            _append_csv(SIGNAL_DECISIONS_FILE, SIGNAL_DECISION_FIELDNAMES, rows)
         return len(rows)
 
 
@@ -148,6 +229,56 @@ def resolve_pending_outcomes() -> int:
         return len(new_outcomes)
 
 
+def resolve_pending_signal_outcomes() -> int:
+    """Appends an outcome event for every PU30/NU70 signal decision row past its
+    resolve_after_days horizon without mutating SIGNAL_DECISIONS_FILE."""
+    with _lock:
+        decisions = _read_csv(SIGNAL_DECISIONS_FILE)
+        if not decisions:
+            return 0
+        already_resolved = {_signal_key(o) for o in _read_csv(SIGNAL_OUTCOMES_FILE)}
+        today = datetime.now(timezone.utc).date()
+        new_outcomes = []
+        for d in decisions:
+            key = _signal_key(d)
+            if key in already_resolved:
+                continue
+            try:
+                decision_date = datetime.strptime(d["date"], "%Y-%m-%d").date()
+                resolve_after = int(d.get("resolve_after_days") or RESOLVE_AFTER_DAYS)
+            except (ValueError, TypeError):
+                continue
+            if (today - decision_date).days < resolve_after:
+                continue
+            try:
+                entry_price = float(d["entry_price"])
+                actual_price = _fetch_actual_price(d["symbol"])
+            except Exception:
+                continue
+            actual_return_pct = (actual_price / entry_price - 1.0) * 100.0 if entry_price else 0.0
+            sig_type = d.get("signal_type", "")
+            was_correct = (
+                (sig_type == "PU30" and actual_return_pct > 0)
+                or (sig_type == "NU70" and actual_return_pct < 0)
+            )
+            new_outcomes.append({
+                "date": d["date"],
+                "symbol": d["symbol"],
+                "interval": d["interval"],
+                "signal_type": sig_type,
+                "confirm_date": d["confirm_date"],
+                "tetiklendi": d.get("tetiklendi", "False"),
+                "actual_price": round(actual_price, 4),
+                "actual_return_pct": round(actual_return_pct, 2),
+                "was_correct": was_correct,
+                "resolved_at": datetime.now(timezone.utc).isoformat(),
+            })
+            already_resolved.add(key)
+        if new_outcomes:
+            _append_csv(SIGNAL_OUTCOMES_FILE, SIGNAL_OUTCOME_FIELDNAMES, new_outcomes)
+        return len(new_outcomes)
+
+
 def _accuracy_pct(rows: List[Dict[str, str]]) -> Optional[float]:
     graded = [r for r in rows if r.get("was_correct") in ("True", "False")]
     if not graded:
@@ -177,13 +308,36 @@ def get_history(limit_days: Optional[int] = None) -> Dict[str, Any]:
             row["was_correct"] = ""
         rows.append(row)
 
+    sig_decisions = _read_csv(SIGNAL_DECISIONS_FILE)
+    sig_outcomes = {_signal_key(o): o for o in _read_csv(SIGNAL_OUTCOMES_FILE)}
+    sig_rows = []
+    for sd in sig_decisions:
+        so = sig_outcomes.get(_signal_key(sd))
+        srow = dict(sd)
+        if so:
+            srow["resolved"] = "True"
+            srow["actual_price"] = so["actual_price"]
+            srow["actual_return_pct"] = so["actual_return_pct"]
+            srow["was_correct"] = so["was_correct"]
+        else:
+            srow["resolved"] = "False"
+            srow["actual_price"] = ""
+            srow["actual_return_pct"] = ""
+            srow["was_correct"] = ""
+        sig_rows.append(srow)
+
     if limit_days is not None:
         cutoff = (datetime.now(timezone.utc).date() - timedelta(days=limit_days)).isoformat()
         rows = [r for r in rows if r["date"] >= cutoff]
+        sig_rows = [r for r in sig_rows if r["date"] >= cutoff]
 
     resolved_rows = [r for r in rows if r["resolved"] == "True"]
     pending_rows = [r for r in rows if r["resolved"] != "True"]
     approved_resolved_rows = [r for r in resolved_rows if r.get("sniper_approved") == "True"]
+
+    sig_resolved_rows = [r for r in sig_rows if r["resolved"] == "True"]
+    sig_pending_rows = [r for r in sig_rows if r["resolved"] != "True"]
+    sig_triggered_resolved = [r for r in sig_resolved_rows if r.get("tetiklendi") == "True"]
 
     return {
         "rows": rows,
@@ -193,4 +347,11 @@ def get_history(limit_days: Optional[int] = None) -> Dict[str, Any]:
         "overall_accuracy_pct": _accuracy_pct(resolved_rows),
         "approved_only_accuracy_pct": _accuracy_pct(approved_resolved_rows),
         "approved_only_count": len(approved_resolved_rows),
+        "pu30_signal_rows": sig_rows,
+        "pu30_total_rows": len(sig_rows),
+        "pu30_resolved_rows": len(sig_resolved_rows),
+        "pu30_pending_rows": len(sig_pending_rows),
+        "pu30_overall_accuracy_pct": _accuracy_pct(sig_resolved_rows),
+        "pu30_triggered_accuracy_pct": _accuracy_pct(sig_triggered_resolved),
+        "pu30_triggered_count": len(sig_triggered_resolved),
     }

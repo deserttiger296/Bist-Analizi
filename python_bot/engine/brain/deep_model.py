@@ -119,11 +119,24 @@ def lstm_probability_from_features(feat, meta, model):
         return float(model(torch.tensor(x, dtype=torch.float64).unsqueeze(0).to(DEVICE)).item())
 
 
+import threading
+
+_LSTM_CACHE_LOCK = threading.Lock()
+_LSTM_CACHE = {"key": None, "value": None}
+
+
 def load_lstm():
     """Returns (model, meta) or None when torch or the trained artifacts are absent."""
     import joblib
     if not TORCH_AVAILABLE or not MODEL_WEIGHTS_PATH.exists() or not LSTM_META_PATH.exists():
         return None
+    w_stat = MODEL_WEIGHTS_PATH.stat()
+    m_stat = LSTM_META_PATH.stat()
+    key = (str(MODEL_WEIGHTS_PATH), w_stat.st_mtime_ns, w_stat.st_size,
+           str(LSTM_META_PATH), m_stat.st_mtime_ns, m_stat.st_size)
+    with _LSTM_CACHE_LOCK:
+        if _LSTM_CACHE["key"] == key and _LSTM_CACHE["value"] is not None:
+            return _LSTM_CACHE["value"]
     from python_bot.engine.brain.local_classifier import FEATURE_COLUMNS
     meta = joblib.load(LSTM_META_PATH)
     validate_lstm_metadata(meta)
@@ -131,6 +144,9 @@ def load_lstm():
     model = QuantumLSTM(input_size=len(FEATURE_COLUMNS)).double().to(DEVICE)
     model.load_state_dict(torch.load(MODEL_WEIGHTS_PATH, map_location=DEVICE, weights_only=True))
     model.eval()
+    with _LSTM_CACHE_LOCK:
+        _LSTM_CACHE["key"] = key
+        _LSTM_CACHE["value"] = (model, meta)
     return model, meta
 
 
@@ -141,7 +157,13 @@ def predict_lstm(symbol):
     if loaded is None:
         return None
     model, meta = loaded
-    from python_bot.engine.brain.local_classifier import _fetch_history, _fetch_benchmark_close, build_features
-    df = _fetch_history(symbol, period="2y")
-    feat = build_features(df, _fetch_benchmark_close(period="2y"))
+    from python_bot.engine.brain.local_classifier import (
+        _fetch_history, _fetch_benchmark_close, build_features, REGIME_MIN_HISTORY,
+    )
+    df = _fetch_history(symbol, period="1y")
+    period = "1y"
+    if len(df) < REGIME_MIN_HISTORY + SEQ_LENGTH:
+        df = _fetch_history(symbol, period="2y")
+        period = "2y"
+    feat = build_features(df, _fetch_benchmark_close(period=period), tail_rows=SEQ_LENGTH)
     return lstm_probability_from_features(feat, meta, model)

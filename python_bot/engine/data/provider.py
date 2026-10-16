@@ -189,6 +189,26 @@ def is_bar_closed(bar_time, interval, now_ist=None):
     return bool(bar_close_time(bar_time, interval) <= now)
 
 
+def are_bars_closed(dates: Any, interval: str, now_ist: Any = None) -> np.ndarray:
+    """Vectorized equivalent of `[is_bar_closed(t, interval, now_ist) for t in dates]`."""
+    if len(dates) == 0:
+        return np.array([], dtype=bool)
+    now = pd.Timestamp(now_ist or datetime.now(ISTANBUL_TZ))
+    now = now.tz_localize(ISTANBUL_TZ) if now.tzinfo is None else now.tz_convert(ISTANBUL_TZ)
+    dt_idx = pd.DatetimeIndex(dates)
+    dt_idx = dt_idx.tz_localize(ISTANBUL_TZ) if dt_idx.tz is None else dt_idx.tz_convert(ISTANBUL_TZ)
+    if interval == "1h":
+        close_times = dt_idx + pd.Timedelta(hours=1)
+    elif interval == "1d":
+        close_times = dt_idx.normalize() + pd.Timedelta(hours=18, minutes=10)
+    elif interval == "4h":
+        minutes = np.where(dt_idx.hour < 14, 14 * 60 + 30, 18 * 60 + 10)
+        close_times = dt_idx.normalize() + pd.to_timedelta(minutes, unit="m")
+    else:
+        raise ValueError(f"Unsupported interval: {interval}")
+    return np.asarray(close_times <= now, dtype=bool)
+
+
 def resample_bist_4h(raw_1h_df: pd.DataFrame) -> pd.DataFrame:
     """
     1 saatlik BIST verisini duvar saati yerine Borsa İstanbul seansına göre
@@ -243,11 +263,9 @@ def resample_bist_4h(raw_1h_df: pd.DataFrame) -> pd.DataFrame:
     # Sabah mumu 09:30..13:30 saatlik barlarını (gerçek kapsam 10:00-14:30), öğle mumu
     # 14:30..17:30 barlarını (14:30-18:10) içerir; öğle etiketi bu yüzden 14:30'dur.
     # Kapanış zamanları bar_close_time ile tutarlıdır.
-    def _session_label(dt: pd.Timestamp) -> pd.Timestamp:
-        session_time = dtime(10, 0) if dt.hour < 14 else dtime(14, 30)
-        return pd.Timestamp.combine(dt.date(), session_time).tz_localize(ISTANBUL_TZ)
-
-    session_keys = df.index.map(_session_label)
+    session_minutes = np.where(df.index.hour < 14, 10 * 60, 14 * 60 + 30)
+    session_keys = df.index.normalize() + pd.to_timedelta(session_minutes, unit="m")
+    session_keys.name = "date"
     grouped = df.groupby(session_keys)
 
     resampled = grouped.agg({
@@ -262,14 +280,147 @@ def resample_bist_4h(raw_1h_df: pd.DataFrame) -> pd.DataFrame:
     return resampled
 
 
+import threading
+import time as _time
+
+_RAW_CACHE_LOCK = threading.Lock()
+_RAW_CACHE: Dict[Tuple[int, str, str, str], Tuple[float, pd.DataFrame]] = {}
+_RAW_INFLIGHT: Dict[Tuple[int, str, str, str], threading.Lock] = {}
+RAW_CACHE_TTL_SEC = 120.0
+
+
 class YFinanceDataProvider:
     """
     yfinance kütüphanesini kullanan BIST Veri Sağlayıcısı.
     Hata yakalama, BIST seans hizalaması ve veri doğrulaması içerir.
     """
 
-    def __init__(self, timeout_sec: int = 15):
+    def __init__(self, timeout_sec: int = 15, cache_ttl_sec: float = RAW_CACHE_TTL_SEC):
         self.timeout_sec = timeout_sec
+        self.cache_ttl_sec = cache_ttl_sec
+
+    def _download_raw(self, norm_sym: str, fetch_interval: str, fetch_period: str) -> Optional[pd.DataFrame]:
+        key = (id(yf.download), norm_sym, fetch_interval, fetch_period)
+        now = _time.monotonic()
+        with _RAW_CACHE_LOCK:
+            cached = _RAW_CACHE.get(key)
+            if cached is not None and (now - cached[0]) < self.cache_ttl_sec:
+                return cached[1].copy()
+            inflight_lock = _RAW_INFLIGHT.get(key)
+            if inflight_lock is None:
+                inflight_lock = threading.Lock()
+                _RAW_INFLIGHT[key] = inflight_lock
+
+        with inflight_lock:
+            now = _time.monotonic()
+            with _RAW_CACHE_LOCK:
+                cached = _RAW_CACHE.get(key)
+                if cached is not None and (now - cached[0]) < self.cache_ttl_sec:
+                    return cached[1].copy()
+
+            raw = yf.download(
+                norm_sym,
+                period=fetch_period,
+                interval=fetch_interval,
+                auto_adjust=True,
+                progress=False,
+                timeout=self.timeout_sec,
+            )
+            if raw is not None and not raw.empty:
+                if isinstance(raw.columns, pd.MultiIndex):
+                    raw = raw.copy()
+                    raw.columns = raw.columns.droplevel(1)
+                with _RAW_CACHE_LOCK:
+                    _RAW_CACHE[key] = (_time.monotonic(), raw)
+                return raw.copy()
+            with _RAW_CACHE_LOCK:
+                _RAW_CACHE[key] = (_time.monotonic(), pd.DataFrame())
+            return raw
+
+    def prefetch_ohlcv_batch(
+        self,
+        symbols: List[str],
+        interval: str = "4h",
+        period: Optional[str] = None,
+        chunk_size: int = 25,
+    ) -> int:
+        """
+        Birden fazla sembolün ham OHLCV verisini tekil veya parçalı (chunked)
+        yfinance çağrılarıyla önceden `_RAW_CACHE` içine yükler.
+        Önbellekte taze olan semboller tekrar indirilmez.
+        Dönüş: Önbelleğe yeni eklenen sembol sayısı.
+        """
+        if not symbols or interval not in ("1d", "4h", "1h"):
+            return 0
+
+        fetch_interval = "1h" if interval == "4h" else interval
+        fetch_period = period or ("730d" if interval in ("1h", "4h") else "1y")
+        dl_id = id(yf.download)
+        now = _time.monotonic()
+
+        norm_symbols: List[str] = []
+        seen = set()
+        with _RAW_CACHE_LOCK:
+            for sym in symbols:
+                norm_sym = normalize_bist_symbol(sym)
+                if norm_sym in seen:
+                    continue
+                seen.add(norm_sym)
+                key = (dl_id, norm_sym, fetch_interval, fetch_period)
+                cached = _RAW_CACHE.get(key)
+                if cached is None or (now - cached[0]) >= self.cache_ttl_sec:
+                    norm_symbols.append(norm_sym)
+
+        if not norm_symbols:
+            return 0
+
+        if len(norm_symbols) == 1:
+            raw = self._download_raw(norm_symbols[0], fetch_interval, fetch_period)
+            return 1 if (raw is not None and not raw.empty) else 0
+
+        stored_count = 0
+        step = max(1, int(chunk_size))
+        for start_idx in range(0, len(norm_symbols), step):
+            chunk = norm_symbols[start_idx : start_idx + step]
+            if len(chunk) == 1:
+                raw_single = self._download_raw(chunk[0], fetch_interval, fetch_period)
+                if raw_single is not None and not raw_single.empty:
+                    stored_count += 1
+                continue
+            try:
+                raw = yf.download(
+                    chunk,
+                    period=fetch_period,
+                    interval=fetch_interval,
+                    group_by="ticker",
+                    auto_adjust=True,
+                    progress=False,
+                    threads=True,
+                    timeout=self.timeout_sec,
+                )
+            except Exception:
+                continue
+
+            if raw is None or raw.empty:
+                continue
+
+            ts_now = _time.monotonic()
+            if isinstance(raw.columns, pd.MultiIndex):
+                lvl0 = set(raw.columns.get_level_values(0))
+                lvl1 = set(raw.columns.get_level_values(1))
+                with _RAW_CACHE_LOCK:
+                    for norm_sym in chunk:
+                        if norm_sym in lvl0:
+                            sub = raw[norm_sym].dropna(how="all").copy()
+                        elif norm_sym in lvl1:
+                            sub = raw.xs(norm_sym, axis=1, level=1).dropna(how="all").copy()
+                        else:
+                            _RAW_CACHE[(dl_id, norm_sym, fetch_interval, fetch_period)] = (ts_now, pd.DataFrame())
+                            continue
+                        _RAW_CACHE[(dl_id, norm_sym, fetch_interval, fetch_period)] = (ts_now, sub)
+                        if not sub.empty:
+                            stored_count += 1
+        return stored_count
 
     def fetch_ohlcv(
         self,
@@ -296,14 +447,7 @@ class YFinanceDataProvider:
             fetch_interval = "1h" if interval == "4h" else interval
             fetch_period = period or ("730d" if interval in ("1h", "4h") else "1y")
 
-            raw = yf.download(
-                norm_sym,
-                period=fetch_period,
-                interval=fetch_interval,
-                auto_adjust=True,
-                progress=False,
-                timeout=self.timeout_sec,
-            )
+            raw = self._download_raw(norm_sym, fetch_interval, fetch_period)
 
             if raw is None or raw.empty:
                 return DataResult(
@@ -351,9 +495,9 @@ class YFinanceDataProvider:
                     bar_count=len(df),
                 )
 
-            # Mumların kapanmış / oluşmakta olan durumunu etiketle
+            # Mumların kapanmış / oluşmakta olan durumunu etiketle (vektörel)
             now_ist = datetime.now(ISTANBUL_TZ)
-            df["is_closed"] = df["date"].apply(lambda t: is_bar_closed(t, interval, now_ist))
+            df["is_closed"] = are_bars_closed(df["date"], interval, now_ist)
 
             last_bar_is_closed = bool(df["is_closed"].iloc[-1])
             is_forming = not last_bar_is_closed

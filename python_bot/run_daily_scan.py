@@ -22,7 +22,13 @@ from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, ".")
 
 from python_bot.main_api import BIST100_SYMBOLS, predict_rf, _process_prediction
-from python_bot.engine.journal.daily_history import log_daily_scan, resolve_pending_outcomes
+from python_bot.engine.signals.rsi_pu30 import scan_universe_rsi_pu30
+from python_bot.engine.journal.daily_history import (
+    log_daily_scan,
+    log_pu30_signals,
+    resolve_pending_outcomes,
+    resolve_pending_signal_outcomes,
+)
 
 SCAN_MAX_WORKERS = 10
 
@@ -59,8 +65,17 @@ def main():
     log_daily_scan(predictions)
     print(f"[DailyScan] Logged {len(predictions)} rows to engine/journal/daily_scan_log.csv")
 
+    for interval in ("4h", "1d"):
+        pu_res = scan_universe_rsi_pu30(BIST100_SYMBOLS, max_workers=SCAN_MAX_WORKERS, interval=interval)
+        sigs = pu_res.get("signals", [])
+        written = log_pu30_signals(sigs, interval=interval)
+        print(f"[DailyScan] RSI PU30/NU70 ({interval}): {len(sigs)} signals found, {written} new events logged")
+
     resolved = resolve_pending_outcomes()
-    print(f"[DailyScan] Resolved {resolved} previously-pending predictions against actual outcomes")
+    resolved_sigs = resolve_pending_signal_outcomes()
+    print(
+        f"[DailyScan] Resolved {resolved} ML predictions and {resolved_sigs} PU30/NU70 signal events against actual outcomes"
+    )
 
 
 if __name__ == "__main__":
