@@ -97,3 +97,45 @@ def test_default_nu70_thresholds(monkeypatch, peak_bars, first, second, accepted
     if accepted:
         assert signal["tepe1"]["rsi"] > 70 > signal["tepe2"]["rsi"]
         assert signal["strategy_version"] == "nu70-strict-v3"
+
+
+def test_semih_vakbn_hammer_dip2_pivot_rsi_above_30(monkeypatch, bars):
+    """VAKBN 1sa (5 Kasım 2026 ekran görüntüsü): 2. dip mumunda (p=40) çekiç mumu ile
+    RSI=32.11 (>30), ancak 1 mum önce (p-1=39) RSI=25.87 (<30). Dip 2'nin kendi mumundaki
+    RSI > 30 olduğu için PU30 kabul edilmelidir."""
+    fake_rsi = np.full(len(bars), 45.0)
+    fake_rsi[20] = 14.80
+    fake_rsi[39] = 25.87  # left-window bar briefly dipped < 30
+    fake_rsi[40] = 32.11  # actual hammer pivot bar closed with RSI > 30
+    monkeypatch.setattr(engine, "wilder_rsi", lambda closes, length: fake_rsi)
+    sig = engine.detect_rsi_pu30(bars, interval="1h")
+    assert sig is not None
+    assert sig["dip1"]["rsi"] == pytest.approx(14.80)
+    assert sig["dip2"]["rsi"] == pytest.approx(32.11)
+
+
+def test_semih_isctr_kurus_tolerance_double_bottom(monkeypatch, bars):
+    """ISCTR 1sa (5 Kasım 2026 ekran görüntüsü): 1. dip 11.64 TL (RSI 18.68),
+    2. dip 11.66 TL (+%0.17 / 2 kuruş fark, yatay mavi çizgi) ve teyit mumunda (p+1)
+    11.68 TL ile RSI 36.82 (>30). %0.25 kuruş toleransı içinde kabul edilmeli,
+    ancak belirgin yüksek dip (+%1.0) reddedilmelidir."""
+    bars.loc[:, "low"] = 12.20
+    bars.loc[:, "high"] = 12.50
+    bars.loc[20, "low"] = 11.64
+    bars.loc[40, "low"] = 11.66  # +0.172% within 0.25% tolerance
+    bars.loc[41, "low"] = 11.68
+    fake_rsi = np.full(len(bars), 45.0)
+    fake_rsi[20] = 18.68
+    fake_rsi[40] = 27.62
+    fake_rsi[41] = 36.82
+    monkeypatch.setattr(engine, "wilder_rsi", lambda closes, length: fake_rsi)
+    sig = engine.detect_rsi_pu30(bars, interval="1h")
+    assert sig is not None
+    assert sig["dip1"]["price"] == pytest.approx(11.64)
+    assert sig["dip2"]["price"] == pytest.approx(11.66)
+    assert sig["dip2"]["rsi"] == pytest.approx(36.82)
+
+    # Belirgin yüksek dip (+%1.0 > %0.25) reddedilmeli
+    bars.loc[40, "low"] = 11.76
+    assert engine.detect_rsi_pu30(bars, interval="1h") is None
+

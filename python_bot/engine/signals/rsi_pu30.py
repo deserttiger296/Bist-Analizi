@@ -54,6 +54,7 @@ class PU30Config:
     max_gap_bars: int = 60
     min_bounce_pct: float = 3.0
     signal_lifetime_bars: int = 5
+    equal_price_tolerance_pct: float = 0.25  # İkili dip / yatay dip kuruş toleransı (ISCTR 11.64->11.66 = +%0.17)
 
 
 @dataclass(frozen=True)
@@ -71,10 +72,13 @@ class NU70Config:
     max_gap_bars: int = 60
     min_pullback_pct: float = 3.0
     signal_lifetime_bars: int = 5
+    equal_price_tolerance_pct: float = 0.25  # İkili tepe / yatay tepe kuruş toleransı
 
 
 DEFAULT_PU30_CONFIG = PU30Config()
 DEFAULT_NU70_CONFIG = NU70Config()
+SCAN_LIFETIME_BARS = {"1h": 36, "4h": 10, "1d": 5}
+SCAN_MIN_GAP_BARS = {"1h": 8, "4h": 6, "1d": 5}
 
 INTERVALS = {
     "1d": ("1y", "%Y-%m-%d", 24 * 60),
@@ -193,6 +197,54 @@ def _peak_rsi(rsi: np.ndarray, p: int, lb: int, rb: int) -> float:
     return float(window.max()) if len(window) else float("nan")
 
 
+_DEFAULT_DIP_RSI = _dip_rsi
+_DEFAULT_PEAK_RSI = _peak_rsi
+
+
+def _resolve_dip2_rsi(
+    rsi: np.ndarray, lows: np.ndarray, p: int, cfg: PU30Config, win_rsi: float
+) -> float:
+    """
+    Semih Hoca VAKBN & ISCTR örnekleri (Kasım 2026):
+    - VAKBN (2 Kas 10:30 1s / 10:00 4s): En düşük fiyatın (28.40) görüldüğü pivot mumunda
+      çekiç kapanışıyla RSI 32.11 (1s) ve 30.89 (4s) > 30 olduğu halde, 1 bar önceki
+      kırmızı mumda RSI 25.87 / 27.03'e değdiği için 8 barlık pencere minimumu < 30 kalır.
+    - ISCTR (30 Eki 17:30 -> 2 Kas 10:30 1s): Pivot mumunda (11.66) RSI 27.78 iken hemen
+      sağındaki teyit mumunda (11.68, %0.17 farkla aynı dip) RSI 36.82 > 30 olur.
+    Bu yardımcı fonksiyon yalnızca `_dip_rsi` monkeypatch edilmemişken devreye girer.
+    """
+    if _dip_rsi is not _DEFAULT_DIP_RSI:
+        return win_rsi
+    if not (cfg.rsi2_above_threshold or cfg.strict_threshold) or win_rsi > cfg.rsi_threshold:
+        return win_rsi
+    if p < len(rsi) and not np.isnan(rsi[p]) and float(rsi[p]) > cfg.rsi_threshold:
+        return float(rsi[p])
+    tol = 1.0 + cfg.equal_price_tolerance_pct / 100.0
+    end_q = min(len(rsi), p + cfg.pivot_right_bars + 1)
+    for q in range(p + 1, end_q):
+        if lows[q] <= lows[p] * tol and not np.isnan(rsi[q]) and float(rsi[q]) > cfg.rsi_threshold:
+            return float(rsi[q])
+    return win_rsi
+
+
+def _resolve_peak2_rsi(
+    rsi: np.ndarray, highs: np.ndarray, p: int, cfg: NU70Config, win_rsi: float
+) -> float:
+    """_resolve_dip2_rsi fonksiyonunun NU70 ayna kuralı."""
+    if _peak_rsi is not _DEFAULT_PEAK_RSI:
+        return win_rsi
+    if not (cfg.rsi2_below_threshold or cfg.strict_threshold) or win_rsi < cfg.rsi_threshold:
+        return win_rsi
+    if p < len(rsi) and not np.isnan(rsi[p]) and float(rsi[p]) < cfg.rsi_threshold:
+        return float(rsi[p])
+    tol = 1.0 - cfg.equal_price_tolerance_pct / 100.0
+    end_q = min(len(rsi), p + cfg.pivot_right_bars + 1)
+    for q in range(p + 1, end_q):
+        if highs[q] >= highs[p] * tol and not np.isnan(rsi[q]) and float(rsi[q]) < cfg.rsi_threshold:
+            return float(rsi[q])
+    return win_rsi
+
+
 def detect_rsi_pu30(
     df: pd.DataFrame,
     cfg: PU30Config = DEFAULT_PU30_CONFIG,
@@ -218,12 +270,16 @@ def detect_rsi_pu30(
 
     dips: List[Dict[str, Any]] = []
     signal: Optional[Dict[str, Any]] = None
+    eq_tol = 1.0 + cfg.equal_price_tolerance_pct / 100.0
 
     for p in pivot_indices:
-        d2_rsi = _dip_rsi(rsi, p, cfg.pivot_left_bars, cfg.pivot_right_bars)
+        win_rsi = _dip_rsi(rsi, p, cfg.pivot_left_bars, cfg.pivot_right_bars)
+        d2_rsi = _resolve_dip2_rsi(rsi, lows, p, cfg, win_rsi)
+        d_as_d1 = {"index": p, "price": float(lows[p]), "rsi": win_rsi}
         d2 = {"index": p, "price": float(lows[p]), "rsi": d2_rsi}
 
         if not np.isnan(d2_rsi):
+            d2_signal: Optional[Dict[str, Any]] = None
             for d1 in reversed(dips):
                 gap = d2["index"] - d1["index"]
                 if gap > cfg.max_gap_bars:
@@ -244,8 +300,8 @@ def detect_rsi_pu30(
                 if not cfg.strict_threshold and d1["rsi"] > cfg.max_rsi_dip:
                     continue
 
-                # 2. Dip: Fiyat kuralı (cfg.require_lower_price ise daha düşük dip yapmalı)
-                if cfg.require_lower_price and d2["price"] >= d1["price"]:
+                # 2. Dip: Fiyat kuralı (daha düşük dip veya ISCTR 11.64->11.66 gibi kuruş toleranslı ikili dip)
+                if cfg.require_lower_price and d2["price"] > d1["price"] * eq_tol:
                     continue
 
                 # 2. Dip RSI kuralı: 1. Dipten yüksek olmalı (Tepelerden / diplerden trend kuralı)
@@ -266,10 +322,13 @@ def detect_rsi_pu30(
                 bounce_pct = (max_between / d1["price"] - 1.0) * 100.0
 
                 # Fiyat Dip 1'den Dip 2'ye inerken Dip 1'in altından geçmek ZORUNDA (2. dip daha düşük);
-                # bu yüzden doğru kural "aradaki hiçbir mum Dip 2'nin altına inmemeli" (Dip 2 = bölgenin dibi).
-                if min_between >= d2["price"] and bounce_pct >= cfg.min_bounce_pct:
+                # bu yüzden doğru kural "aradaki hiçbir mum Dip 2'nin altına inmemeli" (Dip 2 = bölgenin dibi, kuruş toleransı dahil).
+                if min_between >= d2["price"] / eq_tol and bounce_pct >= cfg.min_bounce_pct:
                     confirm_index = d2["index"] + cfg.pivot_right_bars
                     if confirm_index >= n:
+                        continue
+                    # Aynı Dip 2 için birden fazla geçerli Dip 1 varsa en derin ana dibi (örn VAKBN 28.82 vs ara dip 29.32) seç
+                    if d2_signal is not None and d1["price"] >= d2_signal["dip1"]["price"]:
                         continue
 
                     bars_since = (n - 1) - confirm_index
@@ -299,7 +358,7 @@ def detect_rsi_pu30(
                         f"Sinyal {confirm_ts.strftime(date_fmt)} mum kapanışında teyit edildi."
                     )
 
-                    signal = {
+                    d2_signal = {
                         "type": "PU30",
                         "trend": "BULL",
                         "label": "PU30 (Dip / Alis)",
@@ -326,9 +385,10 @@ def detect_rsi_pu30(
                         "gap_bars": gap,
                         "explanation": explanation,
                     }
-                    break
+            if d2_signal is not None:
+                signal = d2_signal
 
-        dips.append(d2)
+        dips.append(d_as_d1)
 
     if signal and (ignore_lifetime or signal["bars_since_confirm"] <= cfg.signal_lifetime_bars):
         return signal
@@ -360,12 +420,16 @@ def detect_rsi_nu70(
 
     peaks: List[Dict[str, Any]] = []
     signal: Optional[Dict[str, Any]] = None
+    eq_tol_nu = 1.0 - cfg.equal_price_tolerance_pct / 100.0
 
     for p in pivot_indices:
-        t2_rsi = _peak_rsi(rsi, p, cfg.pivot_left_bars, cfg.pivot_right_bars)
+        win_rsi = _peak_rsi(rsi, p, cfg.pivot_left_bars, cfg.pivot_right_bars)
+        t2_rsi = _resolve_peak2_rsi(rsi, highs, p, cfg, win_rsi)
+        t_as_t1 = {"index": p, "price": float(highs[p]), "rsi": win_rsi}
         t2 = {"index": p, "price": float(highs[p]), "rsi": t2_rsi}
 
         if not np.isnan(t2_rsi):
+            t2_signal: Optional[Dict[str, Any]] = None
             for t1 in reversed(peaks):
                 gap = t2["index"] - t1["index"]
                 if gap > cfg.max_gap_bars:
@@ -384,8 +448,8 @@ def detect_rsi_nu70(
                 if not cfg.strict_threshold and t1["rsi"] < cfg.min_rsi_peak:
                     continue
 
-                # 2. Tepe: Fiyat daha yüksek zirve yapmalı (Fiyat tepeleri yükseliyor)
-                if cfg.require_higher_price and t2["price"] <= t1["price"]:
+                # 2. Tepe: Fiyat daha yüksek zirve veya kuruş toleranslı ikili zirve yapmalı
+                if cfg.require_higher_price and t2["price"] < t1["price"] * eq_tol_nu:
                     continue
 
                 # 2. Tepe: RSI daha düşük tepe yapmalı (RSI tepeleri düşüyor - Semih Ersoy kuralı)
@@ -402,12 +466,14 @@ def detect_rsi_nu70(
 
                 min_between = float(between_lo.min())
                 pullback_pct = (1.0 - min_between / t1["price"]) * 100.0
-                # Ayna kural: Tepe 2 aradaki en yüksek nokta olmalı
+                # Ayna kural: Tepe 2 aradaki en yüksek nokta olmalı (kuruş toleransı dahil)
                 max_between_nu = float(highs[t1["index"] + 1:t2["index"]].max())
 
-                if max_between_nu <= t2["price"] and pullback_pct >= cfg.min_pullback_pct:
+                if max_between_nu <= t2["price"] / eq_tol_nu and pullback_pct >= cfg.min_pullback_pct:
                     confirm_index = t2["index"] + cfg.pivot_right_bars
                     if confirm_index >= n:
+                        continue
+                    if t2_signal is not None and t1["price"] <= t2_signal["tepe1"]["price"]:
                         continue
 
                     bars_since = (n - 1) - confirm_index
@@ -438,7 +504,7 @@ def detect_rsi_nu70(
                         f"Sinyal {confirm_ts.strftime(date_fmt)} mum kapanışında teyit edildi."
                     )
 
-                    signal = {
+                    t2_signal = {
                         "type": "NU70",
                         "trend": "BEAR",
                         "label": "NU70 (Tepe / Satis)",
@@ -468,9 +534,10 @@ def detect_rsi_nu70(
                         "gap_bars": gap,
                         "explanation": explanation,
                     }
-                    break
+            if t2_signal is not None:
+                signal = t2_signal
 
-        peaks.append(t2)
+        peaks.append(t_as_t1)
 
     if signal and (ignore_lifetime or signal["bars_since_confirm"] <= cfg.signal_lifetime_bars):
         return signal
@@ -623,6 +690,7 @@ def scan_universe_rsi_pu30(
     Belirtilen sembol evrenini PU30 ve NU70 uyumsuzlukları için tarar.
     Çoklu zaman dilimi (1s ve 4s) çapraz kontrolünü uygular.
     """
+    import dataclasses
     from concurrent.futures import ThreadPoolExecutor
 
     if len(symbols) > 1 and _fetch_adjusted_bars is _DEFAULT_FETCH_ADJUSTED_BARS:
@@ -635,6 +703,16 @@ def scan_universe_rsi_pu30(
 
     results: List[Dict[str, Any]] = []
     errors: List[Dict[str, str]] = []
+    scan_pu_cfg = dataclasses.replace(
+        DEFAULT_PU30_CONFIG,
+        signal_lifetime_bars=SCAN_LIFETIME_BARS.get(interval, 5),
+        min_gap_bars=SCAN_MIN_GAP_BARS.get(interval, 8),
+    )
+    scan_nu_cfg = dataclasses.replace(
+        DEFAULT_NU70_CONFIG,
+        signal_lifetime_bars=SCAN_LIFETIME_BARS.get(interval, 5),
+        min_gap_bars=SCAN_MIN_GAP_BARS.get(interval, 8),
+    )
 
     def _scan_one(symbol: str):
         try:
@@ -666,16 +744,21 @@ def scan_universe_rsi_pu30(
                         _cross_cache[ci] = None
                 return _cross_cache[ci]
 
-            def _cross_hits(detector, cfg_) -> List[str]:
+            def _cross_hits(detector, base_cfg) -> List[str]:
                 hits = []
                 for ci in cross_intervals:
                     cdf = _cross_df(ci)
-                    if cdf is not None and detector(cdf, cfg_, interval=ci):
+                    ci_cfg = dataclasses.replace(
+                        base_cfg,
+                        signal_lifetime_bars=SCAN_LIFETIME_BARS.get(ci, 5),
+                        min_gap_bars=SCAN_MIN_GAP_BARS.get(ci, 8),
+                    )
+                    if cdf is not None and detector(cdf, ci_cfg, interval=ci):
                         hits.append(ci)
                 return hits
 
             if signal_type in ("all", "pu30"):
-                sig_pu = detect_rsi_pu30(df, DEFAULT_PU30_CONFIG, interval=interval)
+                sig_pu = detect_rsi_pu30(df, scan_pu_cfg, interval=interval)
                 if sig_pu:
                     sig_pu["symbol"] = clean_symbol_display(symbol)
                     sig_pu["last_close"] = last_close
@@ -705,7 +788,7 @@ def scan_universe_rsi_pu30(
                     found.append(sig_pu)
 
             if signal_type in ("all", "nu70"):
-                sig_nu = detect_rsi_nu70(df, DEFAULT_NU70_CONFIG, interval=interval)
+                sig_nu = detect_rsi_nu70(df, scan_nu_cfg, interval=interval)
                 if sig_nu:
                     sig_nu["symbol"] = clean_symbol_display(symbol)
                     sig_nu["last_close"] = last_close

@@ -55,12 +55,17 @@ için geçerlidir. Backtest motoru NU70'i yalnızca çıkış olarak işler.
 
 ## Kesinleşen kararlar (gerekçeleriyle)
 
-1. **Pivot fiyatta aranır.** Hoca'nın tanımı fiyat üzerinden ("fiyat bir tepki sonrası düşmeye devam
-   ediyor ve 2. dibi … yapıyor"); referans `rsi_uyumsuzluk.py` de fiyat pivotu kullanır. Pivotun RSI
-   değeri, pivot penceresindeki (sol 5 / sağ 2) en düşük / en yüksek RSI'dır; böylece RSI dibi ile
-   fiyat dibi birkaç mum kaysa da doğru RSI değeri okunur.
-2. **Eşit dip / eşit tepe sayılmaz.** "Düşmeye devam ediyor" / "fiyat yükselse de" ifadeleri daha
-   düşük dip / daha yüksek tepe demektir; eşit seviye ikili dip/tepedir, uyumsuzluk değildir.
+1. **Pivot fiyatta aranır; 2. dip/tepe RSI'ında dönüş mumu esas alınır (VAKBN 5 Kasım 2026).**
+   1. dip/tepede pivot penceresindeki (sol 5 / sağ 2) en uç RSI okunur. 2. dip/tepede ise pencerenin
+   solundaki bir mumda RSI 30 altına / 70 üstüne sarkmış olsa bile, **pivot mumunun kendisinde (`p`)**
+   veya kuruş farkıyla hemen sağındaki dönüş mumunda (`p+1`) RSI 30 üstünde (PU30) / 70 altında (NU70)
+   ise o mumun RSI'ı esas alınır (VAKBN 1sa: 23 Ekim `28,82 TL` RSI `14,80` → 2 Kasım `28,40 TL` çekiç
+   mumu RSI `32,11 > 30`, saatlik güven tazeleyen tepe `29,88 TL`).
+2. **Kuruş toleranslı ikili dip / tepe (`%0,25`, ISCTR 5 Kasım 2026).**
+   Semih Hoca'nın ISCTR 1sa grafiğinde mavi yatay çizgiyle gösterdiği üzere (`23 Ekim 11,64 TL` →
+   `30 Ekim–2 Kasım 11,66–11,68 TL`, 2 kuruş / `+%0,17` fark), BIST kademe/kuruş farkıyla oluşan
+   yatay ikili dipler (`equal_price_tolerance_pct = 0.25`) PU30/NU70 kapsamında kabul edilir; belirgin
+   yüksek dip / düşük tepe (`>%0,25`) kabul edilmez.
 3. **Güven seviyesi saatlik yapıdan, kırılım mum kapanışıyla.** Tanım Hoca'nın ASELS grafiğinden
    (yukarıda). İğne sahte kırılım üretir ve kapanmamış mumdan sinyal üretmemek sistemin temel
    kuralıdır; ASELS örneği kapanışla birebir tuttu (12 Mayıs 15:30 kapanış 421,25).

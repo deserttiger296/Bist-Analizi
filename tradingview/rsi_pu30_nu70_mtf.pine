@@ -21,9 +21,9 @@ rb         = input.int(2, "Pivot sağ bar (teyit gecikmesi)", minval=1)
 minGap     = input.int(8, "İki pivot arası min bar", minval=3)
 maxGap     = input.int(60, "İki pivot arası max bar", minval=4)
 minTepki   = input.float(3.0, "Min tepki / geri çekilme %", minval=0.0)
-allowEqual = input.bool(false, "Eşit dip/tepe kabul (önerilmez: uyumsuzluk değil ikili dip)")
+eqTolPct   = input.float(0.25, "İkili dip/tepe kuruş toleransı % (ISCTR 11.64-11.66 örneği)", minval=0.0, step=0.05)
 htfRes     = input.timeframe("240", "Teyit zaman dilimi (1s grafikte 240 veya D)")
-htfLife    = input.int(5, "Teyit TF sinyal ömrü (bar)", minval=1)
+htfLife    = input.int(10, "Teyit TF sinyal ömrü (bar)", minval=1)
 showSoft   = input.bool(false, "Esnek uyumsuzluğu da göster (PU30/NU70 DEĞİLDİR)")
 softDipMax = input.float(55.0, "Esnek: 1. dip RSI <")
 softTopMin = input.float(45.0, "Esnek: 1. tepe RSI >")
@@ -39,6 +39,7 @@ f_div(bool bull) =>
     rHi  = ta.highest(r, lb + rb + 1)
     piv  = bull ? pl : ph
     rExt = bull ? rLo : rHi
+    float eqTol = bull ? (1.0 + eqTolPct / 100.0) : (1.0 - eqTolPct / 100.0)
     var idx = array.new_int()
     var prc = array.new_float()
     var rsv = array.new_float()
@@ -54,7 +55,23 @@ f_div(bool bull) =>
     if not na(piv) and not na(rExt)
         int   pNow = bar_index - rb
         float prNow = piv
-        float rNow = rExt
+        float rWin = rExt
+        // VAKBN & ISCTR (5 Kasım 2026): 2. dip/tepede sol pencere mumunda RSI 30 altına/70 üstüne sarksa bile
+        // pivot mumunun kendisinde (r[rb]) veya kuruş farkıyla sağındaki dönüş mumunda (r[rb-1]) eşik şartı sağlanıyorsa onu al.
+        float rPiv = r[rb]
+        float rNext = rb >= 1 ? r[rb - 1] : na
+        float prNext = rb >= 1 ? (bull ? low[rb - 1] : high[rb - 1]) : na
+        float rNow = rWin
+        if bull and rWin <= 30
+            if not na(rPiv) and rPiv > 30
+                rNow := rPiv
+            else if not na(rNext) and rNext > 30 and prNext <= prNow * eqTol
+                rNow := rNext
+        if not bull and rWin >= 70
+            if not na(rPiv) and rPiv < 70
+                rNow := rPiv
+            else if not na(rNext) and rNext < 70 and prNext >= prNow * eqTol
+                rNow := rNext
         int n = array.size(idx)
         if n > 0
             for k = n - 1 to 0
@@ -66,7 +83,7 @@ f_div(bool bull) =>
                     continue
                 float prOld = array.get(prc, k)
                 float rOld  = array.get(rsv, k)
-                bool priceOk = bull ? (allowEqual ? prNow <= prOld : prNow < prOld) : (allowEqual ? prNow >= prOld : prNow > prOld)
+                bool priceOk = bull ? (prNow <= prOld * eqTol) : (prNow >= prOld * eqTol)
                 bool rsiOk   = bull ? rNow > rOld : rNow < rOld
                 if not (priceOk and rsiOk)
                     continue
@@ -75,7 +92,7 @@ f_div(bool bull) =>
                 for o = rb + 1 to bar_index - pOld - 1
                     loB := na(loB) ? low[o] : math.min(loB, low[o])
                     hiB := na(hiB) ? high[o] : math.max(hiB, high[o])
-                bool regionOk = bull ? loB >= prNow : hiB <= prNow
+                bool regionOk = bull ? loB >= prNow / eqTol : hiB <= prNow / eqTol
                 float tepki = bull ? (hiB / prOld - 1) * 100 : (1 - loB / prOld) * 100
                 if not regionOk or tepki < minTepki
                     continue
@@ -103,7 +120,7 @@ f_div(bool bull) =>
                     level := bull ? hiB : loB
         array.push(idx, pNow)
         array.push(prc, prNow)
-        array.push(rsv, rNow)
+        array.push(rsv, rWin)
         if array.size(idx) > 100
             array.shift(idx)
             array.shift(prc)
