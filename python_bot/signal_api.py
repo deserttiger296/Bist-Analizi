@@ -275,5 +275,18 @@ def run_lab_suite(
             rows = df_log.tail(50).to_dict(orient="records")[::-1]
         return {"status": "success", "mode": "journal", "count": len(rows), "rows": rows}
 
+    if mode == "council":
+        from python_bot.engine.brain.agentic_council import run_agentic_council
+        sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+        provider = get_default_provider()
+        if len(sym_list) > 1 and hasattr(provider, "prefetch_ohlcv_batch"):
+            try:
+                provider.prefetch_ohlcv_batch(sym_list, interval=interval)
+            except Exception:
+                pass
+        results = [run_agentic_council(sym, interval=interval, use_llm=(suite == "llm")) for sym in sym_list]
+        return {"status": "success", "mode": "council", "interval": interval, "items": results}
+
     raise HTTPException(status_code=400, detail=f"Unsupported mode: {mode}")
+
 
