@@ -151,6 +151,12 @@ export default function HomePage() {
 
           <div className="flex items-center gap-3 flex-wrap">
             <Link
+              href="/lab"
+              className="px-4 py-2.5 rounded-xl border border-emerald-500/40 bg-emerald-950/40 text-emerald-300 font-bold text-xs hover:border-emerald-400 hover:bg-emerald-900/50 transition-all flex items-center gap-2"
+            >
+              <span>🧪 Test Laboratuvarı (Lab)</span>
+            </Link>
+            <Link
               href="/rsi-pu30"
               className="px-4 py-2.5 rounded-xl border border-violet-500/40 bg-violet-950/40 text-violet-300 font-bold text-xs hover:border-violet-400 hover:bg-violet-900/50 transition-all flex items-center gap-2"
             >

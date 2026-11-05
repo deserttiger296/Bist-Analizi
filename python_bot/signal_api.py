@@ -159,3 +159,121 @@ def get_most_rsi_detail(response: Response, symbol: str, interval: str = "1h"):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/lab")
+def run_lab_suite(
+    mode: str = "impulse",
+    symbols: str = "VAKBN,ISCTR,GARAN,AKBNK,YKBNK,THYAO,ASELS,TUPRS",
+    interval: str = "1h",
+    suite: str = "pu30",
+):
+    """
+    Birleşik Araştırma ve Test Laboratuvarı (Lab) API'si:
+      - mode="impulse": PU30 sonrası 1-2 İtki Dalgası anatomisi + Fib Zaman projeksiyonu testbed'i
+      - mode="pytest":  Birim ve regresyon test paketini (pytest) çalıştırır ve sonuçları döner
+      - mode="journal": Canlı PU30/NU70 sinyal günlüğü (pu30_signal_log.csv) kayıtlarını döner
+    """
+    import dataclasses
+    import subprocess
+    import sys
+    from pathlib import Path
+    from python_bot.engine.data.provider import DataStatus, get_default_provider
+    from python_bot.engine.signals.rsi_pu30 import (
+        DEFAULT_PU30_CONFIG,
+        SCAN_LIFETIME_BARS,
+        SCAN_MIN_GAP_BARS,
+        apply_hourly_trust_level,
+        detect_rsi_pu30,
+    )
+    from python_bot.scripts.testbed_impulse_fib_time import analyze_impulse_and_fib_time
+
+    if mode == "impulse":
+        sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+        provider = get_default_provider()
+        if len(sym_list) > 1 and hasattr(provider, "prefetch_ohlcv_batch"):
+            try:
+                provider.prefetch_ohlcv_batch(sym_list, interval=interval)
+            except Exception:
+                pass
+
+        cfg = dataclasses.replace(
+            DEFAULT_PU30_CONFIG,
+            signal_lifetime_bars=SCAN_LIFETIME_BARS.get(interval, 36),
+            min_gap_bars=SCAN_MIN_GAP_BARS.get(interval, 8),
+        )
+        items = []
+        for sym in sym_list:
+            res = provider.fetch_ohlcv(sym, interval=interval, include_forming_bar=False)
+            if res.status != DataStatus.FRESH or res.df is None:
+                items.append({"symbol": sym, "interval": interval, "has_signal": False, "status": str(res.status.value)})
+                continue
+            sig = detect_rsi_pu30(res.df, cfg, ignore_lifetime=True, interval=interval)
+            if not sig:
+                items.append({
+                    "symbol": sym,
+                    "interval": interval,
+                    "has_signal": False,
+                    "last_close": round(float(res.df["close"].iloc[-1]), 2),
+                })
+                continue
+            h1_df = res.df if interval == "1h" else provider.fetch_ohlcv(sym, interval="1h", include_forming_bar=False).df
+            apply_hourly_trust_level(sig, res.df, h1_df, interval)
+            lab_report = analyze_impulse_and_fib_time(res.df, sig)
+            items.append({
+                "symbol": sym,
+                "interval": interval,
+                "has_signal": True,
+                "last_close": round(float(res.df["close"].iloc[-1]), 2),
+                "bars_since_confirm": sig["bars_since_confirm"],
+                "in_live_window": bool(sig["bars_since_confirm"] <= cfg.signal_lifetime_bars),
+                "dip1": sig["dip1"],
+                "dip2": sig["dip2"],
+                "saatlik_seviye": sig.get("saatlik_seviye"),
+                "impulse_analysis": lab_report,
+            })
+        return {"status": "success", "mode": "impulse", "interval": interval, "items": items}
+
+    if mode == "pytest":
+        root_dir = Path(__file__).resolve().parents[1]
+        test_targets = (
+            [
+                "python_bot/tests/test_pu30_strict.py",
+                "python_bot/tests/test_hourly_trust_level.py",
+                "python_bot/tests/test_most_rsi.py",
+                "python_bot/tests/test_provider_session.py",
+            ]
+            if suite == "pu30"
+            else ["python_bot/tests/"]
+        )
+        existing_targets = [t for t in test_targets if (root_dir / t).exists()]
+        if not existing_targets:
+            existing_targets = ["python_bot/tests/test_pu30_strict.py"]
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", *existing_targets, "-v", "--tb=short"],
+            cwd=str(root_dir),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        return {
+            "status": "success",
+            "mode": "pytest",
+            "suite": suite,
+            "exit_code": proc.returncode,
+            "passed": proc.returncode == 0,
+            "output": (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else ""),
+        }
+
+    if mode == "journal":
+        import pandas as pd
+        root_dir = Path(__file__).resolve().parents[1]
+        log_path = root_dir / "python_bot" / "data" / "pu30_signal_log.csv"
+        rows = []
+        if log_path.exists():
+            df_log = pd.read_csv(log_path).fillna("")
+            rows = df_log.tail(50).to_dict(orient="records")[::-1]
+        return {"status": "success", "mode": "journal", "count": len(rows), "rows": rows}
+
+    raise HTTPException(status_code=400, detail=f"Unsupported mode: {mode}")
+

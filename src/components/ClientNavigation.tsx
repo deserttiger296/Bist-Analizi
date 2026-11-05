@@ -62,6 +62,7 @@ export function ClientNavigation({ children }: { children: React.ReactNode }) {
           <SidebarLink href="/premium-dashboard" icon="🔔" label="Alarmlar" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
           <SidebarLink href="/history" icon="📜" label="Sistem Logları" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
           <SidebarLink href="/rsi-pu30" icon="📉" label="RSI PU30 (Ayrı Motor)" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
+          <SidebarLink href="/lab" icon="🧪" label="Test Laboratuvarı (Lab)" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
           
           <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-8 mb-3 px-2">Araçlar</div>
           <SidebarLink href="/tracker" icon="📈" label="Takipçi" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
