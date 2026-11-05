@@ -33,10 +33,12 @@ from python_bot.engine.universe import BIST100_SYMBOLS  # noqa: E402
 
 CLASS_LABELS = {
     "DOUBLE_BULL": "ANA DÖNÜŞ (çoklu TF teyitli)",
-    "SCALP_1H": "TEPKİ (kısa işlem; 4s/G teyidi yok)",
+    "SCALP_1H": "TEPKİ (15dk GVT tetikli; 4s/G teyidi yok)",
+    "TRAP_15M_BULL": "15dk TUZAK (Saatlik PU30 yok: öğlene kadar tepki, öğleden sonra yeni dip riski)",
     "MACRO_4H": "ANA DÖNÜŞ (saatlik tetik bekleniyor)",
     "DOUBLE_BEAR": "ANA ZİRVE (çoklu TF teyitli) -- spot: çık, VİOP: short",
-    "SCALP_BEAR": "KISA DÜZELTME (4s/G teyidi yok)",
+    "SCALP_BEAR": "KISA DÜZELTME (15dk GKD tetikli; 4s/G teyidi yok)",
+    "TRAP_15M_BEAR": "15dk TUZAK -- ÇOK TEHLİKELİ (Saatlik NU70 yok: öğlene kadar düşer, öğleden sonra yeni zirve alabilir; dönüp alırsa 1s NU70 doğar)",
     "MACRO_BEAR": "ZİRVE YORULMASI (saatlik güven kıran dip bekleniyor)",
 }
 
@@ -49,8 +51,9 @@ def _class_label(sig):
 
 
 def _level_text(sig, is_pu):
-    name = "saatlik güven tazeleyen tepe" if is_pu else "saatlik güven kıran dip"
     lvl = sig.get("saatlik_seviye")
+    tf_adj = "15dk" if (lvl and lvl.get("alt_periyot") == "15dk") else "saatlik"
+    name = f"{tf_adj} güven tazeleyen tepe" if is_pu else f"{tf_adj} güven kıran dip"
     if lvl is None:  # flexible signals: between-pivot extreme only
         level = sig.get("guven_tazeleyen_tepe" if is_pu else "guven_kiran_dip") or {}
         return f"ara bölge {'tepe' if is_pu else 'dip'} {level.get('price')}"
@@ -114,7 +117,7 @@ def _flexible(symbols, interval, signal_type, workers):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="BIST RSI PU30 / NU70 uyumsuzluk tarayıcısı")
     ap.add_argument("semboller", nargs="*", help="Boşsa BIST100")
-    ap.add_argument("--interval", choices=["1h", "4h", "1d"], default="4h")
+    ap.add_argument("--interval", choices=["15m", "1h", "4h", "1d"], default="4h")
     ap.add_argument("--type", choices=["all", "pu30", "nu70"], default="all")
     ap.add_argument("--esnek", action="store_true", help="Esnek trend uyumsuzluklarını da ayrı etiketle listele")
     ap.add_argument("--workers", type=int, default=8)

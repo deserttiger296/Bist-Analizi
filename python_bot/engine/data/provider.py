@@ -180,6 +180,8 @@ def bar_close_time(bar_time, interval):
         return ts.normalize() + (pd.Timedelta(hours=14, minutes=30) if ts.hour < 14 else pd.Timedelta(hours=18, minutes=10))
     if interval == "1h":
         return ts + pd.Timedelta(hours=1)
+    if interval == "15m":
+        return ts + pd.Timedelta(minutes=15)
     raise ValueError(f"Unsupported interval: {interval}")
 
 
@@ -199,6 +201,8 @@ def are_bars_closed(dates: Any, interval: str, now_ist: Any = None) -> np.ndarra
     dt_idx = dt_idx.tz_localize(ISTANBUL_TZ) if dt_idx.tz is None else dt_idx.tz_convert(ISTANBUL_TZ)
     if interval == "1h":
         close_times = dt_idx + pd.Timedelta(hours=1)
+    elif interval == "15m":
+        close_times = dt_idx + pd.Timedelta(minutes=15)
     elif interval == "1d":
         close_times = dt_idx.normalize() + pd.Timedelta(hours=18, minutes=10)
     elif interval == "4h":
@@ -433,19 +437,19 @@ class YFinanceDataProvider:
         norm_sym = normalize_bist_symbol(symbol)
         limit_note = PROVIDER_LIMITS.get(interval, "Standart geçmiş veri sınırı geçerlidir.")
 
-        if interval not in ("1d", "4h", "1h"):
+        if interval not in ("1d", "4h", "1h", "15m"):
             return DataResult(
                 symbol=clean_sym,
                 interval=interval,
                 status=DataStatus.ERROR,
-                error_message=f"Desteklenmeyen zaman dilimi: {interval}. Desteklenenler: 1d, 4h, 1h",
+                error_message=f"Desteklenmeyen zaman dilimi: {interval}. Desteklenenler: 1d, 4h, 1h, 15m",
                 history_limit_note=limit_note,
             )
 
         try:
             # 4h için yfinance'ten 1h çekip BIST seansına göre sentezliyoruz (max 730d)
             fetch_interval = "1h" if interval == "4h" else interval
-            fetch_period = period or ("730d" if interval in ("1h", "4h") else "1y")
+            fetch_period = period or ("60d" if interval == "15m" else "730d" if interval in ("1h", "4h") else "1y")
 
             raw = self._download_raw(norm_sym, fetch_interval, fetch_period)
 

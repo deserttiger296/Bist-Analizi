@@ -77,18 +77,19 @@ class NU70Config:
 
 DEFAULT_PU30_CONFIG = PU30Config()
 DEFAULT_NU70_CONFIG = NU70Config()
-SCAN_LIFETIME_BARS = {"1h": 36, "4h": 10, "1d": 5}
-SCAN_MIN_GAP_BARS = {"1h": 8, "4h": 6, "1d": 5}
+SCAN_LIFETIME_BARS = {"15m": 20, "1h": 36, "4h": 15, "1d": 15}
+SCAN_MIN_GAP_BARS = {"15m": 6, "1h": 8, "4h": 6, "1d": 5}
 
 INTERVALS = {
     "1d": ("1y", "%Y-%m-%d", 24 * 60),
     "4h": ("730d", "%Y-%m-%d %H:%M", 4 * 60),
     "1h": ("730d", "%Y-%m-%d %H:%M", 60),
+    "15m": ("60d", "%Y-%m-%d %H:%M", 15),
 }
 
 _EPOCH = pd.Timestamp("1970-01-01")
 MIN_BARS_REQUIRED = 25
-_TF_LABEL = {"1h": "1s", "4h": "4s", "1d": "Günlük"}
+_TF_LABEL = {"15m": "15dk", "1h": "1s", "4h": "4s", "1d": "Günlük"}
 
 
 def _epoch_seconds(ts: Any) -> int:
@@ -590,7 +591,15 @@ def hourly_trust_level(
     if start.tzinfo is None:
         start = start.tz_localize("Europe/Istanbul")
     end = bar_close_time(start, interval)
-    in_bar = ((dates + pd.Timedelta(hours=1)) > start) & (dates < end)
+    # Alt periyot bar genişliği: 15dk alt veri geldiyse 15dk, aksi halde 1 saat
+    sub_delta = pd.Timedelta(hours=1)
+    if len(dates) >= 3:
+        diffs = dates.diff().dropna()
+        pos_diffs = diffs[diffs > pd.Timedelta(0)]
+        if len(pos_diffs) > 0 and pos_diffs.median() <= pd.Timedelta(minutes=20):
+            sub_delta = pd.Timedelta(minutes=15)
+    out["alt_periyot"] = "15dk" if sub_delta == pd.Timedelta(minutes=15) else "1s"
+    in_bar = ((dates + sub_delta) > start) & (dates < end)
     if not in_bar.any():
         return out
     highs = h1["high"].to_numpy(dtype=np.float64)
@@ -601,17 +610,21 @@ def hourly_trust_level(
     extreme = lows[z] if bull else highs[z]
     out["zirve" if not bull else "dip"] = {"price": round(float(extreme), 2), "date": dates.iloc[z].isoformat()}
 
-    # Structure pivots after the extreme: the left window only looks at bars AFTER the
-    # extreme. Otherwise a lower high formed a few hours after the zirve is never a pivot
-    # (the zirve itself sits in its left window) and the first "zirveyi geçemeyen tepe"
-    # is skipped (ASELS: 439,50 would be missed in favour of a later 434,50).
+    # Structure pivots after the extreme: the left window starts no earlier than the
+    # intermediate Wave 1 peak (for PU) or trough (for NU) `lvl_idx`, so a higher low /
+    # lower high formed within <1 day after a steep Wave 1 is never rejected because of
+    # lower prices that existed BEFORE the Wave 1 peak while climbing from `z`.
     series = lows if bull else highs
     pivots = []
     for p in range(z + 2, len(series) - rb):
-        left = series[max(z + 1, p - lb):p]
+        between_p = slice(z + 1, p)
+        lvl_idx_p = z + 1 + int(np.argmax(highs[between_p]) if bull else np.argmin(lows[between_p]))
+        left = series[max(lvl_idx_p, p - lb):p]
         right = series[p + 1:p + rb + 1]
-        if (np.all(series[p] < left) and np.all(series[p] <= right)) if bull else \
-           (np.all(series[p] > left) and np.all(series[p] >= right)):
+        if len(left) >= 1 and (
+            (np.all(series[p] < left) and np.all(series[p] <= right)) if bull else
+            (np.all(series[p] > left) and np.all(series[p] >= right))
+        ):
             pivots.append(p)
     for p in pivots:
         if bull and lows[z + 1:p + 1].min() < extreme:
@@ -645,8 +658,9 @@ def hourly_trust_level(
 
 
 def apply_hourly_trust_level(sig: Dict[str, Any], df: pd.DataFrame, h1: Optional[pd.DataFrame], interval: str) -> None:
-    """Replaces the signal's trigger level with Semih Hoca's hourly definition. The old
-    between-pivot extreme is kept as `ara_bolge_*`; if the hourly structure has not formed
+    """Replaces the signal's trigger level with Semih Hoca's sub-timeframe definition
+    (Günlük/4s -> 1 Saatlik GVT/GKD; 1 Saatlik -> 15 Dakikalık GVT/GKD). The old
+    between-pivot extreme is kept as `ara_bolge_*`; if the sub-timeframe structure has not formed
     yet the trigger level is None (shown as 'bekleniyor'), never the between-pivot value."""
     bull = sig["type"] == "PU30"
     key = "guven_tazeleyen_tepe" if bull else "guven_kiran_dip"
@@ -655,29 +669,37 @@ def apply_hourly_trust_level(sig: Dict[str, Any], df: pd.DataFrame, h1: Optional
     level = hourly_trust_level(h1, df["date"].iloc[p2["index"]], interval, bull)
     sig["saatlik_seviye"] = level
     if level["price"] is not None:
-        sig[key] = {"price": level["price"], "date": level.get("date"), "kirildi": level["kirildi"], "kaynak": "saatlik_yapi"}
+        sig[key] = {
+            "price": level["price"],
+            "date": level.get("date"),
+            "kirildi": level["kirildi"],
+            "kaynak": "saatlik_yapi",
+            "alt_periyot": level.get("alt_periyot", "1s"),
+        }
     else:
         sig[key] = None
     sig["tetiklendi"] = bool(level["kirildi"])
 
 
 def _trigger_text(level: Dict[str, Any], bull: bool) -> str:
+    tf_lbl = "15dk" if level.get("alt_periyot") == "15dk" else "Saatlik"
+    tf_adj = "15dk" if level.get("alt_periyot") == "15dk" else "saatlik"
     name = "güven tazeleyen tepe" if bull else "güven kıran dip"
     act = "aşıldı: alış teyidi" if bull else "kırıldı: satış / stop"
-    todo = "üzerinde saatlik kapanışta alış" if bull else "altında saatlik kapanışta satış"
-    structure = "dibi kıramayan saatlik dip" if bull else "zirveyi geçemeyen saatlik tepe"
+    todo = f"üzerinde {tf_adj} kapanışta alış" if bull else f"altında {tf_adj} kapanışta satış"
+    structure = f"dibi kıramayan {tf_adj} dip" if bull else f"zirveyi geçemeyen {tf_adj} tepe"
     durum = level.get("durum")
     if durum == "kirildi":
         back = (bull and level.get("fiyat_seviyenin") == "altinda") or (not bull and level.get("fiyat_seviyenin") == "ustunde")
         tail = " Fiyat şu an yeniden seviyenin " + ("altında" if bull else "üstünde") + "; teyit zayıfladı." if back else ""
-        return f"Saatlik {name} {level['price']} {act} ({level.get('kirilim_date', '')[:16]}).{tail}"
+        return f"{tf_lbl} {name} {level['price']} {act} ({level.get('kirilim_date', '')[:16]}).{tail}"
     if durum == "bekleniyor_kirilim":
-        return f"Saatlik {name} {level['price']}: {todo}."
+        return f"{tf_lbl} {name} {level['price']}: {todo}."
     if durum == "bekleniyor_yapi":
-        return f"Saatlik {name} henüz oluşmadı: önce {structure} bekleniyor."
+        return f"{tf_lbl} {name} henüz oluşmadı: önce {structure} bekleniyor."
     if durum == "gecersiz":
-        return "Saatlik yapı bozuldu (" + ("2. dibin altına inildi" if bull else "zirve aşıldı") + "); sinyal zayıfladı."
-    return "Saatlik veri alınamadı; tetik seviyesi hesaplanamadı."
+        return f"{tf_lbl} yapı bozuldu (" + ("2. dibin altına inildi" if bull else "zirve aşıldı") + "); sinyal zayıfladı."
+    return f"{tf_lbl} veri alınamadı; tetik seviyesi hesaplanamadı."
 
 
 def scan_universe_rsi_pu30(
@@ -729,9 +751,15 @@ def scan_universe_rsi_pu30(
             data_status = data_res.status.value if data_res else "UNKNOWN"
 
             # Semih Hoca kural 3-4: 4s + günlük ana yön, 1s erken tetik / güven kıran dip.
-            #   1s taramada üst teyit = 4s VEYA günlük; 4s taramada alt teyit = 1s.
-            #   Karşı zaman dilimleri yalnızca sinyal bulunduğunda (lazy) çekilir.
-            cross_intervals = {"1h": ["4h", "1d"], "4h": ["1h"], "1d": ["1h"]}.get(interval, [])
+            #   Günlüğün ve 4s'nin GVT/GKD'si = 1 Saatlik ("1h")
+            #   Saatliğin GVT/GKD'si = 15 Dakikalık ("15m")
+            #   15dk tek başına uyumsuzluk = TUZAK ("Öğlene kadar düşerim, öğleden sonra yeni zirve yapabilirim")
+            cross_intervals = {
+                "15m": ["1h", "4h", "1d"],
+                "1h": ["4h", "1d"],
+                "4h": ["1h"],
+                "1d": ["1h"],
+            }.get(interval, [])
             _cross_cache: Dict[str, Optional[pd.DataFrame]] = {}
 
             def _cross_df(ci: str) -> Optional[pd.DataFrame]:
@@ -743,6 +771,16 @@ def scan_universe_rsi_pu30(
                     except Exception:
                         _cross_cache[ci] = None
                 return _cross_cache[ci]
+
+            def _sub_trust_df() -> Optional[pd.DataFrame]:
+                if interval == "15m":
+                    return df
+                if interval == "1h":
+                    m15 = _cross_df("15m")
+                    if m15 is not None and len(m15) > 0:
+                        return m15
+                    return df
+                return _cross_df("1h")
 
             def _cross_hits(detector, base_cfg) -> List[str]:
                 hits = []
@@ -770,19 +808,23 @@ def scan_universe_rsi_pu30(
                     has_cross_pu = bool(cross_pu)
                     sig_pu["confirmed_timeframes"] = [interval] + cross_pu
 
-                    apply_hourly_trust_level(sig_pu, df, df if interval == "1h" else _cross_df("1h"), interval)
+                    apply_hourly_trust_level(sig_pu, df, _sub_trust_df(), interval)
                     if has_cross_pu:
                         sig_pu["confluence"] = "DOUBLE_BULL"
                         sig_pu["confluence_badge"] = f"💎 {' + '.join(sig_pu['confirmed_timeframes'])} ÇİFTE ONAY (ANA RALLİ)"
                         head = f"{' + '.join(_TF_LABEL.get(t, t) for t in sig_pu['confirmed_timeframes'])} teyitli ana dip dönüşü (Semih Hoca: 1s + 4s/G = ana dönüş)."
+                    elif interval == "15m":
+                        sig_pu["confluence"] = "TRAP_15M_BULL"
+                        sig_pu["confluence_badge"] = "☠️ 15dk UYUMSUZLUK TUZAĞI (Öğlene Kadar Tepki, Öğleden Sonra Yeni Dip Riski)"
+                        head = "15dk tek başına uyumsuzluk (Saatlikte PU30 yok): İşlem açmak çok tehlikelidir; öğlene kadar tepki verip öğleden sonra dönüp yeni dip alabilir ve ancak o zaman 1s PU30 doğar."
                     elif interval == "1h":
                         sig_pu["confluence"] = "SCALP_1H"
-                        sig_pu["confluence_badge"] = "⚡ 1s TEPKİ YÜKSELİŞİ (KISA VADE)"
-                        head = "Düşüş trendi içinde ara tepkidir (4s/G teyidi henüz yok). Kısa vadeli gir-çık."
+                        sig_pu["confluence_badge"] = "⚡ 1s TEPKİ YÜKSELİŞİ (15dk Tetik)"
+                        head = "Düşüş trendi içinde ara tepkidir (4s/G teyidi henüz yok). 15dk GVT/GKD ile hareket edilir."
                     else:
                         sig_pu["confluence"] = "MACRO_4H"
                         sig_pu["confluence_badge"] = f"🏛️ {_TF_LABEL.get(interval, interval)} ANA DÖNÜŞ (" + ("Saatlik Tetik Geldi" if sig_pu["tetiklendi"] else "Saatlik Tetik Bekleniyor") + ")"
-                        head = f"{_TF_LABEL.get(interval, interval)} grafikte PU30 oluştu."
+                        head = f"{_TF_LABEL.get(interval, interval)} grafikte PU30 oluştu (En az 15 gün vade, Saatlik GVT/GKD takip)."
                     sig_pu["strategy_action"] = f"{head} {_trigger_text(sig_pu['saatlik_seviye'], bull=True)}"
 
                     found.append(sig_pu)
@@ -799,19 +841,29 @@ def scan_universe_rsi_pu30(
                     has_cross_nu = bool(cross_nu)
                     sig_nu["confirmed_timeframes"] = [interval] + cross_nu
 
-                    apply_hourly_trust_level(sig_nu, df, df if interval == "1h" else _cross_df("1h"), interval)
+                    apply_hourly_trust_level(sig_nu, df, _sub_trust_df(), interval)
                     if has_cross_nu:
                         sig_nu["confluence"] = "DOUBLE_BEAR"
                         sig_nu["confluence_badge"] = f"🚨 {' + '.join(sig_nu['confirmed_timeframes'])} ÇİFTE DÜŞÜŞ (ZİRVE ÇÖKÜŞ)"
                         head = "Çoklu zaman diliminde tepe uyumsuzluğu (ana zirve)."
+                    elif interval == "15m":
+                        opp_bull = _cross_hits(detect_rsi_pu30, DEFAULT_PU30_CONFIG)
+                        opp_note = f" (Üst periyot {'+'.join(opp_bull)} ANA BOĞA trendinde!)" if opp_bull else ""
+                        sig_nu["confluence"] = "TRAP_15M_BEAR"
+                        sig_nu["confluence_badge"] = "☠️ 15dk UYUMSUZLUK TUZAĞI (Short Çok Tehlikeli — Öğlene Kadar Düşer, Öğleden Sonra Yeni Zirve Yapabilir)"
+                        head = (
+                            f"15dk tek başına uyumsuzluk{opp_note}: İşlem açmak çok tehlikeli! "
+                            "'Öğlene kadar düşerim, öğleden sonra dönüp yeni zirve yapabilirim' der. "
+                            "Ancak dönüp yeni zirveyi aldığında Saatlikte (1s) NU70 oluşursa o zaman gerçek basış başlar (ASELS örneği)."
+                        )
                     elif interval == "1h":
                         sig_nu["confluence"] = "SCALP_BEAR"
-                        sig_nu["confluence_badge"] = "⚠️ 1s GÜVEN KIRAN DİP UYARISI"
-                        head = "Saatlikte tepe uyumsuzluğu (4s/G teyidi yok): kısa düzeltme."
+                        sig_nu["confluence_badge"] = "⚠️ 1s GÜVEN KIRAN DİP UYARISI (15dk Tetik)"
+                        head = "Saatlikte tepe uyumsuzluğu (4s/G teyidi yok): 15dk GKD kırılımıyla hareket edilir."
                     else:
                         sig_nu["confluence"] = "MACRO_BEAR"
                         sig_nu["confluence_badge"] = f"🔴 {_TF_LABEL.get(interval, interval)} TEPE YORULMASI"
-                        head = f"{_TF_LABEL.get(interval, interval)} grafikte NU70 oluştu (spot hissede çıkış uyarısı)."
+                        head = f"{_TF_LABEL.get(interval, interval)} grafikte NU70 oluştu (Saatlik GKD altında kapanışta stop)."
                     sig_nu["strategy_action"] = f"{head} {_trigger_text(sig_nu['saatlik_seviye'], bull=False)}"
 
                     found.append(sig_nu)
