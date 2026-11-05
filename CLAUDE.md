@@ -29,3 +29,9 @@ Nicel (quant) motor artık `python_bot/` altında konsolide edilmiş durumda (es
 * Python testleri: `.venv/Scripts/python.exe -m pytest python_bot/tests/ -v` (repo kökünden).
 * Eşbütünleşme testi: `GET http://127.0.0.1:8000/api/cointegration?asset_a=GARAN&asset_b=AKBNK`.
 * Rejim tespiti: `GET http://127.0.0.1:8000/api/regime?symbol=XU100.IS`.
+
+## Pro Kota ve Token Disiplini
+- Geniş çaplı dosya aramalarını kendin yapma, `@agent-scout` ajanına devret.
+- Test ve build çalıştırırken `@agent-test-runner` ajanını kullan.
+- Bir dosyayı okurken tamamını okumak yerine sadece ilgili satır aralıklarını oku.
+- `node_modules`, `dist`, `build`, `.next`, `.git`, `venv`, `bin`, `obj` ve `*.lock` dosyalarını asla okuma.
