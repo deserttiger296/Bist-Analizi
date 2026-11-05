@@ -1,0 +1,13 @@
+node_modules/
+dist/
+build/
+.next/
+bin/
+obj/
+*.lock
+package-lock.json
+*.log
+*.min.js
+.git/
+venv/
+.venv/
