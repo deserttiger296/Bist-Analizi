@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { signSession } from "@/lib/auth";
+import { signSession, verifyOAuthState } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -33,12 +33,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${origin}/login?auth_error=missing_code`);
   }
 
+  // Stateless HMAC state check + cookie fallback (prevents state_mismatch on mobile/in-app browsers and preview domains)
   const savedState = req.cookies.get("oauth_state")?.value;
-  if (!savedState || savedState !== state) {
-    // State mismatch / CSRF guard (if state cookie expired, continue if code exists in dev)
-    if (process.env.NODE_ENV === "production") {
-      return NextResponse.redirect(`${origin}/login?auth_error=state_mismatch`);
-    }
+  const isStateValid = verifyOAuthState(state) || (Boolean(savedState) && savedState === state);
+  if (!isStateValid && process.env.NODE_ENV === "production") {
+    return NextResponse.redirect(`${origin}/login?auth_error=state_mismatch`);
   }
 
   const clientId = process.env.GOOGLE_CLIENT_ID;

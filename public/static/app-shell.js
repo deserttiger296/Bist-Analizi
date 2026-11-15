@@ -74,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             </div>
                         `;
                     } else {
-                        if (typeof window !== 'undefined' && window.location && typeof window.location.replace === 'function' && !window.location.pathname.startsWith('/login')) {
+                        if (typeof window !== 'undefined' && window.location && typeof window.location.replace === 'function' && !window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/privacy')) {
                             window.location.replace('/login');
                             return;
                         }

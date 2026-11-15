@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import crypto from "crypto";
+import { signOAuthState } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
   const origin = getOrigin(req);
   const redirectUri = `${origin}/auth/callback`;
-  const state = crypto.randomBytes(16).toString("hex");
+  const state = signOAuthState();
 
   const googleAuthUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   googleAuthUrl.searchParams.set("client_id", clientId);

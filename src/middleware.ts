@@ -5,6 +5,8 @@ export function middleware(request: NextRequest) {
 
   // 1. Allow public routes, auth flows, health check and static assets
   if (
+    pathname === "/privacy" ||
+    pathname.startsWith("/privacy/") ||
     pathname === "/login" ||
     pathname.startsWith("/login/") ||
     pathname.startsWith("/api/auth") ||
@@ -15,7 +17,11 @@ export function middleware(request: NextRequest) {
     pathname === "/favicon.ico" ||
     pathname === "/icon.svg"
   ) {
-    return NextResponse.next();
+    const res = NextResponse.next();
+    if (pathname === "/privacy" || pathname.startsWith("/privacy/")) {
+      res.headers.set("X-Robots-Tag", "index, follow");
+    }
+    return res;
   }
 
   // 2. Allow API routes so internal client fetches return JSON rather than redirecting

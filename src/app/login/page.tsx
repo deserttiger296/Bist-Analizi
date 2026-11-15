@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { verifySession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export default async function LoginPage({
   const authError = sp.auth_error;
 
   return (
-    <div className="relative min-h-screen bg-[#060913] text-slate-100 flex flex-col justify-between overflow-x-hidden selection:bg-cyan-500/20 selection:text-cyan-400">
+    <div className="relative h-screen overflow-y-auto bg-[#060913] text-slate-100 flex flex-col justify-between overflow-x-hidden selection:bg-cyan-500/20 selection:text-cyan-400">
       {/* Ambient background glows */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[700px] h-[500px] bg-gradient-to-b from-cyan-500/15 via-blue-600/10 to-transparent blur-3xl opacity-70" />
@@ -193,7 +194,14 @@ export default async function LoginPage({
         <div>
           © 2026 BIST Quantum Sniper · Nicel Finans & Algoritmik Strateji Araştırma Laboratuvarı
         </div>
-        <div className="flex items-center gap-6 text-slate-400 text-[11px]">
+        <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 text-slate-400 text-[11px]">
+          <Link
+            href="/privacy"
+            className="text-cyan-400 hover:text-cyan-300 underline underline-offset-4 font-medium transition-colors"
+          >
+            Privacy Policy / Gizlilik Politikası
+          </Link>
+          <span>•</span>
           <span>Semih PU30/NU70</span>
           <span>•</span>
           <span>BIST100 / VİOP30</span>

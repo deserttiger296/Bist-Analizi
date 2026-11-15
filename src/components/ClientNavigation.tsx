@@ -40,7 +40,7 @@ export function ClientNavigation({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [menuOpen]);
 
-  if (pathname === "/login") {
+  if (pathname === "/login" || pathname === "/privacy") {
     return <>{children}</>;
   }
 
@@ -63,6 +63,11 @@ export function ClientNavigation({ children }: { children: React.ReactNode }) {
       <div className="rsi-sidebar-footer">
         <div className={`rsi-engine-status ${engine}`} role="status"><span className="dot" />{ { checking: "Motor kontrol ediliyor…", online: "Sinyal motoru çevrimiçi", offline: "Sinyal motoruna erişilemiyor" }[engine]}</div>
         <strong>Araştırın. Karşılaştırın. Doğrulayın.</strong><p>Yeni özellikler önce Test Merkezi&apos;nde.</p>
+        <div className="mt-2 pt-2 border-t border-slate-800/70">
+          <Link href="/privacy" className="text-[11px] text-cyan-400 hover:text-cyan-300 underline underline-offset-4">
+            Privacy Policy / Gizlilik Politikası
+          </Link>
+        </div>
       </div>
     </aside>
     <button type="button" className="rsi-menu-overlay" aria-label="Menüyü kapat" onClick={() => setMenuOpen(false)} />
@@ -76,7 +81,15 @@ export function ClientNavigation({ children }: { children: React.ReactNode }) {
           <AuthButton />
         </div>
       </header>
-      <main className="rsi-page-scroll"><div className="rsi-content">{children}</div></main>
+      <main className="rsi-page-scroll">
+        <div className="rsi-content">{children}</div>
+        <footer className="px-6 py-4 mt-8 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+          <span>© 2026 BIST Analizi · Teknik Analiz ve Sinyal Platformu</span>
+          <Link href="/privacy" className="text-cyan-400 hover:text-cyan-300 underline underline-offset-4 font-medium">
+            Privacy Policy / Gizlilik Politikası
+          </Link>
+        </footer>
+      </main>
     </div>
   </div>;
 }
