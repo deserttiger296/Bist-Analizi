@@ -4,18 +4,18 @@ import { signSession } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 function getOrigin(req: NextRequest): string {
-  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "";
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || req.nextUrl.host || "";
   if (host.includes("localhost") || host.includes("127.0.0.1")) {
     return "http://localhost:3000";
   }
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    return process.env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, "");
+  if (host.includes("forfuck-s-sake.vercel.app")) {
+    return "https://bist-analizi-forfuck-s-sake.vercel.app";
   }
   const proto = req.headers.get("x-forwarded-proto") || "https";
   if (host) {
     return `${proto}://${host}`;
   }
-  return "https://bist-analizi.vercel.app";
+  return "https://bist-analizi-forfuck-s-sake.vercel.app";
 }
 
 export async function GET(req: NextRequest) {
