@@ -57,7 +57,7 @@ export default function LiveSignalPanel({ symbol }: LiveSignalPanelProps) {
         <div><dt className="workspace-field-label">Fiyat yapısı teyidi</dt><dd className="text-slate-200">{quote.higherHighs && quote.higherLows ? "Yükselen tepe ve dipler mevcut" : "Birlikte teyit edilmedi"}</dd></div>
         <div><dt className="workspace-field-label">RSI</dt><dd className="text-slate-200">{formatNumber(quote.rsi)}</dd></div>
         <div><dt className="workspace-field-label">Ortalamaya göre hacim</dt><dd className="text-slate-200">{formatNumber(quote.volumeMultiple)}×</dd></div>
-        <div><dt className="workspace-field-label">SMA20'ye uzaklık</dt><dd className="text-slate-200">%{formatNumber(quote.sma20Distance)}</dd></div>
+        <div><dt className="workspace-field-label">SMA20&apos;ye uzaklık</dt><dd className="text-slate-200">%{formatNumber(quote.sma20Distance)}</dd></div>
       </dl>
       <div>
         <h3 className="text-sm font-semibold text-slate-200 mb-3">Zaman dilimleri · TSI (9 · 3 · 2 · 10)</h3>
