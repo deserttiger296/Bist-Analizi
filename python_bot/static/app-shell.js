@@ -1,4 +1,37 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // Global Error Catcher & Telemetry
+    if (typeof window !== 'undefined' && !window.__error_catcher_attached) {
+        window.__error_catcher_attached = true;
+        window.addEventListener('error', event => {
+            try {
+                fetch('/api/telemetry/error', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: event.message || 'Window error',
+                        source: `${event.filename || 'unknown'}:${event.lineno || 0}:${event.colno || 0}`,
+                        stack: event.error?.stack || null,
+                        url: window.location.href,
+                    })
+                }).catch(() => {});
+            } catch (_) {}
+        });
+        window.addEventListener('unhandledrejection', event => {
+            try {
+                fetch('/api/telemetry/error', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: event.reason?.message || String(event.reason || 'Unhandled Promise Rejection'),
+                        source: 'unhandledrejection',
+                        stack: event.reason?.stack || null,
+                        url: window.location.href,
+                    })
+                }).catch(() => {});
+            } catch (_) {}
+        });
+    }
+
     const root = document.body;
     const toggle = document.getElementById('rsi-menu-toggle');
     const overlay = document.getElementById('rsi-menu-overlay');

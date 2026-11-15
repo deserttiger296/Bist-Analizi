@@ -12,6 +12,21 @@ export default function ErrorBoundary({
   useEffect(() => {
     // Log the error to an error reporting service
     console.error("Route Segment Error Caught:", error);
+    try {
+      fetch("/api/telemetry/error", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: error.message,
+          stack: error.stack,
+          source: "ErrorBoundary",
+          digest: error.digest,
+          url: typeof window !== "undefined" ? window.location.href : "server",
+        }),
+      }).catch(() => {});
+    } catch {
+      // Ignore reporting error
+    }
   }, [error]);
 
   return (
