@@ -69,6 +69,8 @@ def scan_rsi_pu30(response: Response, interval: str = "4h", signal_type: str = "
     interval: "1d", "4h" veya "1h".
     signal_type: "all", "pu30", "nu70".
     """
+    interval = (interval or "4h").lower()
+    signal_type = (signal_type or "all").lower()
     if interval not in ("1d", "4h", "1h"):
         raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
     if signal_type not in ("all", "pu30", "nu70"):
