@@ -15,17 +15,18 @@ export async function GET(req: NextRequest) {
   const symbols = searchParams.get("symbols") || "VAKBN,ISCTR,GARAN,AKBNK,YKBNK,THYAO,ASELS,TUPRS";
   const interval = searchParams.get("interval") || "1h";
   const suite = searchParams.get("suite") || "pu30";
+  const viopOnly = searchParams.get("viop_only") || "false";
   if (mode === "pytest" && process.env.VERCEL) {
     return NextResponse.json({ status: "error", detail: "Testler Test Merkezi / CI ortamında çalıştırılır. Yayınlanmış raporu görüntüleyin." }, { status: 409 });
   }
-  if (!["catalog", "impulse", "pytest", "journal", "council"].includes(mode) ||
+  if (!["catalog", "impulse", "pytest", "journal", "council", "longshort"].includes(mode) ||
       (mode === "pytest" && !["resilience", "pu30", "mtf", "compatibility", "all"].includes(suite))) {
     return NextResponse.json({ status: "error", detail: "Geçersiz Lab modu veya test paketi." }, { status: 400 });
   }
 
   // 1. Önce çalışan Python FastAPI motoruna (/api/lab) bağlanmayı dene
   try {
-    const qs = new URLSearchParams({ mode, symbols, interval, suite }).toString();
+    const qs = new URLSearchParams({ mode, symbols, interval, suite, viop_only: viopOnly }).toString();
     const res = await fetch(`${BACKEND_URL}/api/lab?${qs}`, {
       cache: "no-store",
       signal: AbortSignal.timeout(mode === "pytest" ? 70000 : 45000),
@@ -54,7 +55,7 @@ import json, sys
 from python_bot.signal_api import run_lab_suite
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
-res = run_lab_suite(mode=${JSON.stringify(mode)}, symbols=${JSON.stringify(symbols)}, interval=${JSON.stringify(interval)}, suite=${JSON.stringify(suite)})
+res = run_lab_suite(mode=${JSON.stringify(mode)}, symbols=${JSON.stringify(symbols)}, interval=${JSON.stringify(interval)}, suite=${JSON.stringify(suite)}, viop_only=${JSON.stringify(viopOnly)})
 print(json.dumps(res, ensure_ascii=False))
 `;
     const { stdout } = await execFileAsync(pyExe, ["-c", inlineCode], {

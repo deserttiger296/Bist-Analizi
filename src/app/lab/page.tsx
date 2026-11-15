@@ -106,12 +106,18 @@ const RULE_MATRIX = [
 ];
 
 export default function LabPage() {
-  const [activeTab, setActiveTab] = useState<"impulse" | "pytest" | "backtest" | "journal">("pytest");
+  const [activeTab, setActiveTab] = useState<"impulse" | "pytest" | "backtest" | "journal" | "longshort">("pytest");
   const [symbolsInput, setSymbolsInput] = useState("VAKBN,ISCTR,GARAN,AKBNK,YKBNK,THYAO,ASELS,TUPRS");
   const [interval, setIntervalVal] = useState<"1h" | "4h" | "1d">("1h");
   const [impulseData, setImpulseData] = useState<any[]>([]);
   const [loadingImpulse, setLoadingImpulse] = useState(false);
   const impulseRequest = useRef(0);
+
+  const [lsSymbolsInput, setLsSymbolsInput] = useState("TUPRS,THYAO,PGSUS,SISE,AKBNK,ISCTR,VAKBN,GARAN,ASELS,KCHOL,SAHOL,BIMAS,DOAS");
+  const [lsInterval, setLsInterval] = useState<"1h" | "4h" | "1d">("1h");
+  const [lsViopOnly, setLsViopOnly] = useState(false);
+  const [lsData, setLsData] = useState<any | null>(null);
+  const [loadingLs, setLoadingLs] = useState(false);
 
   const [pytestData, setPytestData] = useState<TestReport | null>(null);
   const [suites, setSuites] = useState<Suite[]>([]);
@@ -122,6 +128,25 @@ export default function LabPage() {
   const [journalRows, setJournalRows] = useState<any[]>([]);
   const [loadingJournal, setLoadingJournal] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const runLongShortScan = async (syms?: string, tf?: string, viop?: boolean) => {
+    setLoadingLs(true);
+    setError(null);
+    try {
+      const s = syms ?? lsSymbolsInput;
+      const i = tf ?? lsInterval;
+      const v = viop ?? lsViopOnly;
+      const qs = new URLSearchParams({ mode: "longshort", symbols: s, interval: i, viop_only: String(v) }).toString();
+      const res = await fetch(`/api/lab?${qs}`);
+      const json = await res.json();
+      if (json.status !== "success") throw new Error(json.detail || "Long/Short taraması başarısız");
+      setLsData(json);
+    } catch (e: any) {
+      setError(e?.message || "Long/Short hatası");
+    } finally {
+      setLoadingLs(false);
+    }
+  };
 
   const runImpulseTestbed = async (customSyms?: string, customTf?: "1h" | "4h" | "1d") => {
     const requestId = ++impulseRequest.current;
@@ -198,7 +223,7 @@ export default function LabPage() {
     const syncTab = () => {
       const tab = window.location.hash.slice(1);
       if (tab === "reference") setActiveTab("backtest");
-      else if (["pytest", "impulse", "journal"].includes(tab)) setActiveTab(tab as "pytest" | "impulse" | "journal");
+      else if (["pytest", "impulse", "journal", "longshort"].includes(tab)) setActiveTab(tab as any);
     };
     syncTab();
     window.addEventListener("hashchange", syncTab);
@@ -220,6 +245,7 @@ export default function LabPage() {
       }}>
         {([
           { id: "pytest", label: "Test paketleri" },
+          { id: "longshort", label: "Long / Short Matrisi" },
           { id: "impulse", label: "İtki analizi" },
           { id: "backtest", label: "Referans ve kurallar" },
           { id: "journal", label: "Sinyal günlüğü" },
@@ -229,12 +255,328 @@ export default function LabPage() {
             setActiveTab(tab.id);
             window.history.replaceState(null, "", `#${tab.id === "backtest" ? "reference" : tab.id}`);
             if (tab.id === "journal" && journalRows.length === 0) loadJournal();
+            if (tab.id === "longshort" && !lsData) runLongShortScan();
           }}>{tab.label}</button>)}
       </div>
       <section id="lab-panel" role="tabpanel" aria-labelledby={`lab-tab-${activeTab}`}>
       {error && (
         <div role="alert" className="rounded-2xl border border-rose-500/40 bg-rose-950/30 p-4 text-rose-300 text-sm">
           {error}
+        </div>
+      )}
+
+      {/* TAB 0: LONG / SHORT KARAR MATRİSİ */}
+      {activeTab === "longshort" && (
+        <div className="space-y-6">
+          <div className="workspace-panel workspace-panel-body space-y-4">
+            <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-end justify-between">
+              <div className="flex-1 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Taranacak Hisseler
+                  </label>
+                  <div className="flex gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const p = "TUPRS,THYAO,PGSUS,SISE,AKBNK,ISCTR,VAKBN,GARAN,ASELS,KCHOL,SAHOL,BIMAS,DOAS";
+                        setLsSymbolsInput(p);
+                        runLongShortScan(p);
+                      }}
+                      className="text-cyan-400 hover:underline"
+                    >
+                      BIST13 Popüler
+                    </button>
+                    <span className="text-slate-600">·</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLsSymbolsInput("ALL");
+                        runLongShortScan("ALL");
+                      }}
+                      className="text-cyan-400 hover:underline"
+                    >
+                      Tüm BIST100
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  value={lsSymbolsInput}
+                  onChange={(e) => setLsSymbolsInput(e.target.value)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2 text-sm text-white font-mono focus:border-cyan-500 focus:outline-none"
+                  placeholder="Hisseleri virgülle ayırın veya 'ALL' yazın"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Zaman Dilimi
+                  </label>
+                  <div className="flex gap-1">
+                    {(["1h", "4h", "1d"] as const).map((tf) => (
+                      <button
+                        key={tf}
+                        onClick={() => {
+                          setLsInterval(tf);
+                          runLongShortScan(lsSymbolsInput, tf);
+                        }}
+                        className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                          lsInterval === tf
+                            ? "bg-cyan-500/20 border-cyan-500 text-cyan-300 shadow-sm"
+                            : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        {tf.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center pt-5">
+                  <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={lsViopOnly}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setLsViopOnly(checked);
+                        runLongShortScan(lsSymbolsInput, lsInterval, checked);
+                      }}
+                      className="rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-0"
+                    />
+                    <span>Yalnızca VİOP Vadeli</span>
+                  </label>
+                </div>
+
+                <div className="pt-4">
+                  <button
+                    onClick={() => runLongShortScan()}
+                    disabled={loadingLs}
+                    className="w-full lg:w-auto px-5 py-2 rounded-xl border border-cyan-500/50 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-950/50 transition-all disabled:opacity-50"
+                  >
+                    {loadingLs ? "Taranıyor..." : "⚡ Matrisi Güncelle"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Market Bias & Exposure Header */}
+          {lsData && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="workspace-panel workspace-panel-body md:col-span-2 border-l-4 border-l-cyan-500 flex flex-col justify-between">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Piyasa Rejim & Yön Özeti</span>
+                    <h3 className="text-base font-extrabold text-white mt-1">
+                      {lsData.market_bias}
+                    </h3>
+                  </div>
+                  <div className="mt-3 flex items-center gap-4 text-xs font-mono">
+                    <span className="text-emerald-400">🟢 Aktif Long: <strong>{lsData.long_active_count}</strong></span>
+                    <span className="text-rose-400">🔴 Aktif Short: <strong>{lsData.short_active_count}</strong></span>
+                    <span className="text-slate-400">Taranan: {lsData.total_scanned}</span>
+                  </div>
+                </div>
+
+                <div className="workspace-panel workspace-panel-body border-l-4 border-l-emerald-500">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400">Long Sinyalleri</span>
+                  <div className="text-2xl font-black text-emerald-400 mt-1">{lsData.long_total}</div>
+                  <div className="text-[11px] text-slate-400 mt-1">GVT aşılan: {lsData.long_active_count} onaylı</div>
+                </div>
+
+                <div className="workspace-panel workspace-panel-body border-l-4 border-l-rose-500">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-rose-400">Short / Kâr Al</span>
+                  <div className="text-2xl font-black text-rose-400 mt-1">{lsData.short_total}</div>
+                  <div className="text-[11px] text-slate-400 mt-1">GKD kırılan: {lsData.short_active_count} teyitli</div>
+                </div>
+              </div>
+
+              {/* Pair Trading / Hedge Kartı */}
+              {lsData.pair_trading && (
+                <div className="workspace-panel workspace-panel-body border border-indigo-500/30 bg-indigo-950/20">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-indigo-500/30 text-indigo-300 border border-indigo-500/40">
+                      ⚖️ PİYASA-NÖTR ARBİTRAJ / HEDGE
+                    </span>
+                    <span className="text-xs text-slate-400">Endeks riskinden arındırılmış alfa eşleşmesi</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 my-2">
+                    <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30 flex items-center justify-between">
+                      <div>
+                        <span className="text-xs text-emerald-400 font-bold">🟢 UZUN (LONG) AYAĞI</span>
+                        <div className="text-lg font-black text-white">{lsData.pair_trading.long_symbol} · {lsData.pair_trading.long_price} ₺</div>
+                      </div>
+                      <span className="text-[11px] text-emerald-300 font-mono">{lsData.pair_trading.long_confluence}</span>
+                    </div>
+                    <div className="p-3 rounded-xl bg-rose-950/30 border border-rose-500/30 flex items-center justify-between">
+                      <div>
+                        <span className="text-xs text-rose-400 font-bold">🔴 KISA (SHORT / VİOP) AYAĞI</span>
+                        <div className="text-lg font-black text-white">{lsData.pair_trading.short_symbol} · {lsData.pair_trading.short_price} ₺</div>
+                      </div>
+                      <span className="text-[11px] text-rose-300 font-mono">{lsData.pair_trading.short_confluence}</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-2">{lsData.pair_trading.thesis}</p>
+                </div>
+              )}
+
+              {/* Two Column Side-by-Side: Long vs Short */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                {/* LONG KANADI */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between px-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <h3 className="text-sm font-bold uppercase tracking-wider text-emerald-400">
+                        Long Kanadı (Spot Alım & VİOP Uzun)
+                      </h3>
+                    </div>
+                    <span className="text-xs font-mono text-slate-400">{lsData.longs?.length || 0} aday</span>
+                  </div>
+
+                  {(!lsData.longs || lsData.longs.length === 0) ? (
+                    <div className="rounded-xl border border-slate-800 bg-slate-950 p-6 text-center text-slate-400 text-xs">
+                      Seçili parametrelerde aktif PU30 alım adayı bulunamadı.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {lsData.longs.map((item: any, i: number) => (
+                        <div
+                          key={i}
+                          className={`p-4 rounded-xl border transition-all ${
+                            item.triggered
+                              ? "bg-slate-900/90 border-emerald-500/40 shadow-sm"
+                              : "bg-slate-950/60 border-slate-800/80 opacity-80"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-base font-black text-white">{item.symbol}</span>
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300">
+                                {item.interval.toUpperCase()}
+                              </span>
+                              {item.is_viop && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                  VİOP
+                                </span>
+                              )}
+                            </div>
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                item.triggered
+                                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                                  : "bg-slate-800 text-slate-400"
+                              }`}
+                            >
+                              {item.status_text}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-slate-800/80 text-xs font-mono">
+                            <div>
+                              <span className="text-[10px] text-slate-500 block">Fiyat / Giriş</span>
+                              <span className="text-white font-bold">{item.last_close} ₺</span>
+                              <span className="text-[10px] text-emerald-400/80 block">GVT: {item.entry_level}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-500 block">Stop-Loss</span>
+                              <span className="text-rose-400 font-bold">{item.stop_loss} ₺</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-500 block">Hedef TP1</span>
+                              <span className="text-emerald-400 font-bold">{item.target_tp1} ₺</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-500 block">R:R Oranı</span>
+                              <span className="text-cyan-300 font-bold">{item.rr_ratio}x</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* SHORT KANADI */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between px-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+                      <h3 className="text-sm font-bold uppercase tracking-wider text-rose-400">
+                        Short Kanadı (Spot Kâr Al & VİOP Açığa Satış)
+                      </h3>
+                    </div>
+                    <span className="text-xs font-mono text-slate-400">{lsData.shorts?.length || 0} aday</span>
+                  </div>
+
+                  {(!lsData.shorts || lsData.shorts.length === 0) ? (
+                    <div className="rounded-xl border border-slate-800 bg-slate-950 p-6 text-center text-slate-400 text-xs">
+                      Seçili parametrelerde aktif NU70 satış / düzeltme adayı bulunamadı.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {lsData.shorts.map((item: any, i: number) => (
+                        <div
+                          key={i}
+                          className={`p-4 rounded-xl border transition-all ${
+                            item.triggered
+                              ? "bg-slate-900/90 border-rose-500/40 shadow-sm"
+                              : "bg-slate-950/60 border-slate-800/80 opacity-80"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-base font-black text-white">{item.symbol}</span>
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300">
+                                {item.interval.toUpperCase()}
+                              </span>
+                              {item.is_viop && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                  VİOP
+                                </span>
+                              )}
+                            </div>
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                item.triggered
+                                  ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                                  : "bg-slate-800 text-slate-400"
+                              }`}
+                            >
+                              {item.status_text}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-slate-800/80 text-xs font-mono">
+                            <div>
+                              <span className="text-[10px] text-slate-500 block">Fiyat / Kırılan</span>
+                              <span className="text-white font-bold">{item.last_close} ₺</span>
+                              <span className="text-[10px] text-rose-400/80 block">GKD: {item.entry_level}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-500 block">İptal Stopu</span>
+                              <span className="text-amber-400 font-bold">{item.stop_loss} ₺</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-500 block">Destek Hedef</span>
+                              <span className="text-rose-400 font-bold">{item.target_tp1} ₺</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-500 block">R:R Oranı</span>
+                              <span className="text-cyan-300 font-bold">{item.rr_ratio}x</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

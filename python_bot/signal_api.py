@@ -167,9 +167,11 @@ def run_lab_suite(
     symbols: str = "VAKBN,ISCTR,GARAN,AKBNK,YKBNK,THYAO,ASELS,TUPRS",
     interval: str = "1h",
     suite: str = "pu30",
+    viop_only: str = "false",
 ):
     """
     Birleşik Araştırma ve Test Laboratuvarı (Lab) API'si:
+      - mode="longshort": Semih Hoca kurallarıyla Long / Short VİOP & Spot karar matrisi
       - mode="impulse": PU30 sonrası 1-2 İtki Dalgası anatomisi + Fib Zaman projeksiyonu testbed'i
       - mode="pytest":  Birim ve regresyon test paketini (pytest) çalıştırır ve sonuçları döner
       - mode="journal": Canlı PU30/NU70 sinyal günlüğü (pu30_signal_log.csv) kayıtlarını döner
@@ -255,6 +257,13 @@ def run_lab_suite(
             df_log = pd.read_csv(log_path).fillna("")
             rows = df_log.tail(50).to_dict(orient="records")[::-1]
         return {"status": "success", "mode": "journal", "count": len(rows), "rows": rows}
+
+    if mode == "longshort":
+        from python_bot.engine.signals.long_short_matrix import build_long_short_matrix
+        sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()] if symbols and symbols != "ALL" else None
+        itv_list = (interval,) if interval in ("1h", "4h", "1d") else ("1h", "4h")
+        viop_flag = viop_only.lower() in ("true", "1", "yes")
+        return build_long_short_matrix(symbols=sym_list, intervals=itv_list, viop_only=viop_flag)
 
     if mode == "council":
         from python_bot.engine.brain.agentic_council import run_agentic_council
