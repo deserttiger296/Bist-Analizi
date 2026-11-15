@@ -8,11 +8,14 @@ function getOrigin(req: NextRequest): string {
   if (host.includes("localhost") || host.includes("127.0.0.1")) {
     return "http://localhost:3000";
   }
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    return process.env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, "");
+  }
   const proto = req.headers.get("x-forwarded-proto") || "https";
   if (host) {
     return `${proto}://${host}`;
   }
-  return process.env.NEXT_PUBLIC_APP_URL || "https://bist-analizi.vercel.app";
+  return "https://bist-analizi.vercel.app";
 }
 
 export async function GET(req: NextRequest) {
