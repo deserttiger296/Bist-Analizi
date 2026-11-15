@@ -175,11 +175,10 @@ def run_lab_suite(
       - mode="journal": Canlı PU30/NU70 sinyal günlüğü (pu30_signal_log.csv) kayıtlarını döner
     """
     import dataclasses
-    import subprocess
-    import sys
     from pathlib import Path
     from python_bot.engine.data.provider import DataStatus, get_default_provider
     from python_bot.engine.signals.rsi_pu30 import (
+        MIN_BARS_REQUIRED,
         DEFAULT_PU30_CONFIG,
         SCAN_LIFETIME_BARS,
         SCAN_MIN_GAP_BARS,
@@ -188,7 +187,17 @@ def run_lab_suite(
     )
     from python_bot.scripts.testbed_impulse_fib_time import analyze_impulse_and_fib_time
 
+    if mode in ("catalog", "pytest"):
+        from python_bot.lab_runner import SUITES, run_test_suite, suite_catalog
+        if mode == "catalog":
+            return {"status": "success", "suites": suite_catalog()}
+        if suite not in SUITES:
+            raise HTTPException(status_code=400, detail=f"Bilinmeyen test paketi: {suite}")
+        return run_test_suite(suite)
+
     if mode == "impulse":
+        if interval not in ("1h", "4h", "1d"):
+            raise HTTPException(status_code=400, detail="Zaman dilimi 1h, 4h veya 1d olmalı.")
         sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
         provider = get_default_provider()
         if len(sym_list) > 1 and hasattr(provider, "prefetch_ohlcv_batch"):
@@ -205,8 +214,9 @@ def run_lab_suite(
         items = []
         for sym in sym_list:
             res = provider.fetch_ohlcv(sym, interval=interval, include_forming_bar=False)
-            if res.status != DataStatus.FRESH or res.df is None:
-                items.append({"symbol": sym, "interval": interval, "has_signal": False, "status": str(res.status.value)})
+            if res.status != DataStatus.FRESH or res.df is None or len(res.df) < MIN_BARS_REQUIRED:
+                status = res.status.value if res.status != DataStatus.FRESH else "INSUFFICIENT_HISTORY"
+                items.append({"symbol": sym, "interval": interval, "has_signal": False, "status": status, "error_message": res.error_message, "bar_count": len(res.df) if res.df is not None else 0})
                 continue
             sig = detect_rsi_pu30(res.df, cfg, ignore_lifetime=True, interval=interval)
             if not sig:
@@ -217,7 +227,9 @@ def run_lab_suite(
                     "last_close": round(float(res.df["close"].iloc[-1]), 2),
                 })
                 continue
-            h1_df = res.df if interval == "1h" else provider.fetch_ohlcv(sym, interval="1h", include_forming_bar=False).df
+            sub_interval = "15m" if interval == "1h" else "1h"
+            sub = provider.fetch_ohlcv(sym, interval=sub_interval, include_forming_bar=False)
+            h1_df = sub.df if sub.status == DataStatus.FRESH and sub.df is not None and len(sub.df) >= MIN_BARS_REQUIRED else None
             apply_hourly_trust_level(sig, res.df, h1_df, interval)
             lab_report = analyze_impulse_and_fib_time(res.df, sig)
             items.append({
@@ -233,37 +245,6 @@ def run_lab_suite(
                 "impulse_analysis": lab_report,
             })
         return {"status": "success", "mode": "impulse", "interval": interval, "items": items}
-
-    if mode == "pytest":
-        root_dir = Path(__file__).resolve().parents[1]
-        test_targets = (
-            [
-                "python_bot/tests/test_pu30_strict.py",
-                "python_bot/tests/test_hourly_trust_level.py",
-                "python_bot/tests/test_most_rsi.py",
-                "python_bot/tests/test_provider_session.py",
-            ]
-            if suite == "pu30"
-            else ["python_bot/tests/"]
-        )
-        existing_targets = [t for t in test_targets if (root_dir / t).exists()]
-        if not existing_targets:
-            existing_targets = ["python_bot/tests/test_pu30_strict.py"]
-        proc = subprocess.run(
-            [sys.executable, "-m", "pytest", *existing_targets, "-v", "--tb=short"],
-            cwd=str(root_dir),
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        return {
-            "status": "success",
-            "mode": "pytest",
-            "suite": suite,
-            "exit_code": proc.returncode,
-            "passed": proc.returncode == 0,
-            "output": (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else ""),
-        }
 
     if mode == "journal":
         import pandas as pd

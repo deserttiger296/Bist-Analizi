@@ -322,14 +322,28 @@ class YFinanceDataProvider:
                 if cached is not None and (now - cached[0]) < self.cache_ttl_sec:
                     return cached[1].copy()
 
-            raw = yf.download(
-                norm_sym,
-                period=fetch_period,
-                interval=fetch_interval,
-                auto_adjust=True,
-                progress=False,
-                timeout=self.timeout_sec,
-            )
+            raw = None
+            last_exc: Optional[Exception] = None
+            for attempt in range(2):
+                try:
+                    raw = yf.download(
+                        norm_sym,
+                        period=fetch_period,
+                        interval=fetch_interval,
+                        auto_adjust=True,
+                        progress=False,
+                        timeout=self.timeout_sec,
+                    )
+                    last_exc = None
+                except Exception as exc:
+                    last_exc = exc
+                    raw = None
+                if raw is not None and not raw.empty:
+                    break
+                if attempt == 0:
+                    _time.sleep(0.4)
+            if last_exc is not None:
+                raise last_exc
             if raw is not None and not raw.empty:
                 if isinstance(raw.columns, pd.MultiIndex):
                     raw = raw.copy()
@@ -337,8 +351,6 @@ class YFinanceDataProvider:
                 with _RAW_CACHE_LOCK:
                     _RAW_CACHE[key] = (_time.monotonic(), raw)
                 return raw.copy()
-            with _RAW_CACHE_LOCK:
-                _RAW_CACHE[key] = (_time.monotonic(), pd.DataFrame())
             return raw
 
     def prefetch_ohlcv_batch(
@@ -354,11 +366,11 @@ class YFinanceDataProvider:
         Önbellekte taze olan semboller tekrar indirilmez.
         Dönüş: Önbelleğe yeni eklenen sembol sayısı.
         """
-        if not symbols or interval not in ("1d", "4h", "1h"):
+        if not symbols or interval not in ("1d", "4h", "1h", "15m"):
             return 0
 
         fetch_interval = "1h" if interval == "4h" else interval
-        fetch_period = period or ("730d" if interval in ("1h", "4h") else "1y")
+        fetch_period = period or ("60d" if interval == "15m" else "730d" if interval in ("1h", "4h") else "1y")
         dl_id = id(yf.download)
         now = _time.monotonic()
 
@@ -419,10 +431,9 @@ class YFinanceDataProvider:
                         elif norm_sym in lvl1:
                             sub = raw.xs(norm_sym, axis=1, level=1).dropna(how="all").copy()
                         else:
-                            _RAW_CACHE[(dl_id, norm_sym, fetch_interval, fetch_period)] = (ts_now, pd.DataFrame())
                             continue
-                        _RAW_CACHE[(dl_id, norm_sym, fetch_interval, fetch_period)] = (ts_now, sub)
                         if not sub.empty:
+                            _RAW_CACHE[(dl_id, norm_sym, fetch_interval, fetch_period)] = (ts_now, sub)
                             stored_count += 1
         return stored_count
 

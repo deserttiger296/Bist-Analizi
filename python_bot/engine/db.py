@@ -24,6 +24,7 @@ from typing import Iterator, Optional
 
 import psycopg2
 import psycopg2.extensions
+from psycopg2.extras import execute_values
 
 logger = logging.getLogger("BIST_DB")
 
@@ -98,7 +99,7 @@ def upsert_daily_prices_bulk(rows: list) -> int:
         return 0
     sql = """
         INSERT INTO daily_prices (symbol, date, open, high, low, close, volume)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        VALUES %s
         ON CONFLICT (symbol, date) DO UPDATE SET
             open = EXCLUDED.open,
             high = EXCLUDED.high,
@@ -106,9 +107,10 @@ def upsert_daily_prices_bulk(rows: list) -> int:
             close = EXCLUDED.close,
             volume = EXCLUDED.volume
     """
+    deduped = list({(r[0], r[1]): r for r in rows}.values())
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.executemany(sql, rows)
+            execute_values(cur, sql, deduped, page_size=1000)
     return len(rows)
 
 

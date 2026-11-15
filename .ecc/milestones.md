@@ -1,0 +1,4 @@
+﻿- 2026-11-15: Sub-timeframe GVT/GKD (1d->1h, 1h->15m), 15m->1h fractal trap rule, provider retry/cache-poisoning guard, /api/lab BACKEND_URL fix, and DB bulk/index optimization verified (71 passed, lab-gate + mtf-lab-ui + tsc green).
+- 2026-11-15: `python_bot/engine/shield/` (`expected_value.py:12-84`, `kelly_sizing.py:21-60`, `risk_var.py:11-125`) BIST komisyon+slippage (`roundtrip_cost_pct`), ZeroDivisionError/NaN/inf/1D girdi dogrulamasi ve Basel III CVaR (Expected Shortfall) ile yukseltildi; `python_bot/tests/test_shield_risk.py` ve `lab_runner.py:15` eklendi.
+
+- 2026-11-15: `bist_agent_core/agentic_engine.py` Semih PU30/NU70 karar kapisi (NU70 vetosu, PU30 onayi) entegre edildi; Stop-Loss hiyerarsisi ve makro rejim etiketleri duzeltildi; `council_report.py` ve `council_log.jsonl` eklendi; Radar arayuzune 'Tumu' zaman dilimi ve coklu TF gosterimi eklendi; tum BIST100 (1h/4h/1d) Semih taramasi tamamlandi.

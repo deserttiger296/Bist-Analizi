@@ -4,47 +4,97 @@ Institutional-Grade Quantitative Trading Architecture
 Phase 3: Quantitative Portfolio Risk - Value at Risk (VaR)
 """
 
+import math
+from statistics import NormalDist
 import numpy as np
-from scipy.stats import norm
 from typing import Dict, Any, List
+
+_STD_NORM = NormalDist(0.0, 1.0)
+try:
+    from scipy.stats import norm as _scipy_norm
+    def _norm_ppf(p: float) -> float:
+        return float(_scipy_norm.ppf(p))
+    def _norm_pdf(z: float) -> float:
+        return float(_scipy_norm.pdf(z))
+except ImportError:
+    def _norm_ppf(p: float) -> float:
+        return float(_STD_NORM.inv_cdf(p))
+    def _norm_pdf(z: float) -> float:
+        return float(_STD_NORM.pdf(z))
 
 class ValueAtRiskModel:
     def __init__(self, confidence_level: float = 0.99):
         """
-        Initialize VaR calculator.
+        Initialize VaR and CVaR (Expected Shortfall) calculator.
         
         :param confidence_level: Risk threshold (usually 0.95 or 0.99)
         """
-        self.conf = confidence_level
+        if not (isinstance(confidence_level, (int, float)) and math.isfinite(confidence_level) and 0.0 < float(confidence_level) < 1.0):
+            raise ValueError("confidence_level must be finite and strictly between 0 and 1.")
+        self.conf = float(confidence_level)
         # Z-score lookup for common confidence bounds
-        self.z_score = norm.ppf(confidence_level)
+        self.z_score = _norm_ppf(self.conf)
+
+    @staticmethod
+    def _clean_returns(historical_returns: Any) -> tuple[np.ndarray, bool]:
+        if historical_returns is None:
+            return np.array([], dtype=float), False
+        try:
+            arr = np.asarray(historical_returns, dtype=float)
+        except (ValueError, TypeError):
+            return np.array([], dtype=float), False
+        if arr.ndim != 1:
+            return np.array([], dtype=float), False
+        return arr[np.isfinite(arr)], True
 
     def calculate_parametric_var(self, portfolio_value: float, historical_returns: np.ndarray, 
                                  holding_period_days: int = 1) -> Dict[str, Any]:
         """
-        Calculate Parametric (Variance-Covariance) Value at Risk.
+        Calculate Parametric (Variance-Covariance) Value at Risk and Expected Shortfall (CVaR).
         Formula:
-            VaR = Z * sigma * sqrt(t) * V
-            Where:
-                Z = Z-score matching confidence level (e.g., 2.33 for 99%)
-                sigma = Standard deviation of historical portfolio returns
-                t = Holding period days
-                V = Total portfolio value
+            VaR  = Z * sigma * sqrt(t) * V
+            CVaR = (phi(Z) / (1 - conf)) * sigma * sqrt(t) * V
         """
-        if len(historical_returns) < 5:
-            return {"var_absolute": 0.0, "var_pct": 0.0, "status": "INSUFFICIENT_DATA"}
+        clean_ret, is_valid_shape = self._clean_returns(historical_returns)
+        if (
+            not is_valid_shape
+            or not (isinstance(portfolio_value, (int, float)) and not isinstance(portfolio_value, bool) and math.isfinite(portfolio_value) and portfolio_value > 0)
+            or not (isinstance(holding_period_days, (int, float)) and not isinstance(holding_period_days, bool) and math.isfinite(holding_period_days) and holding_period_days > 0)
+        ):
+            return {
+                "var_absolute": 0.0,
+                "var_pct": 0.0,
+                "cvar_absolute": 0.0,
+                "cvar_pct": 0.0,
+                "status": "INVALID_INPUT"
+            }
+        if len(clean_ret) < 5:
+            return {
+                "var_absolute": 0.0,
+                "var_pct": 0.0,
+                "cvar_absolute": 0.0,
+                "cvar_pct": 0.0,
+                "status": "INSUFFICIENT_DATA"
+            }
             
-        sigma = np.std(historical_returns)
+        sigma = float(np.std(clean_ret))
         
         # Apply square-root-of-time rule for multi-day horizons
-        time_scalar = np.sqrt(holding_period_days)
+        time_scalar = float(np.sqrt(holding_period_days))
         
         var_pct = self.z_score * sigma * time_scalar
-        var_absolute = var_pct * portfolio_value
+        var_absolute = var_pct * float(portfolio_value)
+
+        alpha = 1.0 - self.conf
+        cvar_1d_pct = (_norm_pdf(self.z_score) / alpha) * sigma
+        cvar_pct = cvar_1d_pct * time_scalar
+        cvar_absolute = cvar_pct * float(portfolio_value)
         
         return {
             "var_absolute": float(var_absolute),
             "var_pct": float(var_pct * 100),
+            "cvar_absolute": float(cvar_absolute),
+            "cvar_pct": float(cvar_pct * 100),
             "confidence_level": self.conf,
             "horizon_days": holding_period_days,
             "sigma_daily": float(sigma),
@@ -54,30 +104,56 @@ class ValueAtRiskModel:
     def calculate_historical_var(self, portfolio_value: float, historical_returns: np.ndarray, 
                                  holding_period_days: int = 1) -> Dict[str, Any]:
         """
-        Calculate Value at Risk using Historical Simulation.
-        Does not assume normal distribution of returns (highly robust for volatile asset spikes).
-        
-        Sorts historical outcomes and extracts the lower percentile matching the confidence level.
+        Calculate Value at Risk and Expected Shortfall (CVaR) using Historical Simulation.
+        Does not assume normal distribution of returns (highly robust for BIST tavan/taban spikes).
         """
-        if len(historical_returns) < 5:
-            return {"var_absolute": 0.0, "var_pct": 0.0, "status": "INSUFFICIENT_DATA"}
+        clean_ret, is_valid_shape = self._clean_returns(historical_returns)
+        if (
+            not is_valid_shape
+            or not (isinstance(portfolio_value, (int, float)) and not isinstance(portfolio_value, bool) and math.isfinite(portfolio_value) and portfolio_value > 0)
+            or not (isinstance(holding_period_days, (int, float)) and not isinstance(holding_period_days, bool) and math.isfinite(holding_period_days) and holding_period_days > 0)
+        ):
+            return {
+                "var_absolute": 0.0,
+                "var_pct": 0.0,
+                "cvar_absolute": 0.0,
+                "cvar_pct": 0.0,
+                "status": "INVALID_INPUT"
+            }
+        if len(clean_ret) < 5:
+            return {
+                "var_absolute": 0.0,
+                "var_pct": 0.0,
+                "cvar_absolute": 0.0,
+                "cvar_pct": 0.0,
+                "status": "INSUFFICIENT_DATA"
+            }
             
         # Target index corresponding to confidence level threshold
         alpha = 1.0 - self.conf
-        sorted_returns = np.sort(historical_returns)
+        sorted_returns = np.sort(clean_ret)
         
         percentile_idx = int(np.floor(alpha * len(sorted_returns)))
-        historical_var_1d_pct = -sorted_returns[percentile_idx]
+        percentile_idx = max(0, min(percentile_idx, len(sorted_returns) - 1))
+        historical_var_1d_pct = float(-sorted_returns[percentile_idx])
+        
+        # Historical CVaR (Expected Shortfall): mean of tail losses at or beyond the VaR cutoff
+        tail_losses = -sorted_returns[:percentile_idx + 1]
+        historical_cvar_1d_pct = float(np.mean(tail_losses))
         
         # Time scaling (under standard i.i.d. assumption)
-        time_scalar = np.sqrt(holding_period_days)
+        time_scalar = float(np.sqrt(holding_period_days))
         
         var_pct = historical_var_1d_pct * time_scalar
-        var_absolute = var_pct * portfolio_value
+        var_absolute = var_pct * float(portfolio_value)
+        cvar_pct = historical_cvar_1d_pct * time_scalar
+        cvar_absolute = cvar_pct * float(portfolio_value)
         
         return {
             "var_absolute": float(var_absolute),
             "var_pct": float(var_pct * 100),
+            "cvar_absolute": float(cvar_absolute),
+            "cvar_pct": float(cvar_pct * 100),
             "confidence_level": self.conf,
             "horizon_days": holding_period_days,
             "status": "SUCCESS"

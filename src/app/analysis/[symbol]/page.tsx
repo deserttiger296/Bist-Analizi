@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import Link from "next/link";
+import { WorkspacePage, Panel, MetricCard, StatusBadge } from "@/components/ui/Workspace";
 import InteractiveChartWrapper from "@/components/InteractiveChartWrapper";
 import PrintButton from "@/components/PrintButton";
 import Portfolio from "@/components/Portfolio";
@@ -24,20 +25,12 @@ const signalLabel: Record<string, string> = {
   SELL: "Sat",
   STRONG_SELL: "Güçlü Sat",
   WATCH: "Gözlemle",
-  TUZAK: "BOĞA TUZAĞI ⚠️",
-};
-
-const signalClass: Record<string, string> = {
-  STRONG_BUY: "bg-emerald-500 text-slate-950",
-  BUY: "bg-sky-500 text-slate-950",
-  HOLD: "bg-amber-500 text-slate-950",
-  SELL: "bg-rose-500 text-slate-950",
-  STRONG_SELL: "bg-red-600 text-white",
-  WATCH: "bg-gray-600 text-white",
-  TUZAK: "bg-rose-950 text-rose-400 border border-rose-500/30 animate-pulse",
+  TUZAK: "BOĞA TUZAĞI ",
 };
 
 const indicatorDescriptions: Record<string, string> = {
+  "Stochastic %K": "80 üzeri aşırı alım, 20 altı aşırı satım bölgesidir.",
+  "CCI": "Fiyatın istatistiksel ortalamadan uzaklığını gösterir.",
   "RSI": "Göreceli Güç Endeksi — 70 üzeri aşırı alım, 30 altı aşırı satım.",
   "MACD": "Trend dönüş sinyali — sinyal üstü kesişim al sinyali.",
   "MACD Histogram": "Pozitif = yükseliş ivmesi, negatif = düşüş baskısı.",
@@ -93,11 +86,13 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
   const indicators = [
     { label: "RSI", value: formatTR(quote.rsi, 1), status: quote.rsi > 70 ? "danger" : quote.rsi < 30 ? "success" : "neutral" },
     { label: "MACD", value: formatTR(quote.macd, 3), status: (quote.macd ?? 0) > (quote.macdSignal ?? 0) ? "success" : "danger" },
+    { label: "Stochastic %K", value: formatTR(quote.stochK, 1), status: quote.stochK == null ? "neutral" : quote.stochK > 80 ? "danger" : quote.stochK < 20 ? "success" : "neutral" },
+    { label: "CCI", value: formatTR(quote.cci, 1), status: quote.cci == null ? "neutral" : quote.cci > 100 ? "warning" : quote.cci < -100 ? "success" : "neutral" },
     { label: "MACD Histogram", value: formatTR(quote.macdHistogram, 3), status: (quote.macdHistogram ?? 0) > 0 ? "success" : "danger" },
     { label: "EMA 5 / EMA 20", value: `${formatTR(quote.ema5)} / ${formatTR(quote.ema20)}`, status: quote.ema5 > quote.ema20 ? "success" : "danger" },
     { label: "CMF 20", value: formatTR(quote.cmf20, 4), status: quote.cmf20 > 0 ? "success" : "danger" },
     { label: "Hacim Onay", value: `%${quote.volumeConfirm}`, status: quote.volumeConfirm >= 60 ? "success" : "danger" },
-    { label: "Piyasa Rejimi", value: quote.marketRegime === 'TRENDING' ? '📈 TREND' : quote.marketRegime === 'RANGING' ? '📊 YATAY' : '⚡ VOLATİL', status: quote.marketRegime === 'TRENDING' ? "success" : "warning" },
+    { label: "Piyasa Rejimi", value: quote.marketRegime === 'TRENDING' ? ' TREND' : quote.marketRegime === 'RANGING' ? ' YATAY' : ' VOLATİL', status: quote.marketRegime === 'TRENDING' ? "success" : "warning" },
     { label: "R/R Oranı", value: `${quote.riskRewardRatio}:1`, status: quote.riskRewardRatio >= 2 ? "success" : quote.riskRewardRatio >= 1 ? "warning" : "danger" },
     { label: "Güven Skoru", value: `${quote.confidence}%`, status: quote.confidence >= 65 ? "success" : quote.confidence >= 45 ? "warning" : "danger" },
   ];
@@ -117,43 +112,15 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 px-4 py-6 text-white print:bg-white print:bg-none print:text-black">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between print:flex-row print:justify-between">
-          <div className="space-y-3">
-            <p className="text-sm uppercase tracking-[0.3em] text-cyan-400 print:text-cyan-700">BIST Analiz Raporu</p>
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-4xl font-semibold tracking-tight text-white print:text-black">{quote.ticker}</h1>
-              <span className={`rounded-full px-3 py-1 text-sm font-semibold print:border print:border-black ${signalClass[signal] || "bg-gray-600 text-white"}`}>
-                {signalLabel[signal] || signal}
-              </span>
-            </div>
-            <p className="max-w-2xl text-gray-300 print:text-gray-700">{quote.name} için canlı piyasa verileriyle oluşturulmuş detaylı teknik analiz raporu.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 print:hidden">
-            <PrintButton />
-            <Link
-              href="/backtest"
-              className="flex-1 sm:flex-none inline-flex items-center justify-center rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-xs font-bold text-white transition hover:border-cyan-500 hover:bg-slate-700"
-            >
-              Backtest
-            </Link>
-            <Link
-              href="/"
-              className="flex-1 sm:flex-none inline-flex items-center justify-center rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-xs font-bold text-white transition hover:border-cyan-500 hover:bg-slate-700"
-            >
-              Dashboard
-            </Link>
-          </div>
-        </div>
-
+    <WorkspacePage title={quote.ticker} eyebrow="RSI ANALİZİ · HİSSE İNCELEMESİ" description={<>{quote.name} için veri kaynağından alınan teknik görünüm. <StatusBadge tone={signal.includes("BUY") ? "positive" : signal.includes("SELL") || signal === "TUZAK" ? "negative" : "neutral"}>{signalLabel[signal] || signal}</StatusBadge></>} actions={<div className="flex flex-wrap gap-2 print:hidden"><PrintButton /><Link href="/lab#reference" className="rsi-button">Referans ve kurallar</Link><Link href="/index.html#rsipu30" className="rsi-button">RSI Radarı</Link></div>} className="print:bg-white print:text-black">
+      <div className="space-y-6">
         <div className="grid gap-6 lg:grid-cols-[1.45fr_0.85fr] print:grid-cols-1 print:gap-4">
           <div className="space-y-6 print:space-y-4">
             {/* Warning / Approved Callout Boxes */}
             {quote.stopLossBroken && (
-              <div className="rounded-2xl border border-red-500/30 bg-red-950/20 p-5 shadow-lg shadow-red-500/5 animate-pulse">
-                <h4 className="text-red-400 font-black text-base flex items-center gap-2">
-                  🚨 STOP LİMİTİ KIRILDI! REKALİBRASYON YAPILDI
+              <div className="rounded-2xl border border-red-500/30 bg-red-950/20 p-5 ">
+                <h4 className="text-red-400 font-semibold text-base flex items-center gap-2">
+                   Stop seviyesi ihlal edildi
                 </h4>
                 <p className="text-slate-300 text-xs mt-1.5 leading-relaxed">
                   Fiyat, ana stop seviyesinin altına sarkarak stop-loss sınırını ihlal etmiştir. Sistemimiz otomatik olarak <strong>yeni bir stop seviyesi ({formatTR(quote.stopLoss)} ₺)</strong> ve en yakın destekleri hesaplayarak analiz planını güncelledi. Kademeli alım, izleme veya pozisyon azaltma düşünülebilir.
@@ -162,9 +129,9 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
             )}
 
             {quote.isFakeout && (
-              <div className="rounded-2xl border border-rose-500/30 bg-rose-950/20 p-5 shadow-lg shadow-rose-500/5 animate-pulse">
-                <h4 className="text-rose-400 font-black text-base flex items-center gap-2">
-                  ⚠️ UYARI: BOĞA TUZAĞI (SAHTE YÜKSELİŞ) TESPİT EDİLDİ!
+              <div className="rounded-2xl border border-rose-500/30 bg-rose-950/20 p-5 ">
+                <h4 className="text-rose-400 font-semibold text-base flex items-center gap-2">
+                   Sahte yükseliş uyarısı
                 </h4>
                 <p className="text-slate-300 text-xs mt-1.5 leading-relaxed">
                   Bu hisse senedi ani bir yükseliş göstermiş veya teknik puan kazanmış olsa da, sistemimiz tarafından <strong>Sahte Yükseliş / Tuzak</strong> olarak işaretlenmiştir. Yeni pozisyon açılması yüksek risk barındırabilir.
@@ -181,9 +148,9 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
             )}
 
             {quote.meetsBuyCriteria && (
-              <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/20 p-5 shadow-lg shadow-emerald-500/5">
-                <h4 className="text-emerald-400 font-black text-base flex items-center gap-2">
-                  ✅ ONAYLI ALIM SİNYALİ!
+              <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/20 p-5 ">
+                <h4 className="text-emerald-400 font-semibold text-base flex items-center gap-2">
+                   Teknik filtreler karşılandı
                 </h4>
                 <p className="text-slate-300 text-xs mt-1.5 leading-relaxed">
                   Bu hisse senedi, sistemin en katı filtrelerini başarıyla geçmiştir. <strong>Trend, Momentum ve Hacim/Para Akışı</strong> gruplarının her birinde ayrı ayrı <strong>%60</strong>&apos;ın üzerinde onay almış ve haftalık <strong>EMA26</strong> seviyesinin üzerinde macro boğa trendindedir. Herhangi bir sahte yükseliş tuzağı bulunmamaktadır.
@@ -191,32 +158,14 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
               </div>
             )}
 
-            {/* Price & Quick Metrics */}
-            <div className="card border-cyan-500/20 bg-slate-900 p-4 sm:p-6 print:border-gray-300 print:bg-white print:shadow-none print:p-0">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.25em] text-cyan-400 print:text-cyan-700">Son Fiyat</p>
-                  <p className="text-5xl font-semibold text-white print:text-black">{formatTR(quote.lastClose)} ₺</p>
-                  <p className="mt-1 text-sm text-gray-400 print:text-gray-600">{quote.change >= 0 ? "+" : ""}{formatTR(quote.change)}% 24s</p>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
-                  <div className="rounded-xl bg-slate-800 p-3 sm:p-4 text-sm print:bg-gray-100 print:rounded-lg print:p-3">
-                    <p className="text-[10px] sm:text-xs text-gray-400 print:text-gray-600 uppercase font-bold tracking-wider">SMA20</p>
-                    <p className="mt-1 text-base sm:text-lg font-semibold text-white print:text-black">{formatTR(quote.sma20Distance, 1)}%</p>
-                  </div>
-                  <div className="rounded-xl bg-slate-800 p-3 sm:p-4 text-sm print:bg-gray-100 print:rounded-lg print:p-3">
-                    <p className="text-[10px] sm:text-xs text-gray-400 print:text-gray-600 uppercase font-bold tracking-wider">RSI</p>
-                    <p className="mt-1 text-base sm:text-lg font-semibold text-white print:text-black">{formatTR(quote.rsi, 1)}</p>
-                  </div>
-                  <div className="col-span-2 sm:col-span-1 rounded-xl bg-slate-800 p-3 sm:p-4 text-sm print:bg-gray-100 print:rounded-lg print:p-3">
-                    <p className="text-[10px] sm:text-xs text-gray-400 print:text-gray-600 uppercase font-bold tracking-wider">Hacim</p>
-                    <p className="mt-1 text-base sm:text-lg font-semibold text-white print:text-black">{formatTR(quote.volumeMultiple, 1)}x</p>
-                  </div>
-                </div>
-              </div>
+            <div className="workspace-metrics print:grid-cols-2">
+              <MetricCard label="Son kapanış" value={`${formatTR(quote.lastClose)} ₺`} detail={`${quote.change >= 0 ? "+" : ""}${formatTR(quote.change)}% değişim`} tone={quote.change >= 0 ? "positive" : "negative"} />
+              <MetricCard label="SMA20 mesafesi" value={`${formatTR(quote.sma20Distance, 1)}%`} />
+              <MetricCard label="RSI" value={formatTR(quote.rsi, 1)} />
+              <MetricCard label="Hacim / ortalama" value={`${formatTR(quote.volumeMultiple, 1)}×`} />
             </div>
 
-            <div className="card p-4 sm:p-6 print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4">
+            <Panel className="print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4">
               <div className="flex items-center justify-between print:mb-2">
                 <h2 className="text-lg sm:text-xl font-semibold text-white print:text-black">İnteraktif Grafik</h2>
                 <span className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-gray-400 print:text-gray-500">150 Günlük Veri</span>
@@ -224,7 +173,7 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
               <div className="mt-4 sm:mt-6 print:mt-0">
                 <InteractiveChartWrapper symbol={quote.ticker} />
               </div>
-            </div>
+            </Panel>
 
             {/* Phase 2: Broker Consensus & AKD Smart Money Flow Panels */}
             <div className="grid grid-cols-1 gap-6 print:hidden">
@@ -233,12 +182,12 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
             </div>
 
             {/* Symbol Specific News */}
-            <div className="card p-4 sm:p-6 print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4">
+            <Panel className="print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg sm:text-xl font-semibold text-white print:text-black flex items-center gap-2">
-                  📰 Haber & İstihbarat
+                   Haber & İstihbarat
                 </h2>
-                <span className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-cyan-400 print:text-cyan-600 font-bold">KAP & Medya</span>
+                <span className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-emerald-300 print:text-cyan-600 font-bold">KAP & Medya</span>
               </div>
               {symbolNews.length === 0 ? (
                 <div className="text-center py-6 text-slate-500 text-sm">Bu hisse için son 24 saatte önemli bir haber akışı tespit edilmedi.</div>
@@ -247,7 +196,7 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
                   {symbolNews.map((news) => (
                     <div key={news.id} className={`p-4 rounded-xl border ${news.sentiment === 'positive' ? 'bg-emerald-950/20 border-emerald-500/20' : news.sentiment === 'negative' ? 'bg-rose-950/20 border-rose-500/20' : 'bg-slate-900/50 border-slate-700'}`}>
                       <div className="flex justify-between items-center mb-2">
-                        <span className={`text-xs font-black uppercase tracking-widest ${news.sentiment === 'positive' ? 'text-emerald-400' : news.sentiment === 'negative' ? 'text-rose-400' : 'text-sky-400'}`}>
+                        <span className={`text-xs font-semibold uppercase tracking-widest ${news.sentiment === 'positive' ? 'text-emerald-400' : news.sentiment === 'negative' ? 'text-rose-400' : 'text-sky-400'}`}>
                           {news.source.replace('_', ' ')}
                         </span>
                         <span className="text-[10px] text-slate-500">{new Date(news.date).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</span>
@@ -258,15 +207,15 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
                   ))}
                 </div>
               )}
-            </div>
+            </Panel>
 
             {/* Full Indicator Table */}
-            <div className="card p-4 sm:p-6 print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4">
+            <Panel className="print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg sm:text-xl font-semibold text-white print:text-black">Teknik Göstergeler</h2>
-                <span className="text-xs text-cyan-300 print:text-cyan-700 uppercase font-bold tracking-widest">{indicators.length} Veri</span>
+                <span className="text-xs text-emerald-300 print:text-cyan-700 uppercase font-bold tracking-widest">{indicators.length} Veri</span>
               </div>
-              <div className="overflow-x-auto">
+              <div className="workspace-table-wrap">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-700 print:border-gray-300">
@@ -293,18 +242,18 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
                   </tbody>
                 </table>
               </div>
-            </div>
+            </Panel>
 
-            {/* AI Sniper Verdict — primary engine (RF + LSTM + sentiment confluence) */}
-            <div className="card p-6 print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4 border-cyan-700/40">
+            {/* Model değerlendirmesi — primary engine (RF + LSTM + sentiment confluence) */}
+            <Panel className="print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4 border-slate-700">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-white print:text-black">🎯 AI Sniper Verdict</h2>
-                <span className="text-sm text-cyan-300 print:text-cyan-700">RF + LSTM + Sentiment</span>
+                <h2 className="text-xl font-semibold text-white print:text-black"> Model değerlendirmesi</h2>
+                <span className="text-sm text-emerald-300 print:text-cyan-700">RF / LSTM / haber modeli</span>
               </div>
               {quote.sniper?.explanation ? (
                 <>
                   <div className="mt-4 flex flex-wrap items-center gap-3">
-                    <span className={`px-3 py-1.5 rounded-lg text-sm font-black uppercase tracking-wide ${quote.sniper.sniper_approved ? 'bg-emerald-950/60 border border-emerald-500/40 text-emerald-400' : 'bg-slate-800/60 border border-slate-600/40 text-slate-300'}`}>
+                    <span className={`px-3 py-1.5 rounded-lg text-sm font-semibold uppercase tracking-wide ${quote.sniper.sniper_approved ? 'bg-emerald-950/60 border border-emerald-500/40 text-emerald-400' : 'bg-slate-800/60 border border-slate-600/40 text-slate-300'}`}>
                       {quote.sniper.sniper_label ?? '—'}
                     </span>
                     <span className="text-xs text-slate-400">{quote.sniper.confluence_label ?? ''}</span>
@@ -314,11 +263,11 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
                   </div>
                   <ul className="mt-5 space-y-3 text-gray-300 print:text-gray-800 print:mt-2">
                     {(quote.sniper.explanation?.length ?? 0) === 0 ? (
-                      <li className="text-slate-500 text-sm">Sniper motoru için aktif gerekçe bulunamadı.</li>
+                      <li className="text-slate-500 text-sm">Model motoru için aktif gerekçe bulunamadı.</li>
                     ) : (
                       quote.sniper.explanation.map((item, i) => (
-                        <li key={i} className="flex gap-3 rounded-2xl border border-cyan-800/40 bg-slate-950/60 p-4 print:border-none print:border-b print:border-gray-200 print:bg-transparent print:p-2">
-                          <span className="mt-1 h-2.5 w-2.5 rounded-full bg-cyan-400 shrink-0 print:bg-cyan-600 print:mt-1.5" />
+                        <li key={i} className="flex gap-3 rounded-2xl border border-slate-700 bg-slate-950/60 p-4 print:border-none print:border-b print:border-gray-200 print:bg-transparent print:p-2">
+                          <span className="mt-1 h-2.5 w-2.5 rounded-full bg-emerald-300 shrink-0 print:bg-cyan-600 print:mt-1.5" />
                           <span className="text-sm">{item}</span>
                         </li>
                       ))
@@ -330,13 +279,13 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
                   ML tahmin motoru bu ortamda yok (canlı sitede RF/LSTM çalışmaz; yalnızca tam yerel motorda) ya da yanıt vermedi. Aşağıdaki teknik confluans analizi ikincil sinyal olarak gösteriliyor.
                 </p>
               )}
-            </div>
+            </Panel>
 
             {/* Why? — Signal Reasons (secondary, JS-native technical confluence) */}
-            <div className="card p-6 print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4">
+            <Panel className="print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-white print:text-black">Teknik Confluans (İkincil)</h2>
-                <span className="text-sm text-cyan-300 print:text-cyan-700">Confluans Analizi</span>
+                <h2 className="text-xl font-semibold text-white print:text-black">Teknik sinyal gerekçeleri</h2>
+                <span className="text-sm text-emerald-300 print:text-cyan-700">Teknik değerlendirme</span>
               </div>
               <p className="mt-2 text-xs text-slate-500 print:text-gray-500">Aktif olan teknik sinyallerin birleşimi ile oluşturulan confluans puanı.</p>
               <ul className="mt-5 space-y-3 text-gray-300 print:text-gray-800 print:mt-2">
@@ -345,36 +294,36 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
                 ) : (
                   evaluation.reasons.map((item, i) => (
                     <li key={i} className="flex gap-3 rounded-2xl border border-slate-700 bg-slate-950/60 p-4 print:border-none print:border-b print:border-gray-200 print:bg-transparent print:p-2">
-                      <span className="mt-1 h-2.5 w-2.5 rounded-full bg-cyan-400 shrink-0 print:bg-cyan-600 print:mt-1.5" />
+                      <span className="mt-1 h-2.5 w-2.5 rounded-full bg-emerald-300 shrink-0 print:bg-cyan-600 print:mt-1.5" />
                       <span className="text-sm">{item}</span>
                     </li>
                   ))
                 )}
               </ul>
-            </div>
+            </Panel>
           </div>
 
           <div className="space-y-6 print:space-y-4">
             {/* Trade Recommendation */}
-            <div className="card p-6 print:border-gray-300 print:bg-white print:shadow-none print:p-0">
+            <Panel className="print:border-gray-300 print:bg-white print:shadow-none print:p-0">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-white print:text-black">Öneri</h2>
+                <h2 className="text-xl font-semibold text-white print:text-black">Teknik senaryo</h2>
                 <span className="text-xs uppercase tracking-[0.2em] text-gray-400 print:text-gray-500">Aksiyon</span>
               </div>
               <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-950/60 p-5 print:bg-gray-50 print:border-gray-300">
                 <p className="text-sm leading-relaxed text-gray-200 print:text-gray-800">{quote.recommendation}</p>
               </div>
-            </div>
+            </Panel>
 
             {/* Action Plan - Multi-level Support (TRY) & Target (USD) */}
-            <div className="card p-6 print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4">
+            <Panel className="print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-white print:text-black">Hareket Planı</h2>
+                <h2 className="text-xl font-semibold text-white print:text-black">Destek ve hedef seviyeleri</h2>
                 <span className="text-xs uppercase tracking-[0.2em] text-gray-400 print:text-gray-500">Destek TL | Hedef USD</span>
               </div>
               <div className="mt-6 space-y-3 print:mt-2">
                 {/* Support Levels (TRY) */}
-                <p className="text-xs uppercase tracking-[0.2em] text-cyan-400 print:text-cyan-700 mb-2">Destek Seviyeleri (₺)</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-emerald-300 print:text-cyan-700 mb-2">Destek Seviyeleri (₺)</p>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div className="rounded-2xl bg-slate-800 p-4 text-sm print:bg-gray-100 print:rounded-lg print:p-3">
                     <p className="text-gray-400 print:text-gray-600">S1 (Yakın Destek)</p>
@@ -422,7 +371,7 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
                   <>
                     <p className="text-xs uppercase tracking-[0.2em] text-violet-400 print:text-violet-700 mb-2 mt-6">Nicel Sinyal Ufukları - {quote.ticker}</p>
                     <div className="grid gap-3 sm:grid-cols-3 mb-3">
-                      <div className="rounded-2xl bg-gradient-to-br from-violet-900/50 to-slate-800 p-4 text-sm print:bg-gray-100 print:rounded-lg print:p-3 border border-violet-600/30">
+                      <div className="rounded-2xl bg-slate-900/60 p-4 text-sm print:bg-gray-100 print:rounded-lg print:p-3 border border-slate-700">
                         <p className="text-violet-300 print:text-violet-700 font-semibold text-lg">Kısa Vade</p>
                         <p className="text-xs text-gray-400 mb-2">Swing (1-5 Gün)</p>
                         <div className="flex justify-between items-center mb-1">
@@ -443,7 +392,7 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
                         </div>
                       </div>
 
-                      <div className="rounded-2xl bg-gradient-to-br from-fuchsia-900/50 to-slate-800 p-4 text-sm print:bg-gray-100 print:rounded-lg print:p-3 border border-fuchsia-600/30">
+                      <div className="rounded-2xl bg-slate-900/60 p-4 text-sm print:bg-gray-100 print:rounded-lg print:p-3 border border-slate-700">
                         <p className="text-fuchsia-300 print:text-fuchsia-700 font-semibold text-lg">Orta Vade</p>
                         <p className="text-xs text-gray-400 mb-2">Trend (1-4 Hafta)</p>
                         <div className="flex justify-between items-center mb-1">
@@ -464,7 +413,7 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
                         </div>
                       </div>
 
-                      <div className="rounded-2xl bg-gradient-to-br from-blue-900/50 to-slate-800 p-4 text-sm print:bg-gray-100 print:rounded-lg print:p-3 border border-blue-600/30">
+                      <div className="rounded-2xl bg-slate-900/60 p-4 text-sm print:bg-gray-100 print:rounded-lg print:p-3 border border-slate-700">
                         <p className="text-blue-300 print:text-blue-700 font-semibold text-lg">Uzun Vade</p>
                         <p className="text-xs text-gray-400 mb-2">Pozisyon (1-6 Ay)</p>
                         <div className="flex justify-between items-center mb-1">
@@ -487,28 +436,28 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
                     </div>
                     
                     <p className="text-xs text-gray-500 mt-3 print:text-gray-600">
-                      💡 <strong>Algoritma Yöntemi:</strong> Yapay zeka destekli Nicel Model (Quant Model) bazlı risk analizi. Ufuk bazlı dinamik Risk/Ödül, ATR Volatilite Bantları ve Fibonacci uzantıları hesaplanmıştır.
+                       <strong>Algoritma Yöntemi:</strong> Yapay zeka destekli Nicel Model (Quant Model) bazlı risk analizi. Ufuk bazlı dinamik Risk/Ödül, ATR Volatilite Bantları ve Fibonacci uzantıları hesaplanmıştır.
                     </p>
                   </>
                 )}
               </div>
-            </div>
+            </Panel>
 
             {/* Score Matrix (visual) */}
-            <div className="card p-6 print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4">
+            <Panel className="print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm uppercase tracking-[0.25em] text-cyan-400 print:text-cyan-700">Skor Matrisi</p>
-                  <h3 className="mt-3 text-2xl font-semibold text-white print:text-black print:mt-1">Confluans Puanı</h3>
+                  <p className="text-sm uppercase tracking-[0.25em] text-emerald-300 print:text-cyan-700">Skor Matrisi</p>
+                  <h3 className="mt-3 text-2xl font-semibold text-white print:text-black print:mt-1">Birleşik teknik puan</h3>
                 </div>
                 <div className="rounded-full bg-slate-800 px-4 py-2 text-sm font-semibold text-gray-200 print:bg-gray-200 print:text-black">{quote.score}/100</div>
               </div>
               <div className="mt-6 grid grid-cols-2 gap-3 print:mt-3">
                 {[
-                  { label: "Trend", value: quote.trendScore, max: 100, color: "bg-blue-500" },
-                  { label: "Momentum", value: quote.momentumScore, max: 100, color: "bg-purple-500" },
+                  { label: "Trend", value: quote.trendScore, max: 100, color: "bg-emerald-400" },
+                  { label: "Momentum", value: quote.momentumScore, max: 100, color: "bg-emerald-400" },
                   { label: "Hacim", value: quote.volumeScore, max: 100, color: "bg-emerald-500" },
-                  { label: "Genel Skor", value: quote.score, max: 100, color: "bg-orange-500" },
+                  { label: "Genel Skor", value: quote.score, max: 100, color: "bg-emerald-400" },
                 ].map((item) => (
                   <div key={item.label} className="rounded-2xl bg-slate-950/70 p-4 print:bg-gray-100 print:rounded-lg print:p-2">
                     <p className="text-xs uppercase tracking-[0.2em] text-gray-400 print:text-gray-600">{item.label}</p>
@@ -519,38 +468,13 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
                   </div>
                 ))}
               </div>
-            </div>
-
-            {/* MACD / Stoch / CCI Quick Summary */}
-            <div className="card p-6 print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4">
-              <h3 className="text-sm font-bold uppercase tracking-widest text-cyan-400 mb-4">Hızlı İndikatör Özeti</h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between rounded-xl bg-slate-950/50 p-3 border border-slate-800">
-                  <span className="text-xs font-bold text-slate-400">MACD</span>
-                  <span className={`text-sm font-bold ${(quote.macdHistogram ?? 0) > 0 ? "text-emerald-400" : "text-red-400"}`}>
-                    {(quote.macdHistogram ?? 0) > 0 ? "▲ Pozitif" : "▼ Negatif"} ({formatTR(quote.macdHistogram, 3)})
-                  </span>
-                </div>
-                <div className="flex items-center justify-between rounded-xl bg-slate-950/50 p-3 border border-slate-800">
-                  <span className="text-xs font-bold text-slate-400">Stochastic %K</span>
-                  <span className={`text-sm font-bold ${(quote.stochK ?? 0) > 80 ? "text-red-400" : (quote.stochK ?? 0) < 20 ? "text-emerald-400" : "text-white"}`}>
-                    {formatTR(quote.stochK, 1)} {(quote.stochK ?? 0) > 80 ? "(Aşırı Alım)" : (quote.stochK ?? 0) < 20 ? "(Aşırı Satım)" : "(Normal)"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between rounded-xl bg-slate-950/50 p-3 border border-slate-800">
-                  <span className="text-xs font-bold text-slate-400">CCI</span>
-                  <span className={`text-sm font-bold ${(quote.cci ?? 0) > 100 ? "text-orange-400" : (quote.cci ?? 0) < -100 ? "text-emerald-400" : "text-white"}`}>
-                    {formatTR(quote.cci, 1)} {(quote.cci ?? 0) > 100 ? "(Güçlü Momentum)" : (quote.cci ?? 0) < -100 ? "(Aşırı Satım)" : "(Normal)"}
-                  </span>
-                </div>
-              </div>
-            </div>
+            </Panel>
 
             {/* Portfolio / Paper Trading */}
             <Portfolio currentSymbol={symbol} currentPrice={quote.lastClose} />
           </div>
         </div>
       </div>
-    </main>
+    </WorkspacePage>
   );
 }

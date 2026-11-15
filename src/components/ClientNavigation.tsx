@@ -2,167 +2,72 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
-// Firebase removed
+import navigation from "@/lib/system-navigation.json";
 
-export function ClientNavigation({ children }: { children: React.ReactNode }) {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const pathname = usePathname();
-  // Real engine status from /api/health -- never a hard-coded "online" badge.
-  const [engine, setEngine] = useState<"checking" | "online" | "offline">("checking");
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/health", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((h) => { if (!cancelled) setEngine(h?.status === "ok" ? "online" : "offline"); })
-      .catch(() => { if (!cancelled) setEngine("offline"); });
-    return () => { cancelled = true; };
-  }, []);
-
-  return (
-    <div className="flex h-screen w-full relative">
-      {/* Mobile Overlay */}
-      {isMobileMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
-      )}
-
-      {/* Sidebar */}
-      <aside className={`
-        fixed inset-y-0 left-0 z-50 w-64 border-r border-white/5 bg-[#0f1524] flex flex-col flex-shrink-0 transition-transform duration-300 ease-in-out
-        ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
-        md:relative md:translate-x-0
-      `}>
-        <div className="h-20 flex items-center px-6 border-b border-white/5 justify-between">
-          <Link href="/" className="font-black text-xl text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 transition-all drop-shadow-[0_0_10px_rgba(34,211,238,0.3)] flex items-center gap-2">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-cyan-400">
-              <rect x="4" y="4" width="16" height="16" />
-              <rect x="4" y="4" width="16" height="16" transform="rotate(45 12 12)" />
-            </svg> BIST Quantum Sniper v2.0
-          </Link>
-          <button 
-            className="md:hidden text-slate-400 hover:text-white"
-            onClick={() => setIsMobileMenuOpen(false)}
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
-        </div>
-        
-        <nav className="flex-1 overflow-y-auto py-6 px-4 space-y-1.5">
-          <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 px-2">Ana Menü</div>
-          <SidebarLink href="/" icon="❖" label="Kontrol Paneli" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-          <SidebarLink href="/scanner" icon="📡" label="Tarayıcı" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-          <SidebarLink href="/qp" icon="📐" label="QP Analiz Motoru" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-          <SidebarLink href="/radar" icon="⚡" label="Sinyal Radarı" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-          <SidebarLink href="/day-desk" icon="🎯" label="Day-Desk" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-          <SidebarLink href="/news" icon="📰" label="Haberler" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-          <SidebarLink href="/premium-dashboard" icon="🔔" label="Alarmlar" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-          <SidebarLink href="/history" icon="📜" label="Sistem Logları" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-          <SidebarLink href="/rsi-pu30" icon="📉" label="RSI PU30 (Ayrı Motor)" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-          <SidebarLink href="/lab" icon="🧪" label="Test Laboratuvarı (Lab)" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-          <SidebarLink href="/agentic-ai" icon="🤖" label="Agentic AI Konseyi" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-          
-          <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-8 mb-3 px-2">Araçlar</div>
-          <SidebarLink href="/tracker" icon="📈" label="Takipçi" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-          <SidebarLink href="/report" label="📊 Rapor Oluştur" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-          <SidebarLink href="/cross-check" label="🔀 Çapraz Kontrol" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-          <SidebarLink href="/backtest" label="🔄 Klasik Backtest" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-          <SidebarLink href="/quant-lab" icon="🧮" label="Kantitatif Motor" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-          <SidebarLink href="/quant-scanner" icon="🔭" label="Kantitatif Tarayıcı" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-          <SidebarLink href="/compliance" icon="🛡️" label="Uyum Denetimi" pathname={pathname} onClick={() => setIsMobileMenuOpen(false)} />
-        </nav>
-        
-        <div className="p-4 border-t border-white/5">
-          <div className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/5 transition cursor-pointer">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-xs font-bold text-white shadow-[0_0_15px_rgba(34,211,238,0.3)]">
-              OG
-            </div>
-            <div>
-              <p className="text-xs font-bold text-white">Ogün Güneş</p>
-              <p className="text-[10px] text-cyan-400">Premium Üye</p>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 bg-[#0b0f19]">
-        {/* Top Header */}
-        <header className="h-16 md:h-20 border-b border-white/5 bg-[#0b0f19]/80 backdrop-blur-md flex items-center justify-between px-4 md:px-6 flex-shrink-0 z-20 sticky top-0">
-          {/* Mobile Menu Toggle */}
-          <div className="md:hidden flex items-center gap-3">
-            <button 
-              className="text-cyan-400 p-1 hover:bg-white/5 rounded-md transition"
-              onClick={() => setIsMobileMenuOpen(true)}
-            >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="3" y1="12" x2="21" y2="12"></line>
-                <line x1="3" y1="6" x2="21" y2="6"></line>
-                <line x1="3" y1="18" x2="21" y2="18"></line>
-              </svg>
-            </button>
-            <span className="font-bold text-white text-sm">BIST Quantum Sniper v2.0</span>
-          </div>
-
-          {/* Status Badges */}
-          <div className="hidden md:flex items-center gap-3">
-            {(() => {
-              const style = {
-                checking: "border-slate-500/30 bg-slate-500/10 text-slate-400",
-                online: "border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
-                offline: "border-rose-500/30 bg-rose-500/10 text-rose-400",
-              }[engine];
-              const dot = { checking: "bg-slate-400", online: "bg-emerald-500", offline: "bg-rose-500" }[engine];
-              const text = { checking: "SİNYAL MOTORU: KONTROL EDİLİYOR", online: "SİNYAL MOTORU: ÇEVRİMİÇİ", offline: "SİNYAL MOTORU: ERİŞİLEMİYOR" }[engine];
-              return (
-                <div className={`flex items-center gap-2 px-3 py-1.5 rounded border text-[10px] font-black tracking-widest ${style}`}>
-                  <span className={`relative inline-flex rounded-full h-2 w-2 ${dot}`}></span>
-                  {text}
-                </div>
-              );
-            })()}
-          </div>
-
-          {/* Right Icons */}
-          <div className="flex items-center gap-3 md:gap-4 text-slate-400">
-            <button className="hover:text-cyan-400 transition hidden sm:block">💬</button>
-            <button className="hover:text-cyan-400 transition relative">
-              🔔
-              <span className="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full"></span>
-            </button>
-            <button className="hover:text-cyan-400 transition ml-1 md:ml-2 bg-white/5 p-1.5 rounded-full border border-white/10">👤</button>
-          </div>
-        </header>
-
-        {/* Page Content */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
-          <div className="h-full">
-            {children}
-          </div>
-        </main>
-      </div>
-    </div>
-  );
+function Icon({ name }: { name: string }) {
+  return <svg className="rsi-icon" aria-hidden="true"><use href={`/static/rsi-icons.svg#${name}`} /></svg>;
 }
 
-function SidebarLink({ href, label, icon, pathname, onClick }: { href: string; label: string; icon?: string; pathname: string; onClick: () => void }) {
-  const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
-  
-  return (
-    <Link
-      href={href}
-      onClick={onClick}
-      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group border ${
-        isActive 
-          ? "bg-cyan-500/10 text-white border-cyan-500/20 shadow-[0_0_10px_rgba(34,211,238,0.05)]" 
-          : "text-slate-400 hover:text-white hover:bg-white/5 border-transparent hover:border-white/5"
-      }`}
-    >
-      {icon && <span className={`${isActive ? "text-cyan-400" : "text-slate-500 group-hover:text-cyan-400"} transition-colors`}>{icon}</span>}
-      {label}
-    </Link>
-  );
+export function ClientNavigation({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [engine, setEngine] = useState<"checking" | "online" | "offline">("checking");
+  const current = navigation.flatMap(group => group.items).find(item => item.href === pathname);
+
+  useEffect(() => {
+    let mounted = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    fetch("/api/health", { cache: "no-store", signal: controller.signal })
+      .then(async response => { if (!response.ok) throw new Error("Engine unavailable"); return response.json(); })
+      .then(health => { if (mounted) setEngine(health?.status === "ok" ? "online" : "offline"); })
+      .catch(() => { if (mounted) setEngine("offline"); })
+      .finally(() => clearTimeout(timeout));
+    return () => { mounted = false; clearTimeout(timeout); controller.abort(); };
+  }, []);
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && menuOpen) {
+        setMenuOpen(false);
+        document.getElementById("rsi-menu-toggle")?.focus();
+      }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [menuOpen]);
+
+  return <div className="rsi-app rsi-react" data-menu-open={menuOpen}>
+    <aside className="rsi-sidebar" id="rsi-sidebar" aria-label="Ana menü">
+      <Link className="rsi-brand" href="/index.html">
+        <Image src="/static/rsi-mark.svg" width={42} height={42} alt="" unoptimized />
+        <div><strong>RSI Analizi</strong><span>TEKNİK ANALİZ PLATFORMU</span></div>
+      </Link>
+      <nav aria-label="Tüm sistemler"><ul className="nav-links">
+        {navigation.map(group => <li key={group.label}>
+          <div className="rsi-nav-group">{group.label}</div>
+          <ul className="nav-links">{group.items.map(item => <li key={item.href}>
+            <Link href={item.href} onClick={() => setMenuOpen(false)} aria-current={pathname === item.href ? "page" : undefined}>
+              <Icon name={item.icon} /><span>{item.label}</span>{"badge" in item && <small className="rsi-nav-badge">{item.badge}</small>}
+            </Link>
+          </li>)}</ul>
+        </li>)}
+      </ul></nav>
+      <div className="rsi-sidebar-footer">
+        <div className={`rsi-engine-status ${engine}`} role="status"><span className="dot" />{ { checking: "Motor kontrol ediliyor…", online: "Sinyal motoru çevrimiçi", offline: "Sinyal motoruna erişilemiyor" }[engine]}</div>
+        <strong>Araştırın. Karşılaştırın. Doğrulayın.</strong><p>Yeni özellikler önce Test Merkezi&apos;nde.</p>
+      </div>
+    </aside>
+    <button type="button" className="rsi-menu-overlay" aria-label="Menüyü kapat" onClick={() => setMenuOpen(false)} />
+    <div className="rsi-main">
+      <header className="rsi-topbar">
+        <button className="rsi-menu-button" id="rsi-menu-toggle" type="button" aria-label="Menüyü aç" aria-controls="rsi-sidebar" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><Icon name="menu" /></button>
+        <div className="rsi-breadcrumb"><span>Çalışma alanı</span><span>/</span><strong>{current?.label || "Hisse analizi"}</strong></div>
+        <div className="rsi-header-actions"><span className="rsi-environment">BIST · ARAŞTIRMA</span><Link className="rsi-help-link" href="/lab"><Icon name="shield" />Test Merkezi</Link></div>
+      </header>
+      <main className="rsi-page-scroll"><div className="rsi-content">{children}</div></main>
+    </div>
+  </div>;
 }

@@ -3,46 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MTF Strateji Laboratuvarı | Test</title>
-    <link rel="stylesheet" href="/static/style.css?v=20261015-pages2">
-    <link rel="stylesheet" href="/static/strategy-pages.css?v=20261015-pages2">
-    <link rel="stylesheet" href="/static/mtf-lab.css?v=20261015-pages2">
+    <title>RSI Analizi | MTF Strateji Lab</title>
+    <link rel="stylesheet" href="/static/style.css?v=20261115-brand1">
+    <link rel="stylesheet" href="/static/strategy-pages.css?v=20261115-brand1">
+    <link rel="stylesheet" href="/static/mtf-lab.css?v=20261115-brand1">
+<link rel="icon" href="/static/rsi-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/app-shell.css?v=20261115-brand1">
+<link rel="stylesheet" href="/static/workspace.css?v=20261115-workspace2">
 </head>
-<body>
-    <nav class="sidebar">
-        <div class="logo"><span class="icon">🧪</span><h1>MTF LABORATUVARI</h1><p class="subtitle">DENEYSEL STRATEJİ EKRANI</p></div>
-        <ul class="nav-links">
-            <li><a href="/">← Ana uygulamaya dön</a></li>
-            <li><a href="/index.html#rsipu30">🎯 Klasik RSI PU30 / NU70</a></li>
-            <li class="active"><a href="/mtf-lab.html">🧪 MTF Laboratuvarı (Test)</a></li>
-        </ul>
-    </nav>
+<body class="rsi-app rsi-static" data-menu-open="false">
+    <aside class="sidebar rsi-sidebar" id="rsi-sidebar" aria-label="Ana menü">
+        <a class="rsi-brand" href="/index.html"><img src="/static/rsi-mark.svg" alt="" width="42" height="42"><div><strong>RSI Analizi</strong><span>TEKNİK ANALİZ PLATFORMU</span></div></a>
+        <nav aria-label="Tüm sistemler"><ul class="nav-links"><li class="rsi-nav-group">ANALİZ</li>
+<li><a data-system-link href="/index.html#rsipu30"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#activity"></use></svg><span>RSI Radarı</span></a></li>
+<li><a data-system-link href="/scanner"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#scan"></use></svg><span>Hisse Tarayıcı</span></a></li>
+<li><a data-system-link href="/radar"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#radar"></use></svg><span>Sinyal Radarı</span></a></li>
+<li class="rsi-nav-group">ARAŞTIRMA VE TEST</li>
+<li><a data-system-link href="/mtf-lab.html"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#layers"></use></svg><span>MTF Strateji Lab</span><small class="rsi-nav-badge">LAB</small></a></li>
+<li><a data-system-link href="/lab"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#shield"></use></svg><span>Test Merkezi</span></a></li>
+<li><a data-system-link href="/agentic-ai"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#cpu"></use></svg><span>AI Konseyi</span><small class="rsi-nav-badge">DENEYSEL</small></a></li>
+<li class="rsi-nav-group">ARAÇLAR</li>
+<li><a data-system-link href="/signal-terminal"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#terminal"></use></svg><span>Sinyal Terminali</span></a></li>
+<li><a data-system-link href="/report"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#file"></use></svg><span>Rapor Oluştur</span></a></li>
+<li><a data-system-link href="/history"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#history"></use></svg><span>Sinyal Geçmişi</span></a></li>
+<li><a data-system-link href="/index.html#architecture"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#grid"></use></svg><span>Sistem Mimarisi</span></a></li>
+<li><a data-system-link href="/index.html#weights"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#sliders"></use></svg><span>Model Ağırlıkları</span></a></li></ul></nav>
+        <div class="rsi-sidebar-footer"><details class="rsi-engine-details"><summary>Motor ve model durumu</summary><div class="system-status"><div class="status-item" id="status-backend"><span class="dot"></span>Motor kontrol ediliyor…</div><div class="status-item" id="status-rf">RF: —</div><div class="status-item" id="status-lstm">LSTM: —</div><div class="status-item" id="status-sentiment">Haber analizi: —</div></div></details><strong>Araştırın. Karşılaştırın. Doğrulayın.</strong><p>Yeni özellikler önce Test Merkezi'nde.</p></div>
+    </aside>
     <main class="main-content">
-        <nav class="strategy-pages" aria-label="Strateji sayfalari">
-            <a href="/index.html#rsipu30">🎯 Klasik RSI Radarı (Ana Sistem)</a>
-            <a href="/mtf-lab.html" aria-current="page">🧪 MTF Strateji Laboratuvarı (Test)</a>
-        </nav>
+<button class="rsi-menu-overlay" id="rsi-menu-overlay" aria-label="Menüyü kapat" type="button"></button>
+        <header class="rsi-topbar">
+            <button class="rsi-menu-button" id="rsi-menu-toggle" aria-label="Menüyü aç" aria-controls="rsi-sidebar" aria-expanded="false" type="button"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#menu"></use></svg></button>
+            <div class="rsi-breadcrumb"><span>Çalışma alanı</span><span>/</span><strong data-page-name>MTF Strateji Lab</strong></div>
+            <div class="rsi-header-actions"><span class="rsi-environment">BIST · ARAŞTIRMA</span><a class="rsi-help-link" href="/lab"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#shield"></use></svg>Test Merkezi</a></div>
+        </header>
+<div class="rsi-content rsi-workspace">
         <section id="mtf-lab-container" aria-label="MTF Strateji Laboratuvari">
-            <h2>🧪 MTF Strateji Laboratuvarı (Test)</h2>
-            <p>1S/4S/1G durumları · 15D/1S NU ve RSI trendi · Fiyat bazlı MOST EMA(9), %1,1. Bu deneysel ekran klasik radardan bağımsızdır.</p>
+<header class="workspace-header"><div><span class="rsi-eyebrow">ARAŞTIRMA · ÇOKLU ZAMAN DİLİMİ</span><h1>MTF Strateji Lab</h1><div class="workspace-description">Zaman dilimlerini, strateji evresini ve kararın gerekçesini birlikte inceleyin.</div></div></header>
+            <div class="lab-guide"><article><strong>1 · Hisse seçin</strong><p>Tek hisse inceleyin veya BIST100 taraması başlatın.</p></article><article><strong>2 · Evreyi inceleyin</strong><p>Saatlik tepki, tam onay veya alt periyot baskısı arasında geçiş yapın.</p></article><article><strong>3 · Gerekçeyi doğrulayın</strong><p>Günlük yapı, 15dk / 1s RSI ve MOST sonuçlarını detayda karşılaştırın.</p></article></div>
             <div class="lab-controls">
                 <button type="button" data-lab-scan>BIST100 Laboratuvar Taraması</button>
+                <button type="button" data-lab-cancel hidden>İptal et</button>
                 <form data-lab-symbol-form>
                     <input data-lab-symbol aria-label="Laboratuvar hisse sembolü" placeholder="Örn. ISCTR" value="ISCTR" maxlength="15">
                     <button type="submit">Tek Hisse İncele</button>
                 </form>
             </div>
-            <p data-lab-status role="status">Taramayı başlat veya tek bir hisse incele.</p>
+            <p data-lab-status role="status" aria-live="polite">Henüz tarama yapılmadı. Başlamak için bir hisse seçin.</p>
+            <div class="lab-summary" data-lab-summary aria-live="polite"></div>
+            <div data-lab-errors role="alert" hidden></div>
             <div class="lab-filters" role="group" aria-label="Laboratuvar evre filtresi">
-                <button type="button" data-lab-filter="EARLY_REACTION" aria-pressed="true">🟡 EVRE 1 · Saatlik Tepki</button>
-                <button type="button" data-lab-filter="FULL_CONFIRMATION" aria-pressed="false">🟢 EVRE 2 · Tam Onaylı Ralli</button>
-                <button type="button" data-lab-filter="LOWER_TF_NU_PRESSURE" aria-pressed="false">🔴 EVRE 3 · Alt Periyot NU Baskısı</button>
+                <button type="button" data-lab-filter="EARLY_REACTION" aria-pressed="true">Evre 1 · Saatlik tepki</button>
+                <button type="button" data-lab-filter="FULL_CONFIRMATION" aria-pressed="false">Evre 2 · Tam onay</button>
+                <button type="button" data-lab-filter="LOWER_TF_NU_PRESSURE" aria-pressed="false">Evre 3 · Alt periyot baskısı</button>
             </div>
             <div data-lab-list></div>
             <details><summary>Günlük veto / eksik veri / diğer bekleyen durumlar ve gerekçeleri</summary><div data-lab-other-list></div></details>
-            <section data-lab-detail hidden aria-label="Laboratuvar hisse detayı"></section>
+            <section data-lab-detail hidden aria-label="Laboratuvar hisse detayı" tabindex="-1"></section>
         </section>
-    </main>
-    <script src="/static/mtf-lab.js?v=20261015-pages2"></script>
+    </div>
+</main>
+    <script src="/static/mtf-lab.js?v=20261115-brand1"></script>
+<script src="/static/app-shell.js?v=20261115-brand1"></script>
 </body>
 </html>

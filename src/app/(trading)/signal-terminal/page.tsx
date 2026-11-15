@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { WorkspacePage, Panel, MetricCard, EmptyState } from "@/components/ui/Workspace";
 
 interface Rule {
   code: string;
@@ -319,69 +320,44 @@ export default function SignalTerminal() {
   const totalPnL = closedPositions.reduce((acc, p) => acc + p.pnl, 0);
 
   return (
-    <div className="max-w-[1100px] mx-auto py-8 px-5 pb-16 bg-[#0A0C10] text-[#E4E7EC] min-h-screen font-sans">
-      <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="font-mono text-[11px] tracking-[0.14em] uppercase text-[#5B8DEF] mb-1.5">
-            FSI / Kural Motoru
-          </div>
-          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-white mb-1.5">
-            Sinyal Terminali
-          </h1>
-          <p className="text-sm text-[#7C8598] max-w-[640px] leading-relaxed">
-            Analiz raporlarını (BAGFS, PETKM, TUPRS formatı) yapıştırın; skor, rejim ve kural detaylarına göre sıralanmış bir panele dönüştürülsün. Bu araç yatırım tavsiyesi vermez, yalnızca girilen metni düzenler.
-          </p>
-        </div>
-
-        {/* Notifications Toggle */}
-        <button
-          onClick={requestNotificationPermission}
-          className={`font-mono text-xs py-2 px-4 rounded border transition-all shrink-0 ${
-            hasNotificationPermission
-              ? "bg-[rgba(41,211,152,0.12)] text-[#29D398] border-[#29D398]"
-              : "bg-transparent text-[#7C8598] border-[#232833] hover:border-[#7C8598]"
-          }`}
-        >
-          {hasNotificationPermission ? "🔔 Canlı Alarm Açık" : "🔕 Canlı Alarm Kapalı"}
-        </button>
-      </div>
-
+    <WorkspacePage title="Sinyal Terminali" eyebrow="RSI ANALİZİ · RAPOR VE SANAL PORTFÖY" description="Analiz raporlarını yapılandırılmış kartlara dönüştürün; sinyalleri filtreleyin ve sanal pozisyonlarınızı takip edin. Örnek raporlar canlı piyasa verisi değildir." actions={<button type="button" onClick={requestNotificationPermission} className="rsi-button">{hasNotificationPermission ? "Bildirimler açık" : "Bildirimleri etkinleştir"}</button>}>
       {/* Input Panel */}
-      <div className="bg-[#12151C] border border-[#232833] rounded-xl p-5 mb-8 shadow-xl">
+      <Panel title="Rapor girişi" description="Analiz metnini yapıştırın veya biçimi görmek için örnek raporları yükleyin.">
         <textarea
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          placeholder="💰 1. BAGFS (BAGFAS) Analiz Raporu ... buraya yapıştırın"
-          className="w-full min-h-[160px] bg-[#171B24] border border-[#232833] rounded-lg text-[#E4E7EC] font-mono text-[12.5px] p-3 resize-y leading-relaxed outline-none focus:border-[#5B8DEF] transition-colors"
+          placeholder="Analiz raporunu buraya yapıştırın…" aria-label="Analiz raporu metni"
+          className="w-full min-h-[160px] bg-[#101925] border border-[#233043] rounded-lg text-[#eaf0f6] font-mono text-[12.5px] p-3 resize-y leading-relaxed outline-none focus:border-[#69ddbb] transition-colors"
         />
         <div className="flex flex-wrap gap-2.5 items-center mt-3">
           <button
             onClick={() => parseReports(inputText)}
-            className="bg-[#5B8DEF] hover:bg-[#6b9aff] text-[#08101F] font-semibold text-xs py-2 px-4 rounded-md transition-colors"
+            className="rsi-button rsi-button-primary"
           >
-            Raporları İşle
+            Raporları işle
           </button>
           <button
             onClick={loadSample}
-            className="bg-transparent text-[#7C8598] hover:text-[#E4E7EC] border border-[#232833] hover:border-[#7C8598] font-semibold text-xs py-2 px-4 rounded-md transition-all"
+            className="rsi-button"
           >
-            Örnek Veri Yükle
+            Örnek rapor yükle
           </button>
           <button
             onClick={clearAll}
-            className="bg-transparent text-[#7C8598] hover:text-[#E4E7EC] border border-[#232833] hover:border-[#7C8598] font-semibold text-xs py-2 px-4 rounded-md transition-all"
+            className="rsi-button"
           >
             Temizle
           </button>
           {hintMessage && (
-            <span className="text-xs text-[#7C8598] ml-auto font-mono">{hintMessage}</span>
+            <span className="text-xs text-[#93a2b7] ml-auto font-mono">{hintMessage}</span>
           )}
         </div>
-      </div>
+      </Panel>
+      {reports.length === 0 && <EmptyState title="Henüz işlenmiş rapor yok" description="Bir analiz metni ekleyip Raporları işle düğmesine basın. Örnek veriler yalnızca biçimi denemek içindir." />}
 
       {/* Results View */}
       {reports.length > 0 && (
-        <div className="mb-12">
+        <Panel title="Rapor sonuçları" description="Raporlar kaynak metindeki FSI skoruna göre sıralanır.">
           {/* Chips Filter */}
           <div className="flex flex-wrap gap-2 mb-4">
             {(["ALL", "buy", "weak", "watch"] as const).map((key) => {
@@ -400,8 +376,8 @@ export default function SignalTerminal() {
                   onClick={() => setActiveFilter(key)}
                   className={`font-mono text-xs py-1.5 px-4 rounded-full border transition-all ${
                     isActive
-                      ? "bg-[#5B8DEF] text-[#08101F] border-[#5B8DEF]"
-                      : "bg-[#12151C] text-[#7C8598] border-[#232833] hover:border-[#7C8598]"
+                      ? "bg-[#69ddbb] text-[#102b25] border-[#69ddbb]"
+                      : "bg-[#121a25] text-[#93a2b7] border-[#233043] hover:border-[#93a2b7]"
                   }`}
                 >
                   {label} · {counts[key]}
@@ -410,12 +386,12 @@ export default function SignalTerminal() {
             })}
           </div>
 
-          <div className="text-[12px] text-[#7C8598] mb-3 font-mono">
+          <div className="text-[12px] text-[#93a2b7] mb-3 font-mono">
             {filtered.length} sonuç · FSI skoruna göre sıralı
           </div>
 
           {filtered.length === 0 ? (
-            <div className="text-center text-[#7C8598] py-12 text-sm border border-dashed border-[#232833] rounded-lg">
+            <div className="text-center text-[#93a2b7] py-12 text-sm border border-dashed border-[#233043] rounded-lg">
               Bu filtrede rapor yok.
             </div>
           ) : (
@@ -424,52 +400,54 @@ export default function SignalTerminal() {
                 const isOpen = !!openCards[idx];
                 const borderLeftColor =
                   r.category === "buy"
-                    ? "border-l-[#29D398]"
+                    ? "border-l-[#69ddbb]"
                     : r.category === "weak"
-                    ? "border-l-[#EF5D6F]"
+                    ? "border-l-[#f47b91]"
                     : "border-l-[#F5A623]";
 
                 const gaugeColor =
                   r.category === "buy"
-                    ? "#29D398"
+                    ? "#69ddbb"
                     : r.category === "weak"
-                    ? "#EF5D6F"
+                    ? "#f47b91"
                     : "#F5A623";
 
                 const isDown = r.change && r.change.trim().startsWith("-");
                 const badgeStyle =
                   r.category === "buy"
-                    ? "bg-[rgba(41,211,152,0.12)] text-[#29D398]"
+                    ? "bg-[rgba(41,211,152,0.12)] text-[#69ddbb]"
                     : r.category === "weak"
-                    ? "bg-[rgba(239,93,111,0.12)] text-[#EF5D6F]"
+                    ? "bg-[rgba(239,93,111,0.12)] text-[#f47b91]"
                     : "bg-[rgba(245,166,35,0.12)] text-[#F5A623]";
 
                 return (
                   <div
                     key={idx}
-                    className={`bg-[#12151C] border border-[#232833] border-l-4 rounded-lg overflow-hidden transition-all ${borderLeftColor}`}
+                    className={`bg-[#121a25] border border-[#233043] border-l-4 rounded-lg overflow-hidden transition-all ${borderLeftColor}`}
                   >
                     {/* Header */}
                     <div
                       onClick={() => toggleCard(idx)}
-                      className="grid grid-cols-2 md:grid-cols-[140px_110px_1fr_130px_150px_20px] gap-3 md:gap-4 items-center p-3.5 md:px-4 cursor-pointer hover:bg-[#161a23]"
+                      role="button" tabIndex={0} aria-expanded={isOpen} aria-label={`${r.symbol} rapor ayrıntıları`}
+                      onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggleCard(idx); } }}
+                      className="grid grid-cols-2 md:grid-cols-[140px_110px_1fr_130px_150px_20px] gap-3 md:gap-4 items-center p-3.5 md:px-4 cursor-pointer hover:bg-[#182435]"
                     >
                       <div className="flex flex-col">
                         <b className="text-[15px] font-mono font-medium text-white">{r.symbol}</b>
-                        <span className="text-[11px] text-[#7C8598] truncate">{r.fullname}</span>
+                        <span className="text-[11px] text-[#93a2b7] truncate">{r.fullname}</span>
                       </div>
                       <div className="font-mono">
                         <b className="text-[14.5px] block text-white">{r.price} TL</b>
-                        <span className={`text-[11.5px] ${isDown ? "text-[#EF5D6F]" : "text-[#29D398]"}`}>
+                        <span className={`text-[11.5px] ${isDown ? "text-[#f47b91]" : "text-[#69ddbb]"}`}>
                           {r.change}
                         </span>
                       </div>
                       <div className="col-span-2 md:col-span-1 flex flex-col gap-1">
-                        <div className="text-[10.5px] text-[#7C8598] font-mono flex justify-between">
+                        <div className="text-[10.5px] text-[#93a2b7] font-mono flex justify-between">
                           <span>FSI</span>
                           <span className="text-white">{r.score ?? "—"}/100</span>
                         </div>
-                        <div className="h-1.5 bg-[#171B24] rounded-full overflow-hidden border border-[#232833]">
+                        <div className="h-1.5 bg-[#101925] rounded-full overflow-hidden border border-[#233043]">
                           <div
                             className="h-full rounded-full"
                             style={{
@@ -479,10 +457,10 @@ export default function SignalTerminal() {
                           />
                         </div>
                       </div>
-                      <div className="text-[11px] font-mono text-[#7C8598]">
+                      <div className="text-[11px] font-mono text-[#93a2b7]">
                         {r.regime ? (
                           <>
-                            <b className="text-[#E4E7EC]">{r.regime.type}</b>
+                            <b className="text-[#eaf0f6]">{r.regime.type}</b>
                             <br />
                             Vol %{r.regime.vol} · Güven %{r.regime.conf}
                           </>
@@ -494,7 +472,7 @@ export default function SignalTerminal() {
                         {r.category === "buy" ? "AL" : r.category === "weak" ? "ZAYIF" : "İZLE"}
                       </div>
                       <div
-                        className={`text-[#7C8598] transition-transform text-xs text-right hidden md:block ${
+                        className={`text-[#93a2b7] transition-transform text-xs text-right hidden md:block ${
                           isOpen ? "rotate-90" : ""
                         }`}
                       >
@@ -504,9 +482,9 @@ export default function SignalTerminal() {
 
                     {/* Details */}
                     {isOpen && (
-                      <div className="p-4 pl-5 border-t border-[#232833] text-[12.5px] bg-[#141820]">
+                      <div className="p-4 pl-5 border-t border-[#233043] text-[12.5px] bg-[#111d2a]">
                         {r.verdict && (
-                          <div className="mb-3.5 p-3 bg-[#171B24] rounded-lg border border-[#232833] leading-relaxed whitespace-pre-wrap font-mono text-[12px] text-[#E4E7EC]">
+                          <div className="mb-3.5 p-3 bg-[#101925] rounded-lg border border-[#233043] leading-relaxed whitespace-pre-wrap font-mono text-[12px] text-[#eaf0f6]">
                             {r.verdict}
                           </div>
                         )}
@@ -514,10 +492,10 @@ export default function SignalTerminal() {
                           {r.rules.map((rule, ruleIdx) => (
                             <li
                               key={ruleIdx}
-                              className="font-mono text-[11.5px] text-[#7C8598] relative pl-3.5 leading-relaxed"
+                              className="font-mono text-[11.5px] text-[#93a2b7] relative pl-3.5 leading-relaxed"
                             >
-                              <span className="absolute left-0 text-[#5B8DEF]">›</span>
-                              <code className="text-[#5B8DEF] bg-transparent mr-1">[{rule.code}]</code>{" "}
+                              <span className="absolute left-0 text-[#69ddbb]">›</span>
+                              <code className="text-[#69ddbb] bg-transparent mr-1">[{rule.code}]</code>{" "}
                               {rule.desc}
                             </li>
                           ))}
@@ -529,71 +507,59 @@ export default function SignalTerminal() {
               })}
             </div>
           )}
-        </div>
+        </Panel>
       )}
 
       {/* PAPER TRADING PORTFOLIO SECTION */}
-      <div className="bg-[#12151C] border border-[#232833] rounded-xl p-5 shadow-2xl">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#232833] pb-4 mb-4">
-          <div>
-            <h2 className="text-lg font-semibold text-white">Sanal Portföy & Paper Trading</h2>
-            <p className="text-xs text-[#7C8598]">101-Kural motoru sinyallerini test etmek için sanal pozisyonları yönetin.</p>
-          </div>
-          <div className="font-mono text-sm">
-            <span>Toplam Kar/Zarar: </span>
-            <span className={totalPnL >= 0 ? "text-[#29D398] font-bold" : "text-[#EF5D6F] font-bold"}>
-              {totalPnL.toFixed(2)} TL
-            </span>
-          </div>
-        </div>
-
+      <Panel title="Sanal portföy" description="Gerçek emir iletilmez. Bu alanda kaydedilen sanal pozisyonları ve gerçekleşen sonuçlarını izleyin.">
+        <div className="workspace-metrics mb-5"><MetricCard label="Toplam kâr / zarar" value={`${totalPnL.toFixed(2)} TL`} tone={totalPnL >= 0 ? "positive" : "negative"} /><MetricCard label="Açık pozisyon" value={openPositions.length} /><MetricCard label="Kapanan pozisyon" value={closedPositions.length} /></div>
         {/* Position Opener Form */}
         <form onSubmit={openPosition} className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end mb-6">
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-mono text-[#7C8598] uppercase">Sembol</label>
+            <label className="text-[10px] font-mono text-[#93a2b7] uppercase">Sembol</label>
             <input
               type="text"
               placeholder="örn: TUPRS"
               value={newSym}
               onChange={(e) => setNewSym(e.target.value)}
-              className="bg-[#171B24] border border-[#232833] text-sm text-white rounded p-2 outline-none focus:border-[#5B8DEF]"
+              className="bg-[#101925] border border-[#233043] text-sm text-white rounded p-2 outline-none focus:border-[#69ddbb]"
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-mono text-[#7C8598] uppercase">Yön</label>
+            <label className="text-[10px] font-mono text-[#93a2b7] uppercase">Yön</label>
             <select
               value={newType}
               onChange={(e) => setNewType(e.target.value as "BUY" | "SELL")}
-              className="bg-[#171B24] border border-[#232833] text-sm text-white rounded p-2 outline-none"
+              className="bg-[#101925] border border-[#233043] text-sm text-white rounded p-2 outline-none"
             >
               <option value="BUY">Alış (Long)</option>
               <option value="SELL">Satış (Short)</option>
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-mono text-[#7C8598] uppercase">Giriş Fiyatı</label>
+            <label className="text-[10px] font-mono text-[#93a2b7] uppercase">Giriş Fiyatı</label>
             <input
               type="number"
               step="0.01"
               placeholder="örn: 236.90"
               value={newPrice}
               onChange={(e) => setNewPrice(e.target.value)}
-              className="bg-[#171B24] border border-[#232833] text-sm text-white rounded p-2 outline-none"
+              className="bg-[#101925] border border-[#233043] text-sm text-white rounded p-2 outline-none"
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-mono text-[#7C8598] uppercase">Adet</label>
+            <label className="text-[10px] font-mono text-[#93a2b7] uppercase">Adet</label>
             <input
               type="number"
               placeholder="örn: 100"
               value={newQty}
               onChange={(e) => setNewQty(e.target.value)}
-              className="bg-[#171B24] border border-[#232833] text-sm text-white rounded p-2 outline-none"
+              className="bg-[#101925] border border-[#233043] text-sm text-white rounded p-2 outline-none"
             />
           </div>
           <button
             type="submit"
-            className="bg-[#5B8DEF] hover:bg-[#6b9aff] text-[#08101F] text-xs font-semibold py-2.5 rounded transition-colors col-span-2 md:col-span-1"
+            className="rsi-button rsi-button-primary col-span-2 md:col-span-1"
           >
             Pozisyon Aç
           </button>
@@ -601,16 +567,16 @@ export default function SignalTerminal() {
 
         {/* Open Positions Table */}
         <div className="mb-6">
-          <h3 className="text-xs font-mono text-[#5B8DEF] uppercase mb-2">Açık Pozisyonlar ({openPositions.length})</h3>
+          <h3 className="text-xs font-mono text-[#69ddbb] uppercase mb-2">Açık Pozisyonlar ({openPositions.length})</h3>
           {openPositions.length === 0 ? (
-            <div className="text-center text-[#7C8598] text-xs py-4 border border-[#232833] rounded">
+            <div className="text-center text-[#93a2b7] text-xs py-4 border border-[#233043] rounded">
               Açık pozisyon bulunmuyor.
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="workspace-table-wrap">
               <table className="w-full text-left font-mono text-xs border-collapse">
                 <thead>
-                  <tr className="border-b border-[#232833] text-[#7C8598]">
+                  <tr className="border-b border-[#233043] text-[#93a2b7]">
                     <th className="py-2">Hisse</th>
                     <th className="py-2">Tür</th>
                     <th className="py-2 text-right">Adet</th>
@@ -620,10 +586,10 @@ export default function SignalTerminal() {
                 </thead>
                 <tbody>
                   {openPositions.map((pos) => (
-                    <tr key={pos.id} className="border-b border-[#171B24]">
+                    <tr key={pos.id} className="border-b border-[#101925]">
                       <td className="py-2 text-white font-medium">{pos.symbol}</td>
                       <td className="py-2">
-                        <span className={pos.type === "BUY" ? "text-[#29D398]" : "text-[#EF5D6F]"}>
+                        <span className={pos.type === "BUY" ? "text-[#69ddbb]" : "text-[#f47b91]"}>
                           {pos.type === "BUY" ? "Long" : "Short"}
                         </span>
                       </td>
@@ -639,11 +605,11 @@ export default function SignalTerminal() {
                             onChange={(e) =>
                               setCloseInputs((prev) => ({ ...prev, [pos.id]: e.target.value }))
                             }
-                            className="bg-[#171B24] border border-[#232833] text-white rounded p-1 w-20 text-right outline-none"
+                            className="bg-[#101925] border border-[#233043] text-white rounded p-1 w-20 text-right outline-none"
                           />
                           <button
                             onClick={() => closePosition(pos.id)}
-                            className="bg-[#EF5D6F] text-[#0A0C10] font-semibold px-2 py-1 rounded"
+                            className="rsi-button rsi-button-danger"
                           >
                             Kapat
                           </button>
@@ -659,16 +625,16 @@ export default function SignalTerminal() {
 
         {/* Closed Positions History */}
         <div>
-          <h3 className="text-xs font-mono text-[#7C8598] uppercase mb-2">Kapanan Pozisyon Geçmişi ({closedPositions.length})</h3>
+          <h3 className="text-xs font-mono text-[#93a2b7] uppercase mb-2">Kapanan Pozisyon Geçmişi ({closedPositions.length})</h3>
           {closedPositions.length === 0 ? (
-            <div className="text-center text-[#7C8598] text-xs py-4 border border-[#232833] rounded">
+            <div className="text-center text-[#93a2b7] text-xs py-4 border border-[#233043] rounded">
               İşlem geçmişi bulunmuyor.
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="workspace-table-wrap">
               <table className="w-full text-left font-mono text-xs border-collapse">
                 <thead>
-                  <tr className="border-b border-[#232833] text-[#7C8598]">
+                  <tr className="border-b border-[#233043] text-[#93a2b7]">
                     <th className="py-2">Hisse</th>
                     <th className="py-2">Tür</th>
                     <th className="py-2 text-right">Giriş</th>
@@ -679,18 +645,18 @@ export default function SignalTerminal() {
                 </thead>
                 <tbody>
                   {closedPositions.map((pos) => (
-                    <tr key={pos.id} className="border-b border-[#171B24] text-[#E4E7EC]">
+                    <tr key={pos.id} className="border-b border-[#101925] text-[#eaf0f6]">
                       <td className="py-2 text-white font-medium">{pos.symbol}</td>
                       <td className="py-2">{pos.type === "BUY" ? "Long" : "Short"}</td>
                       <td className="py-2 text-right">{pos.entryPrice.toFixed(2)} TL</td>
                       <td className="py-2 text-right">{pos.closePrice?.toFixed(2)} TL</td>
                       <td className="py-2 text-right">
-                        <span className={pos.pnl >= 0 ? "text-[#29D398]" : "text-[#EF5D6F]"}>
+                        <span className={pos.pnl >= 0 ? "text-[#69ddbb]" : "text-[#f47b91]"}>
                           {pos.pnlPct.toFixed(2)}%
                         </span>
                       </td>
                       <td className="py-2 text-right">
-                        <span className={pos.pnl >= 0 ? "text-[#29D398] font-bold" : "text-[#EF5D6F] font-bold"}>
+                        <span className={pos.pnl >= 0 ? "text-[#69ddbb] font-bold" : "text-[#f47b91] font-bold"}>
                           {pos.pnl.toFixed(2)} TL
                         </span>
                       </td>
@@ -701,7 +667,7 @@ export default function SignalTerminal() {
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </Panel>
+    </WorkspacePage>
   );
 }

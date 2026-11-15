@@ -66,13 +66,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function showSectionFromHash() {
         const targetId = window.location.hash.slice(1) || 'rsipu30';
+        if (targetId === 'dashboard') { window.location.replace('/scanner'); return; }
         const target = Array.from(sections).find(section => section.id === targetId);
         if (!target) return;
         navLinks.forEach(link => link.parentElement.classList.toggle(
             'active', link.getAttribute('href') === `#${targetId}`));
         sections.forEach(section => section.classList.toggle('active', section === target));
-        const marketControls = document.getElementById('market-radar-controls');
-        if (marketControls) marketControls.hidden = targetId !== 'dashboard';
     }
     // Native anchors keep browser Back/Forward and direct section links working.
     window.addEventListener('hashchange', showSectionFromHash);
@@ -90,248 +89,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Elements
-    const scanBtn = document.getElementById('scanBtn');
-    const scanAllBtn = document.getElementById('scanAllBtn');
-    const symbolInput = document.getElementById('symbolInput');
-    const errorMsg = document.getElementById('errorMsg');
-    const scanStatus = document.getElementById('scanStatus');
-    const radarResults = document.getElementById('radarResults');
-    const radarGrid = document.getElementById('radarGrid');
-    
-    // Chart Modal
-    const chartModal = document.getElementById('chartModal');
-    const closeModal = document.getElementById('closeModal');
-    const chartTitle = document.getElementById('chartTitle');
-    const tvchartDiv = document.getElementById('tvchart');
-    let chart = null;
-    let candleSeries = null;
-    let smaSeries = null;
-    let emaSeries = null;
-
-    closeModal.addEventListener('click', () => {
-        chartModal.classList.add('hidden');
-    });
-
-    scanAllBtn.addEventListener('click', async () => {
-        errorMsg.classList.add('hidden');
-        radarResults.classList.add('hidden');
-        scanStatus.classList.remove('hidden');
-        scanAllBtn.disabled = true;
-
-        try {
-            const response = await fetch('/api/scan_all');
-            const json = await response.json();
-
-            // "error" = hiçbir hisse taranamadı (model/veri/backend) -- boş radar "sinyal yok" gibi gösterilmemeli.
-            if (!response.ok || json.status === 'error' || json.status === 'backend_unavailable' || json.status === 'timeout') {
-                const firstErr = json.errors && json.errors.length ? ` (${json.errors[0].error})` : '';
-                throw new Error((json.detail || 'Tarama başarısız: hiçbir hisse taranamadı') + firstErr);
-            }
-            renderRadar(json.data, json);
-            if (json.status === 'partial') {
-                errorMsg.textContent = `Kısmi tarama: ${json.scanned}/${json.attempted} hisse tarandı, ${json.errors.length} hisse hata verdi.`;
-                errorMsg.classList.remove('hidden');
-            }
-
-        } catch (error) {
-            errorMsg.textContent = error.message;
-            errorMsg.classList.remove('hidden');
-        } finally {
-            scanStatus.classList.add('hidden');
-            scanAllBtn.disabled = false;
-        }
-    });
-
-    const results = document.getElementById('results');
-
-    async function handleSingleScan() {
-        const symbol = (symbolInput.value || '').trim().toUpperCase();
-        if (!symbol) return;
-        errorMsg.classList.add('hidden');
-        if (results) results.classList.add('hidden');
-        scanStatus.classList.remove('hidden');
-        scanBtn.disabled = true;
-
-        try {
-            const res = await fetch(`/api/bist/${symbol}`);
-            const data = await res.json();
-            if (!res.ok || data.error) throw new Error(data.error || `${symbol} verisi alınamadı.`);
-
-            renderSingleStock(data);
-        } catch (error) {
-            errorMsg.textContent = error.message;
-            errorMsg.classList.remove('hidden');
-        } finally {
-            scanStatus.classList.add('hidden');
-            scanBtn.disabled = false;
-        }
-    }
-
-    function renderSingleStock(stock) {
-        if (!results) return;
-        results.innerHTML = '';
-        const card = document.createElement('div');
-        card.className = 'card';
-        const changePercent = stock.changePercent != null ? stock.changePercent : ((stock.change && stock.lastClose) ? (stock.change / stock.lastClose * 100) : 0);
-        const changeSign = changePercent >= 0 ? '+' : '';
-        const changeColor = changePercent >= 0 ? 'var(--neon-green)' : 'var(--neon-red)';
-        
-        card.innerHTML = `
-            <div class="card-top">
-                <div class="card-symbol">${stock.symbol}</div>
-                <div class="card-badge" style="color: ${changeColor}; border: 1px solid ${changeColor};">
-                    ${changeSign}${changePercent.toFixed(2)}%
-                </div>
-            </div>
-            
-            <div class="target-grid">
-                <div class="target-item">
-                    <div class="target-label">Son Fiyat</div>
-                    <div class="target-val">${stock.lastClose ? Number(stock.lastClose).toFixed(2) : '-'} ₺</div>
-                </div>
-                <div class="target-item">
-                    <div class="target-label">Gün İçi En Yüksek</div>
-                    <div class="target-val">${stock.high ? Number(stock.high).toFixed(2) : '-'} ₺</div>
-                </div>
-                <div class="target-item">
-                    <div class="target-label">Gün İçi En Düşük</div>
-                    <div class="target-val">${stock.low ? Number(stock.low).toFixed(2) : '-'} ₺</div>
-                </div>
-            </div>
-
-            <div style="margin-top: 1.5rem; display: flex; gap: 1rem;">
-                <button class="btn-chart" data-symbol="${stock.symbol}">📈 GRAFİĞİ GÖSTER</button>
-            </div>
-        `;
-
-        const chartBtn = card.querySelector('.btn-chart');
-        chartBtn.addEventListener('click', () => openChart(stock.symbol));
-
-        results.appendChild(card);
-        results.classList.remove('hidden');
-    }
-
-    if (scanBtn) scanBtn.addEventListener('click', handleSingleScan);
-    if (symbolInput) symbolInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') handleSingleScan();
-    });
-
-    function renderRadar(stocks, meta) {
-        radarGrid.innerHTML = '';
-        if (!stocks || stocks.length === 0) {
-            const scannedInfo = meta && meta.scanned != null ? ` (${meta.scanned}/${meta.attempted} hisse tarandı)` : '';
-            radarGrid.innerHTML = `<p style="color:var(--text-muted);">Tarama tamamlandı${scannedInfo}: kriterleri karşılayan hisse yok.</p>`;
-        } else {
-            stocks.forEach(stock => {
-                const upProb = (stock.class_probabilities.UP * 100).toFixed(1);
-                
-                let reasonsHtml = '<ul class="reasons-list">';
-                if (stock.explanation) {
-                    stock.explanation.forEach(r => { reasonsHtml += `<li>${r}</li>`; });
-                }
-                reasonsHtml += '</ul>';
-
-                const shadow = stock.decision_mode !== 'decide';
-                let badgeHtml = '';
-                if (shadow) {
-                    badgeHtml = `<div class="card-badge" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b;">GÖLGE · RF %${upProb}${stock.quantum_approved ? ' + LSTM' : ''} (doğrulanmamış)</div>`;
-                } else if (stock.quantum_approved) {
-                    badgeHtml = `<div class="card-badge" style="background: rgba(16, 185, 129, 0.2); border: 1px solid var(--neon-green);">🚀 KUANTUM ONAYI (RF & LSTM)</div>`;
-                } else {
-                    badgeHtml = `<div class="card-badge" style="background: rgba(59, 130, 246, 0.1); color: var(--accent);">RF Skor: %${upProb}</div>`;
-                }
-
-                const targetUsd = (stock.target_price_usd != null && stock.target_price_usd > 0)
-                    ? stock.target_price_usd
-                    : ((stock.target_price_tl && stock.usd_rate) ? (stock.target_price_tl / stock.usd_rate) : null);
-
-                const card = document.createElement('div');
-                card.className = 'card';
-                card.innerHTML = `
-                    <div class="card-top">
-                        <div class="card-symbol">${stock.symbol}</div>
-                        ${badgeHtml}
-                    </div>
-                    
-                    <div class="target-grid">
-                        <div class="target-item">
-                            <div class="target-label">Mevcut Fiyat</div>
-                            <div class="target-val">${stock.current_price ? stock.current_price.toFixed(2) : '-'} ₺</div>
-                        </div>
-                        <div class="target-item">
-                            <div class="target-label">Hedef Fiyat (TL)</div>
-                            <div class="target-val val-green">🎯 ${stock.target_price_tl ? stock.target_price_tl.toFixed(2) : '-'} ₺</div>
-                        </div>
-                        <div class="target-item">
-                            <div class="target-label">Hedef Fiyat (USD)</div>
-                            <div class="target-val val-green">💵 $${targetUsd ? targetUsd.toFixed(2) : '-'}</div>
-                        </div>
-                    </div>
-                    
-                    ${reasonsHtml}
-                    
-                    <button class="btn-chart" data-symbol="${stock.symbol}">📈 GRAFİĞİ GÖSTER</button>
-                `;
-                
-                // Add Chart Listener
-                const chartBtn = card.querySelector('.btn-chart');
-                chartBtn.addEventListener('click', () => openChart(stock.symbol));
-
-                radarGrid.appendChild(card);
-            });
-        }
-        radarResults.classList.remove('hidden');
-    }
-
-    async function openChart(symbol) {
-        chartTitle.textContent = `${symbol} - AI Analiz Grafiği (TradingView)`;
-        chartModal.classList.remove('hidden');
-        
-        // Init Chart if not already
-        if (!chart) {
-            chart = LightweightCharts.createChart(tvchartDiv, {
-                layout: { background: { type: 'solid', color: '#18181b' }, textColor: '#d1d4dc' },
-                grid: { vertLines: { color: '#27272a' }, horzLines: { color: '#27272a' } },
-                crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-                timeScale: { borderColor: '#27272a' }
-            });
-            
-            // v5 removed chart.addCandlestickSeries()/addLineSeries() -- the CDN
-            // tag has no version pin and now serves 5.2.1, so these calls would
-            // throw. v5's replacement is addSeries(SeriesType, options).
-            candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, { upColor: '#10b981', downColor: '#ef4444', borderVisible: false, wickUpColor: '#10b981', wickDownColor: '#ef4444' });
-            smaSeries = chart.addSeries(LightweightCharts.LineSeries, { color: '#3b82f6', lineWidth: 2, title: 'SMA 50' });
-            emaSeries = chart.addSeries(LightweightCharts.LineSeries, { color: '#f59e0b', lineWidth: 2, title: 'EMA 9' });
-        } else {
-            // Clear existing data
-            candleSeries.setData([]);
-            smaSeries.setData([]);
-            emaSeries.setData([]);
-        }
-
-        try {
-            const res = await fetch(`/api/chart/${symbol}`);
-            const json = await res.json();
-            
-            if (json.status === 'success') {
-                const data = json.data;
-                const cData = data.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close }));
-                const sData = data.filter(d => d.sma50 !== null).map(d => ({ time: d.time, value: d.sma50 }));
-                const eData = data.filter(d => d.ema9 !== null).map(d => ({ time: d.time, value: d.ema9 }));
-                
-                candleSeries.setData(cData);
-                smaSeries.setData(sData);
-                emaSeries.setData(eData);
-                chart.timeScale().fitContent();
-            }
-        } catch (e) {
-            console.error("Chart load failed", e);
-        }
-    }
-
     // ───────────────────────── RSI PU30 (Ayrı Motor) ─────────────────────────
-    // Deliberately separate from the sniper radar above: own endpoints
+    // The canonical RSI interface uses its own endpoints
     // (/api/scan/rsi-pu30), own cards, own chart modal. No shared state.
     const rsiPu30ScanBtn = document.getElementById('rsiPu30ScanBtn');
     const rsiPu30Status = document.getElementById('rsiPu30Status');
@@ -415,22 +174,56 @@ document.addEventListener('DOMContentLoaded', () => {
             rsiPu30ScanBtn.disabled = true;
 
             try {
-                const response = await fetch(`/api/scan/rsi-pu30?interval=${rsiPu30Interval}&signal_type=${rsiPu30Type}`);
-                const text = await response.text();
-                let json;
-                try {
-                    json = JSON.parse(text);
-                } catch {
-                    throw new Error("Tarama motoru veriyi hazırlıyor veya backend sunucusuna bağlanılamadı.");
-                }
-                if (!response.ok || json.status === 'error' || !json.data) {
-                    const firstErr = json.data && json.data.errors && json.data.errors.length ? ` (${json.data.errors[0].error})` : '';
-                    throw new Error((json.detail || 'Tarama başarısız: hiçbir hisse taranamadı') + firstErr);
-                }
-                renderRsiPu30(json.data);
-                if (json.status === 'partial') {
-                    rsiPu30ErrorMsg.textContent = `Kısmi tarama: ${json.data.scanned}/${json.data.attempted} hisse tarandı.`;
-                    rsiPu30ErrorMsg.classList.remove('hidden');
+                const scanOne = async (itv) => {
+                    const response = await fetch(`/api/scan/rsi-pu30?interval=${itv}&signal_type=${rsiPu30Type}`);
+                    const text = await response.text();
+                    let json;
+                    try {
+                        json = JSON.parse(text);
+                    } catch {
+                        throw new Error("Tarama motoru veriyi hazırlıyor veya backend sunucusuna bağlanılamadı.");
+                    }
+                    if (!response.ok || json.status === 'error' || !json.data) {
+                        const firstErr = json.data && json.data.errors && json.data.errors.length ? ` (${json.data.errors[0].error})` : '';
+                        throw new Error((json.detail || 'Tarama başarısız: hiçbir hisse taranamadı') + firstErr);
+                    }
+                    return json;
+                };
+
+                if (rsiPu30Interval === 'all') {
+                    // Tüm zaman dilimlerini sırayla tara ve tek listede birleştir (sunucuyu yormamak için ardışık).
+                    const itvs = ['4h', '1h', '1d'];
+                    const merged = { signals: [], scanned: 0, attempted: 0, errors: [] };
+                    const failed = [];
+                    for (const itv of itvs) {
+                        try {
+                            const j = await scanOne(itv);
+                            (j.data.signals || []).forEach((s) => merged.signals.push({ ...s, _interval: itv }));
+                            merged.scanned = Math.max(merged.scanned, j.data.scanned || 0);
+                            merged.attempted = Math.max(merged.attempted, j.data.attempted || 0);
+                            (j.data.errors || []).forEach((e) => merged.errors.push({ ...e, symbol: `${e.symbol} (${itv})` }));
+                        } catch (err) {
+                            failed.push(`${itv}: ${err.message}`);
+                        }
+                    }
+                    if (failed.length === itvs.length) {
+                        throw new Error('Tarama başarısız — ' + failed.join(' | '));
+                    }
+                    const order = { '4h': 0, '1h': 1, '1d': 2 };
+                    merged.signals.sort((a, b) => a.symbol.localeCompare(b.symbol) || order[a._interval] - order[b._interval]);
+                    renderRsiPu30(merged);
+                    if (failed.length) {
+                        rsiPu30ErrorMsg.textContent = `Kısmi tarama (taranamayan zaman dilimi): ${failed.join(' | ')}`;
+                        rsiPu30ErrorMsg.classList.remove('hidden');
+                    }
+                } else {
+                    const json = await scanOne(rsiPu30Interval);
+                    json.data.signals = (json.data.signals || []).map((s) => ({ ...s, _interval: rsiPu30Interval }));
+                    renderRsiPu30(json.data);
+                    if (json.status === 'partial') {
+                        rsiPu30ErrorMsg.textContent = `Kısmi tarama: ${json.data.scanned}/${json.data.attempted} hisse tarandı.`;
+                        rsiPu30ErrorMsg.classList.remove('hidden');
+                    }
                 }
             } catch (error) {
                 rsiPu30ErrorMsg.textContent = error.message;
@@ -458,7 +251,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         rsiPu30Grid.innerHTML = '';
         if (signals.length === 0) {
-            rsiPu30Grid.innerHTML = `<p style="color:var(--text-muted); padding:2rem; text-align:center;">Seçili zaman diliminde (${rsiPu30Interval.toUpperCase()}) bu filtrede uyumsuzluk sinyali bulunamadı.</p>`;
+            rsiPu30Grid.innerHTML = `<p style="color:var(--text-muted); padding:2rem; text-align:center;">Seçili zaman diliminde (${rsiPu30Interval === 'all' ? 'TÜMÜ' : rsiPu30Interval.toUpperCase()}) bu filtrede uyumsuzluk sinyali bulunamadı.</p>`;
         } else {
             signals.forEach((s) => {
                 const isNU = s.type === 'NU70' || s.trend === 'BEAR';
@@ -469,7 +262,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const badgeBg = isNU ? 'rgba(244, 63, 94, 0.15)' : 'rgba(16, 185, 129, 0.15)';
                 const badgeColor = isNU ? '#f43f5e' : '#10b981';
                 const badgeText = isNU ? '🔴 NU70 (DÜŞÜŞ)' : '🟢 PU30 (YÜKSELİŞ)';
-                const barsText = s.bars_since_confirm === 0 ? "BU BAR" : `${s.bars_since_confirm || 0} BAR ÖNCE`;
+                const itvKey = s._interval || rsiPu30Interval;
+                const itvShort = { '1h': '1S', '4h': '4S', '1d': 'G' }[itvKey] || String(itvKey).toUpperCase();
+                const barsText = `${itvShort} · ` + (s.bars_since_confirm === 0 ? "BU BAR" : `${s.bars_since_confirm || 0} BAR ÖNCE`);
 
                 const p1 = s.tepe1 || s.dip1 || {};
                 const p2 = s.tepe2 || s.dip2 || {};
@@ -542,12 +337,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     ${s.explanation ? `<div style="font-size:0.75rem; color:#94a3b8; margin-top:0.6rem; line-height:1.3; background:rgba(0,0,0,0.25); padding:0.4rem; border-radius:6px;">${s.explanation}</div>` : ''}
 
-                    <button class="btn-chart" data-symbol="${s.symbol}" style="margin-top:0.75rem; width:100%;">📈 GRAFİĞİ GÖSTER</button>
+                    <button class="btn-chart" data-symbol="${s.symbol}" style="margin-top:0.75rem; width:100%;">Grafiği incele</button>
                 `;
 
                 const chartBtn = card.querySelector('.btn-chart');
                 if (chartBtn) {
-                    chartBtn.addEventListener('click', () => openRsiPu30Chart(s.symbol));
+                    chartBtn.addEventListener('click', () => openRsiPu30Chart(s.symbol, itvKey));
                 }
                 rsiPu30Grid.appendChild(card);
             });
@@ -555,20 +350,43 @@ document.addEventListener('DOMContentLoaded', () => {
         rsiPu30Results.classList.remove('hidden');
     }
 
-    function ensureRsiPu30Charts() {
-        if (rsiPu30PriceChartInst) return;
+    function destroyRsiPu30Charts() {
+        if (!rsiPu30PriceChartInst) return;
+        rsiPu30PriceChartInst.remove();
+        rsiPu30RsiChartInst.remove();
+        rsiPu30PriceChartInst = null;
+        rsiPu30RsiChartInst = null;
+        rsiPu30CandleSeries = null;
+        rsiPu30RsiSeries = null;
+        rsiPu30PriceMarkers = null;
+        rsiPu30RsiMarkers = null;
+        rsiPu30PriceConnector = null;
+        rsiPu30RsiConnector = null;
+        rsiPu30PriceLines = [];
+    }
+
+    let rsiPu30ChartItv = null;
+
+    function ensureRsiPu30Charts(itv) {
+        // 'Tümü' modunda grafik zaman dilimi karttan gelir; saat gösterimi değişirse grafikleri yeniden kur.
+        const chartItv = itv || rsiPu30Interval;
+        if (rsiPu30PriceChartInst && rsiPu30ChartItv !== chartItv && ((rsiPu30ChartItv === '1h') !== (chartItv === '1h'))) {
+            destroyRsiPu30Charts();
+        }
+        if (rsiPu30PriceChartInst) { rsiPu30ChartItv = chartItv; return; }
+        rsiPu30ChartItv = chartItv;
 
         // Bars now carry a UTCTimestamp "time" (epoch seconds, BIST-local
         // wall clock treated as UTC -- see _epoch_seconds in rsi_pu30.py) so
         // timeVisible can show real hour-of-day on the 1h timeframe, not
         // just a date.
-        const timeVisible = rsiPu30Interval === '1h';
+        const timeVisible = chartItv === '1h';
         rsiPu30PriceChartInst = LightweightCharts.createChart(document.getElementById('rsiPu30PriceChart'), {
-            layout: { background: { type: 'solid', color: '#18181b' }, textColor: '#d1d4dc' },
-            grid: { vertLines: { color: '#27272a' }, horzLines: { color: '#27272a' } },
+            layout: { background: { type: 'solid', color: '#111b28' }, textColor: '#d1d4dc' },
+            grid: { vertLines: { color: '#27384b' }, horzLines: { color: '#27384b' } },
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-            timeScale: { borderColor: '#27272a', timeVisible, secondsVisible: false },
-            rightPriceScale: { borderColor: '#27272a' },
+            timeScale: { borderColor: '#27384b', timeVisible, secondsVisible: false },
+            rightPriceScale: { borderColor: '#27384b' },
         });
         rsiPu30CandleSeries = rsiPu30PriceChartInst.addSeries(LightweightCharts.CandlestickSeries, {
             upColor: '#10b981', downColor: '#f43f5e', borderVisible: false, wickUpColor: '#10b981', wickDownColor: '#f43f5e',
@@ -576,11 +394,11 @@ document.addEventListener('DOMContentLoaded', () => {
         rsiPu30PriceMarkers = LightweightCharts.createSeriesMarkers(rsiPu30CandleSeries, []);
 
         rsiPu30RsiChartInst = LightweightCharts.createChart(document.getElementById('rsiPu30RsiChart'), {
-            layout: { background: { type: 'solid', color: '#18181b' }, textColor: '#d1d4dc' },
-            grid: { vertLines: { color: '#27272a' }, horzLines: { color: '#27272a' } },
+            layout: { background: { type: 'solid', color: '#111b28' }, textColor: '#d1d4dc' },
+            grid: { vertLines: { color: '#27384b' }, horzLines: { color: '#27384b' } },
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-            timeScale: { borderColor: '#27272a', timeVisible, secondsVisible: false },
-            rightPriceScale: { borderColor: '#27272a' },
+            timeScale: { borderColor: '#27384b', timeVisible, secondsVisible: false },
+            rightPriceScale: { borderColor: '#27384b' },
         });
         rsiPu30RsiSeries = rsiPu30RsiChartInst.addSeries(LightweightCharts.LineSeries, {
             color: '#a78bfa', lineWidth: 2, lastValueVisible: true, priceLineVisible: false,
@@ -629,13 +447,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let rsiPu30PriceLines = [];
 
-    async function openRsiPu30Chart(symbol) {
+    async function openRsiPu30Chart(symbol, itv) {
+        itv = itv || rsiPu30Interval;
         rsiPu30OpenSymbol = symbol;
-        const intervalLabel = rsiPu30Interval === '1h' ? '1 Saatlik (1s)' : (rsiPu30Interval === '4h' ? '4 Saatlik (4s)' : 'Günlük (1g)');
+        const intervalLabel = itv === '1h' ? '1 Saatlik (1s)' : (itv === '4h' ? '4 Saatlik (4s)' : 'Günlük (1g)');
         rsiPu30ChartTitle.textContent = `${symbol} — Semih Ersoy Uyumsuzluk & Formasyon Çizgileri (${intervalLabel})`;
         rsiPu30SignalInfo.innerHTML = '<p style="color:var(--text-muted);">Yükleniyor...</p>';
         rsiPu30Modal.classList.remove('hidden');
-        ensureRsiPu30Charts();
+        ensureRsiPu30Charts(itv);
 
         // Önceki yatay seviye çizgilerini temizle
         if (rsiPu30PriceLines.length > 0) {
@@ -651,7 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
         rsiPu30RsiMarkers.setMarkers([]);
 
         try {
-            const res = await fetch(`/api/scan/rsi-pu30/${symbol}?interval=${rsiPu30Interval}`);
+            const res = await fetch(`/api/scan/rsi-pu30/${symbol}?interval=${itv}`);
             const json = await res.json();
             if (json.status !== 'success' || !json.data) throw new Error(json.detail || 'Veri alınamadı');
             const detail = json.data;

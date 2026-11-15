@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { Panel } from "@/components/ui/Workspace";
 
 export interface ConfluenceWeights {
   trend: number;
@@ -14,124 +15,31 @@ interface SettingsDockProps {
   onChange: (newWeights: ConfluenceWeights) => void;
 }
 
+const WEIGHT_FIELDS: { key: keyof ConfluenceWeights; label: string }[] = [
+  { key: "trend", label: "Trend ve hareketli ortalamalar" },
+  { key: "momentum", label: "Osilatör ve momentum" },
+  { key: "volume", label: "Hacim ve para akışı" },
+  { key: "structure", label: "Volatilite ve fiyat yapısı" },
+];
+
 export default function SettingsDock({ weights, onChange }: SettingsDockProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const resetWeights = () => onChange({ trend: 30, momentum: 30, volume: 20, structure: 20 });
 
-  const handleSliderChange = (key: keyof ConfluenceWeights, val: number) => {
-    const updated = { ...weights, [key]: val };
-    onChange(updated);
-  };
-
-  const resetWeights = () => {
-    onChange({
-      trend: 30,
-      momentum: 30,
-      volume: 20,
-      structure: 20
-    });
-  };
-
-  return (
-    <div className="fixed bottom-6 right-6 z-50">
-      {/* Floating Gear Button */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-14 h-14 bg-gradient-to-tr from-cyan-500/80 to-purple-600/80 backdrop-blur-md rounded-full flex items-center justify-center shadow-lg shadow-cyan-500/20 border border-cyan-400/40 hover:scale-105 active:scale-95 transition-all duration-300 cursor-pointer text-slate-100 font-bold text-2xl group"
-        title="Sinyal Ağırlık Ayarları"
-      >
-        <span className="group-hover:rotate-45 transition-transform duration-300">⚙️</span>
-      </button>
-
-      {/* Floating Settings Panel */}
-      {isOpen && (
-        <div className="absolute bottom-16 right-0 w-80 bg-slate-950/95 backdrop-blur-2xl border border-slate-800/80 rounded-3xl p-6 space-y-4 shadow-2xl shadow-cyan-500/5 animate-in fade-in slide-in-from-bottom-5 duration-300">
-          <div className="flex justify-between items-center">
-            <h3 className="text-xs font-black uppercase tracking-widest text-cyan-400 flex items-center gap-1.5">
-              <span>⚙️</span> Sinyal Ağırlık Motoru
-            </h3>
-            <button
-              onClick={resetWeights}
-              className="text-[10px] text-slate-500 hover:text-slate-300 transition uppercase font-black tracking-wider"
-            >
-              Sıfırla
-            </button>
-          </div>
-          
-          <p className="text-slate-400 text-[10px] leading-relaxed">
-            Confluence (Kesişim) skorunu etkileyecek indikatör kategorilerinin ağırlıklarını dinamik olarak kaydırın.
-          </p>
-          
-          <div className="space-y-4 pt-2">
-            {/* Trend Slider */}
-            <div className="space-y-1">
-              <div className="flex justify-between text-[11px] font-semibold">
-                <span className="text-slate-300">📈 Trend & Hareketli Ort.</span>
-                <span className="text-cyan-400 font-mono">%{weights.trend}</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="50"
-                value={weights.trend}
-                onChange={(e) => handleSliderChange("trend", parseInt(e.target.value))}
-                className="w-full h-1 bg-slate-850 rounded-lg appearance-none cursor-pointer accent-cyan-400"
-              />
-            </div>
-
-            {/* Momentum Slider */}
-            <div className="space-y-1">
-              <div className="flex justify-between text-[11px] font-semibold">
-                <span className="text-slate-300">⚡ Osilatör & Momentum</span>
-                <span className="text-purple-400 font-mono">%{weights.momentum}</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="50"
-                value={weights.momentum}
-                onChange={(e) => handleSliderChange("momentum", parseInt(e.target.value))}
-                className="w-full h-1 bg-slate-850 rounded-lg appearance-none cursor-pointer accent-purple-400"
-              />
-            </div>
-
-            {/* Volume Slider */}
-            <div className="space-y-1">
-              <div className="flex justify-between text-[11px] font-semibold">
-                <span className="text-slate-300">📊 Hacim & Para Akışı</span>
-                <span className="text-emerald-400 font-mono">%{weights.volume}</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="50"
-                value={weights.volume}
-                onChange={(e) => handleSliderChange("volume", parseInt(e.target.value))}
-                className="w-full h-1 bg-slate-850 rounded-lg appearance-none cursor-pointer accent-emerald-400"
-              />
-            </div>
-
-            {/* Structure Slider */}
-            <div className="space-y-1">
-              <div className="flex justify-between text-[11px] font-semibold">
-                <span className="text-slate-300">🛡️ Volatilite & Yapı</span>
-                <span className="text-yellow-500 font-mono">%{weights.structure}</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="50"
-                value={weights.structure}
-                onChange={(e) => handleSliderChange("structure", parseInt(e.target.value))}
-                className="w-full h-1 bg-slate-850 rounded-lg appearance-none cursor-pointer accent-yellow-500"
-              />
-            </div>
-          </div>
-          
-          <div className="text-[9px] text-slate-500 pt-2 border-t border-slate-900 leading-normal">
-            * Ağırlıkların değiştirilmesi, BIST tarama motorunun hisselere verdiği Confluence (Kesişim) güven skorlarını anlık olarak yeniden ölçeklendirir.
-          </div>
+  return <div onKeyDown={event => {
+    if (event.key === "Escape" && isOpen) { setIsOpen(false); toggle.current?.focus(); }
+  }}>
+    <Panel title="Skor ağırlıkları" description="Tarama sonuçlarındaki birleşik skorun gösterge ağırlıklarını düzenleyin." actions={<button ref={toggle} type="button" className="rsi-button" aria-expanded={isOpen} aria-controls="scanner-weight-fields" onClick={() => setIsOpen(open => !open)}>{isOpen ? "Ayarları kapat" : "Ağırlıkları düzenle"}</button>}>
+      {isOpen ? <div id="scanner-weight-fields" className="space-y-5">
+        <div className="workspace-grid">
+          {WEIGHT_FIELDS.map(field => <div key={field.key}>
+            <div className="flex justify-between gap-3 mb-2"><label htmlFor={`weight-${field.key}`} className="workspace-field-label">{field.label}</label><output htmlFor={`weight-${field.key}`} className="text-sm tabular-nums text-[#8be5c5]">%{weights[field.key]}</output></div>
+            <input id={`weight-${field.key}`} type="range" min="0" max="50" value={weights[field.key]} onChange={event => onChange({ ...weights, [field.key]: parseInt(event.target.value, 10) })} className="w-full accent-[#6ae0bd] cursor-pointer" />
+          </div>)}
         </div>
-      )}
-    </div>
-  );
+        <div className="flex flex-wrap items-center justify-between gap-4 border-t border-[#29384b] pt-4"><p className="text-xs text-slate-400">Varsayılanlar: trend %30, momentum %30, hacim %20, fiyat yapısı %20.</p><button type="button" onClick={resetWeights} className="rsi-button">Varsayılana dön</button></div>
+      </div> : <p className="text-xs text-slate-400">Geçerli ağırlıklar: trend %{weights.trend} · momentum %{weights.momentum} · hacim %{weights.volume} · yapı %{weights.structure}.</p>}
+    </Panel>
+  </div>;
 }

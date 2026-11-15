@@ -14,3 +14,21 @@
 #mtf-lab-container .lab-card[data-state="FULL_CONFIRMATION"] { border-color: #34d399; }
 #mtf-lab-container .lab-card[data-state="LOWER_TF_NU_PRESSURE"] { border-color: #fb7185; }
 #mtf-lab-container [data-lab-status] { color: #c4b5fd; }
+#mtf-lab-container { max-width: 1400px; margin: 0 auto; }
+#mtf-lab-container .lab-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; padding: 1.5rem; border: 1px solid #45415f; border-radius: 18px; background: linear-gradient(125deg, #182033, #211b33); }
+#mtf-lab-container .lab-heading h2 { font-size: clamp(1.4rem, 3vw, 2rem); margin-top: .5rem; }
+#mtf-lab-container .lab-eyebrow { font-size: .7rem; letter-spacing: .15em; color: #c4b5fd; }
+#mtf-lab-container .lab-heading a { color: #c4b5fd; }
+#mtf-lab-container .lab-guide, #mtf-lab-container .lab-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .85rem; margin: 1rem 0; }
+#mtf-lab-container .lab-guide article, #mtf-lab-container .lab-summary article { padding: 1rem; background: #181d2a; border: 1px solid #353a4b; border-radius: 12px; }
+#mtf-lab-container .lab-guide p { font-size: .85rem; color: #a6aec2; }
+#mtf-lab-container .lab-summary span { display: block; font-size: .8rem; color: #b3bace; }
+#mtf-lab-container .lab-summary strong { display: block; font-size: 1.8rem; margin-top: .25rem; }
+#mtf-lab-container .lab-summary > p { grid-column: 1 / -1; font-size: .8rem; color: #a6aec2; }
+#mtf-lab-container button { padding: .7rem 1rem; border-radius: 9px; cursor: pointer; }
+#mtf-lab-container button:disabled { opacity: .5; cursor: wait; }
+#mtf-lab-container button:focus-visible, #mtf-lab-container input:focus-visible, #mtf-lab-container a:focus-visible { outline: 2px solid #c4b5fd; outline-offset: 3px; }
+#mtf-lab-container input { padding: .7rem; border: 1px solid #52525b; border-radius: 9px; background: #111521; color: #f4f4f5; }
+#mtf-lab-container [data-lab-errors] { padding: 1rem; background: #34221d; border: 1px solid #9a6240; border-radius: 12px; }
+#mtf-lab-container [data-lab-detail] { border-color: #a78bfa; }
+@media (max-width: 650px) { #mtf-lab-container .lab-guide, #mtf-lab-container .lab-summary { grid-template-columns: 1fr; } #mtf-lab-container .lab-controls > button, #mtf-lab-container form, #mtf-lab-container .lab-filters button { width: 100%; } }

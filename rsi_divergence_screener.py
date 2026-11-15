@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from python_bot.engine.data.provider import DataStatus  # noqa: E402
 from python_bot.engine.signals.rsi_pu30 import (  # noqa: E402
-    NU70Config, PU30Config, _fetch_adjusted_bars, detect_rsi_nu70, detect_rsi_pu30,
+    MIN_BARS_REQUIRED, NU70Config, PU30Config, _fetch_adjusted_bars, detect_rsi_nu70, detect_rsi_pu30,
     scan_universe_rsi_pu30,
 )
 from python_bot.engine.universe import BIST100_SYMBOLS  # noqa: E402
@@ -88,7 +88,7 @@ def _flexible(symbols, interval, signal_type, workers):
 
     def one(sym):
         df, res = _fetch_adjusted_bars(sym, interval=interval)
-        if df is None or res.status != DataStatus.FRESH:
+        if df is None or len(df) < MIN_BARS_REQUIRED or res is None or res.status != DataStatus.FRESH:
             return []
         out = []
         checks = []

@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS scan_results (
 
 CREATE INDEX IF NOT EXISTS idx_daily_prices_symbol_date ON daily_prices (symbol, date DESC);
 CREATE INDEX IF NOT EXISTS idx_scan_results_as_of ON scan_results (as_of DESC);
+CREATE INDEX IF NOT EXISTS idx_scan_results_symbol_as_of_desc ON scan_results (symbol, as_of DESC);
 
 -- Fundamentals: point-in-time by design, unlike the tables above.
 --

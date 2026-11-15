@@ -4,50 +4,82 @@ Institutional-Grade Quantitative Trading Architecture
 Phase 3: Mathematical Expectation (Expected Value) Trade Filter
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+import math
 
 class ExpectedValueFilter:
-    def __init__(self, min_ev_threshold: float = 0.0):
+    def __init__(self, min_ev_threshold: float = 0.0, default_roundtrip_cost_pct: float = 0.0):
         """
         Initialize Expected Value (EV) block filter.
         
         :param min_ev_threshold: Minimum EV (in percentage) required to authorize transaction.
+        :param default_roundtrip_cost_pct: Default BIST commission + BSMV + slippage round-trip cost (%).
         """
         self.min_ev = min_ev_threshold
+        self.default_cost = default_roundtrip_cost_pct
+
+    @staticmethod
+    def _is_finite(val: float) -> bool:
+        return isinstance(val, (int, float)) and not isinstance(val, bool) and math.isfinite(val)
 
     def evaluate_trade(self, win_probability: float, target_profit_pct: float, 
-                       stop_loss_pct: float) -> Dict[str, Any]:
+                       stop_loss_pct: float, roundtrip_cost_pct: Optional[float] = None) -> Dict[str, Any]:
         """
-        Calculate mathematical expectancy of the trade.
+        Calculate mathematical expectancy of the trade net of BIST round-trip costs.
         Formula:
-            EV = (p * TargetProfit) - ((1 - p) * StopLoss)
-            Where:
-                p = win_probability
-                TargetProfit = Percentage gains at target exit
-                StopLoss = Percentage losses at stop exit
-                
-        Only authorizes execution if EV is strictly positive and meets our threshold.
+            EV_gross = (p * TargetProfit) - ((1 - p) * StopLoss)
+            EV_net   = EV_gross - c
+            R/R_net  = max(0, TargetProfit - c) / (StopLoss + c)
         """
-        p = win_probability
+        raw_cost = self.default_cost if roundtrip_cost_pct is None else roundtrip_cost_pct
+        if not (
+            self._is_finite(win_probability)
+            and 0.0 <= float(win_probability) <= 1.0
+            and self._is_finite(target_profit_pct)
+            and self._is_finite(stop_loss_pct)
+            and self._is_finite(raw_cost)
+            and float(raw_cost) >= 0.0
+        ):
+            return {
+                "expected_value_pct": 0.0,
+                "gross_expected_value_pct": 0.0,
+                "roundtrip_cost_pct": 0.0,
+                "win_probability": 0.0,
+                "loss_probability": 0.0,
+                "reward_to_risk": 0.0,
+                "net_reward_to_risk": 0.0,
+                "is_authorized": False,
+                "status": "INVALID_INPUT",
+                "message": "Trade blocked. Invalid, negative cost, or non-finite input parameters."
+            }
+
+        p = float(win_probability)
         loss_prob = 1.0 - p
         
-        # Absolute stop loss magnitude must be positive
-        stop_magnitude = abs(stop_loss_pct)
-        profit_magnitude = abs(target_profit_pct)
+        # Absolute stop loss and profit magnitudes must be positive
+        stop_magnitude = abs(float(stop_loss_pct))
+        profit_magnitude = abs(float(target_profit_pct))
+        c = float(raw_cost)
         
-        # Expected value formula
-        expected_value_pct = (p * profit_magnitude) - (loss_prob * stop_magnitude)
+        # Expected value formula (single cost deduction on net EV)
+        gross_ev_pct = (p * profit_magnitude) - (loss_prob * stop_magnitude)
+        expected_value_pct = gross_ev_pct - c
         
-        # Calculate Risk/Reward ratio
+        # Gross and Net Risk/Reward ratios
         r_r_ratio = profit_magnitude / (stop_magnitude if stop_magnitude != 0 else 1e-10)
+        net_denom = stop_magnitude + c
+        net_r_r_ratio = max(0.0, profit_magnitude - c) / (net_denom if net_denom != 0 else 1e-10)
         
         is_authorized = expected_value_pct > self.min_ev
         
         return {
             "expected_value_pct": float(expected_value_pct),
+            "gross_expected_value_pct": float(gross_ev_pct),
+            "roundtrip_cost_pct": float(c),
             "win_probability": float(p),
             "loss_probability": float(loss_prob),
             "reward_to_risk": float(r_r_ratio),
+            "net_reward_to_risk": float(net_r_r_ratio),
             "is_authorized": is_authorized,
             "status": "AUTHORIZED" if is_authorized else "BLOCKED_NEGATIVE_EXPECTATION",
             "message": "Trade execution cleared." if is_authorized else f"Trade blocked. Math expected return ({expected_value_pct:.2f}%) is below threshold."

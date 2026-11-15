@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SNIPER_ENGINE_URL } from "@/lib/backend";
+import { BACKEND_URL } from "@/lib/backend";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
@@ -15,19 +15,30 @@ export async function GET(req: NextRequest) {
   const symbols = searchParams.get("symbols") || "VAKBN,ISCTR,GARAN,AKBNK,YKBNK,THYAO,ASELS,TUPRS";
   const interval = searchParams.get("interval") || "1h";
   const suite = searchParams.get("suite") || "pu30";
+  if (mode === "pytest" && process.env.VERCEL) {
+    return NextResponse.json({ status: "error", detail: "Testler Test Merkezi / CI ortamında çalıştırılır. Yayınlanmış raporu görüntüleyin." }, { status: 409 });
+  }
+  if (!["catalog", "impulse", "pytest", "journal", "council"].includes(mode) ||
+      (mode === "pytest" && !["resilience", "pu30", "mtf", "compatibility", "all"].includes(suite))) {
+    return NextResponse.json({ status: "error", detail: "Geçersiz Lab modu veya test paketi." }, { status: 400 });
+  }
 
   // 1. Önce çalışan Python FastAPI motoruna (/api/lab) bağlanmayı dene
   try {
     const qs = new URLSearchParams({ mode, symbols, interval, suite }).toString();
-    const res = await fetch(`${SNIPER_ENGINE_URL}/api/lab?${qs}`, {
+    const res = await fetch(`${BACKEND_URL}/api/lab?${qs}`, {
       cache: "no-store",
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(mode === "pytest" ? 70000 : 45000),
     });
     if (res.ok) {
       const data = await res.json();
-      return NextResponse.json(data);
+      return NextResponse.json(mode === "catalog" ? { ...data, execution_mode: process.env.VERCEL ? "report" : "local" } : data);
     }
-  } catch {
+    return NextResponse.json(await res.json(), { status: res.status });
+  } catch (error) {
+    if (error instanceof Error && ["AbortError", "TimeoutError"].includes(error.name)) {
+      return NextResponse.json({ status: "error", detail: "Lab süre sınırına ulaştı; çalışma otomatik tekrarlanmadı." }, { status: 504 });
+    }
     // FastAPI sunucusu kapalıysa doğrudan yerel .venv Python motoru üzerinden çalıştır
   }
 
@@ -53,7 +64,8 @@ print(json.dumps(res, ensure_ascii=False))
     });
     const lines = stdout.trim().split(/\r?\n/);
     const lastJsonLine = lines[lines.length - 1];
-    return NextResponse.json(JSON.parse(lastJsonLine));
+    const data = JSON.parse(lastJsonLine);
+    return NextResponse.json(mode === "catalog" ? { ...data, execution_mode: "local" } : data);
   } catch (err: any) {
     return NextResponse.json(
       { status: "error", detail: err?.message || "Lab çalıştırılamadı" },

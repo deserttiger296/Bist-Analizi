@@ -7,31 +7,23 @@ export default function ReportGeneratorForm() {
   const [symbol, setSymbol] = useState("");
   const router = useRouter();
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
     if (symbol.trim()) {
       const cleanSymbol = symbol.trim().toUpperCase().replace(".IS", "");
-      router.push(`/analysis/${cleanSymbol}`);
+      router.push(`/analysis/${encodeURIComponent(cleanSymbol)}`);
     }
   };
 
-  return (
-    <form onSubmit={handleSubmit} className="relative flex items-center">
-      <input
-        type="text"
-        value={symbol}
-        onChange={(e) => setSymbol(e.target.value)}
-        placeholder="THYAO, GARAN, ASELS..."
-        className="w-full bg-slate-900 border-2 border-slate-700 text-white px-6 py-4 rounded-xl focus:outline-none focus:border-cyan-500 transition-colors text-lg font-medium placeholder:text-slate-600 uppercase"
-        autoFocus
-      />
-      <button
-        type="submit"
-        disabled={!symbol.trim()}
-        className="absolute right-2 px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-500 text-white font-bold rounded-lg hover:from-cyan-400 hover:to-blue-400 disabled:opacity-50 transition-all shadow-lg shadow-cyan-500/25"
-      >
-        Rapor Üret
-      </button>
-    </form>
-  );
+  return <form onSubmit={handleSubmit} className="space-y-3">
+    <label className="workspace-field-label" htmlFor="report-symbol">Hisse sembolü</label>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+      <input id="report-symbol" name="symbol" type="text" value={symbol}
+        onChange={event => setSymbol(event.target.value)} placeholder="Örn. THYAO"
+        autoComplete="off" spellCheck={false} aria-describedby="report-symbol-help"
+        className="min-w-0 flex-1 uppercase" />
+      <button type="submit" disabled={!symbol.trim()} className="rsi-button rsi-button-primary">Analiz raporunu aç</button>
+    </div>
+    <p id="report-symbol-help" className="text-sm text-slate-400">THYAO, GARAN veya ASELS gibi bir BIST sembolü kullanın.</p>
+  </form>;
 }

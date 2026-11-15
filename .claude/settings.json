@@ -10,5 +10,13 @@
         ]
       }
     ]
+  },
+  "mcpServers": {
+    "pal-mcp": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\ogun\\claude agent yapısı\\pal-mcp-bridge.js"
+      ]
+    }
   }
 }

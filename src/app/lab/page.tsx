@@ -1,7 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { WorkspacePage, MetricCard, EmptyState } from "@/components/ui/Workspace";
+
+type Suite = { id: string; label: string; description: string };
+type TestResult = { name: string; group: string; status: string; duration_sec: number; message: string };
+type TestReport = {
+  passed: boolean; exit_code: number; timed_out: boolean; label: string; completed_at: string; duration_sec: number;
+  summary: { total: number; passed: number; failed: number; error: number; skipped: number };
+  results: TestResult[]; output: string;
+};
 
 const BIST100_BACKTEST_SUMMARY = [
   {
@@ -97,13 +106,17 @@ const RULE_MATRIX = [
 ];
 
 export default function LabPage() {
-  const [activeTab, setActiveTab] = useState<"impulse" | "pytest" | "backtest" | "journal">("impulse");
+  const [activeTab, setActiveTab] = useState<"impulse" | "pytest" | "backtest" | "journal">("pytest");
   const [symbolsInput, setSymbolsInput] = useState("VAKBN,ISCTR,GARAN,AKBNK,YKBNK,THYAO,ASELS,TUPRS");
   const [interval, setIntervalVal] = useState<"1h" | "4h" | "1d">("1h");
   const [impulseData, setImpulseData] = useState<any[]>([]);
   const [loadingImpulse, setLoadingImpulse] = useState(false);
+  const impulseRequest = useRef(0);
 
-  const [pytestData, setPytestData] = useState<any>(null);
+  const [pytestData, setPytestData] = useState<TestReport | null>(null);
+  const [suites, setSuites] = useState<Suite[]>([]);
+  const [selectedSuite, setSelectedSuite] = useState("resilience");
+  const [executionMode, setExecutionMode] = useState<"local" | "report">("local");
   const [loadingPytest, setLoadingPytest] = useState(false);
 
   const [journalRows, setJournalRows] = useState<any[]>([]);
@@ -111,7 +124,9 @@ export default function LabPage() {
   const [error, setError] = useState<string | null>(null);
 
   const runImpulseTestbed = async (customSyms?: string, customTf?: "1h" | "4h" | "1d") => {
+    const requestId = ++impulseRequest.current;
     setLoadingImpulse(true);
+    setImpulseData([]);
     setError(null);
     try {
       const syms = customSyms ?? symbolsInput;
@@ -119,19 +134,30 @@ export default function LabPage() {
       const qs = new URLSearchParams({ mode: "impulse", symbols: syms, interval: tf }).toString();
       const res = await fetch(`/api/lab?${qs}`);
       const json = await res.json();
+      if (requestId !== impulseRequest.current) return;
       if (json.status !== "success") throw new Error(json.detail || "Testbed hatası");
       setImpulseData(json.items || []);
     } catch (e: any) {
-      setError(e?.message || "Testbed çalıştırılamadı");
+      if (requestId === impulseRequest.current) setError(e?.message || "Testbed çalıştırılamadı");
     } finally {
-      setLoadingImpulse(false);
+      if (requestId === impulseRequest.current) setLoadingImpulse(false);
     }
   };
 
-  const runPytestSuite = async (suite: "pu30" | "all" = "pu30") => {
+  const runPytestSuite = async (suite = selectedSuite) => {
     setLoadingPytest(true);
+    setPytestData(null);
     setError(null);
     try {
+      if (executionMode === "report") {
+        const res = await fetch("/lab-results.json", { cache: "no-store" });
+        if (!res.ok) throw new Error("Henüz yayınlanmış test raporu yok. Önce Test Merkezi / CI kapısını çalıştırın.");
+        const report = await res.json();
+        const result = report.suites.find((item: { suite: string }) => item.suite === suite);
+        if (!result) throw new Error("Bu paket yayınlanmış raporda yer almıyor.");
+        setPytestData({ ...result, output: "Bu kayıt yayınlanan sürümle birlikte gelen test anlık görüntüsüdür. Canlı sitede test yeniden çalıştırılmadı." });
+        return;
+      }
       const qs = new URLSearchParams({ mode: "pytest", suite }).toString();
       const res = await fetch(`/api/lab?${qs}`);
       const json = await res.json();
@@ -160,74 +186,54 @@ export default function LabPage() {
   };
 
   useEffect(() => {
-    runImpulseTestbed();
+    fetch("/api/lab?mode=catalog").then(async (res) => {
+      const body = await res.json();
+      if (!res.ok || body.status !== "success") throw new Error(body.detail || "Test paketleri yüklenemedi");
+      setSuites(body.suites);
+      setExecutionMode(body.execution_mode || "local");
+    }).catch((e) => setError(e.message));
+  }, []);
+
+  useEffect(() => {
+    const syncTab = () => {
+      const tab = window.location.hash.slice(1);
+      if (tab === "reference") setActiveTab("backtest");
+      else if (["pytest", "impulse", "journal"].includes(tab)) setActiveTab(tab as "pytest" | "impulse" | "journal");
+    };
+    syncTab();
+    window.addEventListener("hashchange", syncTab);
+    return () => window.removeEventListener("hashchange", syncTab);
   }, []);
 
   return (
-    <div className="space-y-6 pb-16">
-      {/* Header */}
-      <div className="rounded-3xl border border-emerald-500/30 bg-gradient-to-br from-[#0b1520] via-[#0f172a] to-[#0a101d] p-6 sm:p-8 shadow-[0_0_45px_rgba(16,185,129,0.08)]">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 mb-2 uppercase tracking-wider">
-              <span>🧪 BIST Quantum Araştırma &amp; Doğrulama Laboratuvarı</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              TESTBED &amp; DOĞRULAMA MERKEZİ
-            </h1>
-            <p className="text-slate-400 text-sm mt-1 max-w-3xl">
-              Üretim sistemini bozmadan Semih Hoca&apos;nın <strong>PU30 → 1 Nolu İtki Dalgası → 2 Nolu Düzeltme → Fib Zaman Sündürme</strong> kurallarını,
-              BIST100 backtest karşılaştırmalarını ve otomatik birim testlerini (`pytest`) tek ekrandan çalıştırın.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Link
-              href="/scanner"
-              className="px-4 py-2 rounded-xl border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-bold text-xs hover:bg-cyan-900/50 transition-all"
-            >
-              📡 Canlı PU30 Tarayıcı
-            </Link>
-            <button
-              onClick={() => {
-                setActiveTab("pytest");
-                runPytestSuite("pu30");
-              }}
-              className="px-4 py-2 rounded-xl border border-emerald-500/50 bg-emerald-600/20 text-emerald-300 font-black text-xs hover:bg-emerald-600/30 transition-all"
-            >
-              ✅ Pytest Doğrulamasını Çalıştır
-            </button>
-          </div>
-        </div>
-
-        {/* Navigation Tabs */}
-        <div className="flex items-center gap-2 border-t border-slate-800 pt-5 mt-5 overflow-x-auto">
-          {[
-            { id: "impulse", label: "🌊 1-2 İtki & Fib Zaman Testbed" },
-            { id: "backtest", label: "📊 BIST100 Backtest & Kurallar" },
-            { id: "pytest", label: "🧪 Otomatik Pytest Paketi" },
-            { id: "journal", label: "📓 Canlı Sinyal Günlüğü (Journal)" },
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => {
-                setActiveTab(t.id as any);
-                if (t.id === "pytest" && !pytestData) runPytestSuite("pu30");
-                if (t.id === "journal" && journalRows.length === 0) loadJournal();
-              }}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                activeTab === t.id
-                  ? "bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.2)]"
-                  : "bg-slate-900/50 border border-slate-800 text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+    <WorkspacePage title="Test Merkezi" eyebrow="ARAŞTIRMA VE DOĞRULAMA"
+      description="Veri güvenilirliğini, RSI kurallarını ve sistem uyumunu doğrulayın. Testler yalnızca başlattığınızda çalışır."
+      actions={<><Link href="/mtf-lab.html" className="rsi-button">MTF Strateji Lab</Link><Link href="/index.html#rsipu30" className="rsi-button">RSI Radarı</Link></>}>
+      <div className="workspace-notice workspace-notice-warning">Yeni özellik → Test Merkezi → Regresyon → Uyumluluk kapısı → Üretime geçiş. Başarısız veya eksik kontrol geçişi durdurur.</div>
+      <div className="workspace-tabs" role="tablist" aria-label="Test Merkezi bölümleri" onKeyDown={event => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+        const index = tabs.indexOf(document.activeElement as HTMLButtonElement);
+        const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+        tabs[next]?.focus(); tabs[next]?.click();
+      }}>
+        {([
+          { id: "pytest", label: "Test paketleri" },
+          { id: "impulse", label: "İtki analizi" },
+          { id: "backtest", label: "Referans ve kurallar" },
+          { id: "journal", label: "Sinyal günlüğü" },
+        ] as const).map(tab => <button key={tab.id} id={`lab-tab-${tab.id}`} role="tab"
+          aria-selected={activeTab === tab.id} tabIndex={activeTab === tab.id ? 0 : -1} aria-controls="lab-panel" className="workspace-tab"
+          onClick={() => {
+            setActiveTab(tab.id);
+            window.history.replaceState(null, "", `#${tab.id === "backtest" ? "reference" : tab.id}`);
+            if (tab.id === "journal" && journalRows.length === 0) loadJournal();
+          }}>{tab.label}</button>)}
       </div>
-
+      <section id="lab-panel" role="tabpanel" aria-labelledby={`lab-tab-${activeTab}`}>
       {error && (
-        <div className="rounded-2xl border border-rose-500/40 bg-rose-950/30 p-4 text-rose-300 text-sm">
+        <div role="alert" className="rounded-2xl border border-rose-500/40 bg-rose-950/30 p-4 text-rose-300 text-sm">
           {error}
         </div>
       )}
@@ -235,7 +241,7 @@ export default function LabPage() {
       {/* TAB 1: IMPULSE & FIB TIME TESTBED */}
       {activeTab === "impulse" && (
         <div className="space-y-6">
-          <div className="rounded-2xl border border-slate-800 bg-[#0f1626] p-5 space-y-4">
+          <div className="workspace-panel workspace-panel-body space-y-4">
             <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-end justify-between">
               <div className="flex-1">
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
@@ -261,7 +267,7 @@ export default function LabPage() {
                         setIntervalVal(tf);
                         runImpulseTestbed(symbolsInput, tf);
                       }}
-                      className={`px-3.5 py-2 rounded-xl text-xs font-black border transition-all ${
+                      className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
                         interval === tf
                           ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300"
                           : "bg-slate-900 border-slate-800 text-slate-400"
@@ -282,40 +288,42 @@ export default function LabPage() {
                   }}
                   className="px-3.5 py-2 rounded-xl border border-violet-500/40 bg-violet-950/40 text-violet-300 text-xs font-bold hover:bg-violet-900/50"
                 >
-                  🎯 Semih Hoca (VAKBN + ISCTR)
+                  VAKBN ve ISCTR örneği
                 </button>
                 <button
                   onClick={() => runImpulseTestbed()}
                   disabled={loadingImpulse}
-                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-black text-xs hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50"
+                  className="rsi-button rsi-button-primary"
                 >
-                  {loadingImpulse ? "Analiz Ediliyor..." : "🔬 İTKİ ANALİZİNİ ÇALIŞTIR"}
+                  {loadingImpulse ? "Analiz Ediliyor..." : "İtki analizini başlat"}
                 </button>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-2 text-xs">
               <div className="rounded-xl border border-slate-800/80 bg-slate-950/60 p-3">
-                <span className="text-emerald-400 font-black">0 Noktası (t0):</span>
+                <span className="text-emerald-400 font-semibold">0 Noktası (t0):</span>
                 <p className="text-slate-400 mt-0.5">PU30 uyumsuzluğunun 2. dibi (1 nolu itki dalgasının başladığı dip).</p>
               </div>
               <div className="rounded-xl border border-slate-800/80 bg-slate-950/60 p-3">
-                <span className="text-cyan-400 font-black">1 Tepesi (t1 - Orta Referans):</span>
+                <span className="text-cyan-400 font-semibold">1 Tepesi (t1 - Orta Referans):</span>
                 <p className="text-slate-400 mt-0.5">1 nolu itki dalgasının zirvesi (Güven Tazeleyen Tepe). RSI ivmesi ve hacim burada ölçülür.</p>
               </div>
               <div className="rounded-xl border border-slate-800/80 bg-slate-950/60 p-3">
-                <span className="text-amber-400 font-black">2 Dibi (t2 - Zaman Startı):</span>
+                <span className="text-amber-400 font-semibold">2 Dibi (t2 - Zaman Startı):</span>
                 <p className="text-slate-400 mt-0.5">t0 dibini kırmayan yüksek dip. Fibo geri çekilmesi ve Fib Zaman başlangıcı.</p>
               </div>
               <div className="rounded-xl border border-slate-800/80 bg-slate-950/60 p-3">
-                <span className="text-violet-400 font-black">Fib Zaman Sündürme:</span>
+                <span className="text-violet-400 font-semibold">Fib Zaman Sündürme:</span>
                 <p className="text-slate-400 mt-0.5">t2&apos;den ileriye 0.382 / 0.618 / 1.000 / 1.618 zaman pencereleri ve Dalga 3 takibi.</p>
               </div>
             </div>
           </div>
 
           {/* Results Cards */}
-          <div className="space-y-4">
+          <div className="space-y-4" aria-busy={loadingImpulse}>
+            {loadingImpulse && <p role="status" className="text-cyan-300">Seçilen hisselerin verileri ve itki yapıları inceleniyor…</p>}
+            {!loadingImpulse && impulseData.length === 0 && <p className="rounded-xl border border-slate-800 p-6 text-slate-400">Henüz analiz yapılmadı. Hisse ve zaman dilimini seçip itki analizini başlatın.</p>}
             {impulseData.map((item) => {
               const imp = item.impulse_analysis;
               const w1 = imp?.dalga1;
@@ -324,21 +332,21 @@ export default function LabPage() {
               return (
                 <div
                   key={item.symbol}
-                  className="rounded-2xl border border-slate-800 bg-[#0f1626] p-5 space-y-4"
+                  className="workspace-panel workspace-panel-body space-y-4"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
                     <div className="flex items-center gap-3">
-                      <span className="text-xl font-black text-white">{item.symbol}</span>
+                      <span className="text-xl font-semibold text-white">{item.symbol}</span>
                       <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-slate-800 text-slate-300">
                         {item.interval}
                       </span>
                       {item.has_signal ? (
-                        <span className="px-2.5 py-0.5 rounded-md text-xs font-black bg-emerald-950/80 border border-emerald-500/40 text-emerald-300">
+                        <span className="px-2.5 py-0.5 rounded-md text-xs font-semibold bg-emerald-950/80 border border-emerald-500/40 text-emerald-300">
                           PU30 TESPİT EDİLDİ ({item.in_live_window ? "CANLI PENCEREDE" : `${item.bars_since_confirm} bar önce`})
                         </span>
                       ) : (
                         <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-slate-900 border border-slate-700 text-slate-400">
-                          Bu periyotta PU30 yok
+                          {item.status ? `Veri kullanılamıyor: ${item.status}` : "Bu periyotta PU30 yok"}
                         </span>
                       )}
                     </div>
@@ -346,6 +354,8 @@ export default function LabPage() {
                       Son Kapanış: <strong className="text-white font-mono">{item.last_close ?? "—"} ₺</strong>
                     </div>
                   </div>
+
+                  {item.status && <p className="text-amber-300 text-sm">{item.error_message || "Veri kalitesi veya geçmiş mum sayısı yetersiz; sinyal değerlendirilmedi."} · {item.bar_count ?? 0} mum</p>}
 
                   {item.has_signal && imp && (
                     <>
@@ -466,12 +476,12 @@ export default function LabPage() {
       {/* TAB 2: BACKTEST & RULES */}
       {activeTab === "backtest" && (
         <div className="space-y-6">
-          <div className="rounded-2xl border border-slate-800 bg-[#0f1626] p-5 space-y-4">
-            <h2 className="text-lg font-black text-white">
-              📈 BIST100 (99 Hisse) PU30 Backtest: Ham Sinyal vs Saatlik Güven Tazeleyen Tepe Kırılımı
+          <div className="workspace-panel workspace-panel-body space-y-4">
+            <h2 className="text-lg font-semibold text-white">
+              Kayıtlı BIST100 karşılaştırması
             </h2>
             <p className="text-xs text-slate-400">
-              İleriye dönük sızıntı (look-ahead bias) olmadan, kapanmış mumlarla yapılan 99 hisselik BIST100 test sonuçları (10 bar tutma süresi, BIST komisyon + kayma dahil):
+              Kayıtlı referans tablosu. Bu ekranda yeniden hesaplanmaz; veri dönemi ve çalıştırma raporu bağlı olmadığından güncel doğrulama sonucu olarak değerlendirilmemelidir.
             </p>
             <div className="overflow-x-auto rounded-xl border border-slate-800">
               <table className="w-full text-left text-xs">
@@ -508,14 +518,14 @@ export default function LabPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-800 bg-[#0f1626] p-5 space-y-4">
-            <h2 className="text-lg font-black text-white">📜 Semih Hoca Karar Ağacı &amp; Kural Doğrulama Matrisi</h2>
+          <div className="workspace-panel workspace-panel-body space-y-4">
+            <h2 className="text-lg font-semibold text-white">Kural doğrulama matrisi</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {RULE_MATRIX.map((r) => (
                 <div key={r.id} className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-mono font-bold text-emerald-400">{r.id}</span>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-slate-800 text-slate-200">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-200">
                       {r.status}
                     </span>
                   </div>
@@ -533,48 +543,69 @@ export default function LabPage() {
 
       {/* TAB 3: PYTEST SUITE */}
       {activeTab === "pytest" && (
-        <div className="rounded-2xl border border-slate-800 bg-[#0f1626] p-5 space-y-4">
+        <div className="workspace-panel workspace-panel-body space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-black text-white">🧪 Otomatik Birim ve Regresyon Testleri (pytest)</h2>
+              <h2 className="text-lg font-semibold text-white">Birim ve regresyon testleri</h2>
               <p className="text-xs text-slate-400">
-                VAKBN çekiç mumu RSI kontrolü, ISCTR %0.25 kuruş toleransı, ASELS saatlik güven seviyesi ve non-repainting testleri.
+                Paket seçin ve çalıştırın. Veri güvenilirliği ağ gerektirmeyen timeout, önbellek ve eksik mum senaryolarını doğrular; MTF paketi strateji Lab kurallarını denetler.
               </p>
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => runPytestSuite("pu30")}
+                onClick={() => runPytestSuite()}
                 disabled={loadingPytest}
-                className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-black text-xs hover:bg-emerald-500 disabled:opacity-50"
+                className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-500 disabled:opacity-50"
               >
-                {loadingPytest ? "Çalışıyor..." : "⚡ PU30 & Seans Testlerini Çalıştır"}
+                {loadingPytest ? "Yükleniyor…" : executionMode === "report" ? "Seçilen paketin raporunu göster" : "Seçilen paketi çalıştır"}
               </button>
               <button
                 onClick={() => runPytestSuite("all")}
-                disabled={loadingPytest}
+                disabled={loadingPytest || executionMode === "report"}
                 className="px-4 py-2 rounded-xl border border-slate-700 bg-slate-900 text-slate-200 font-bold text-xs hover:bg-slate-800 disabled:opacity-50"
               >
-                Tüm Test Paketini Çalıştır (157 Test)
+                Tüm testleri çalıştır
               </button>
             </div>
           </div>
+
+          {executionMode === "report" && <p className="rounded-xl border border-cyan-500/30 p-3 text-xs text-cyan-200">Vercel görünümü: Testler geliştirme / CI ortamında çalıştırılır. Burada yayınla birlikte gelen tarihli rapor incelenir; canlıda yeniden çalıştırılmaz.</p>}
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" role="group" aria-label="Test paketi seçimi">
+            {suites.map((suite) => <button key={suite.id} aria-pressed={selectedSuite === suite.id} disabled={loadingPytest} onClick={() => setSelectedSuite(suite.id)} className={`rounded-xl border p-4 text-left ${selectedSuite === suite.id ? "border-emerald-500 bg-emerald-950/40" : "border-slate-700 bg-slate-950"}`}>
+              <strong className="text-sm text-white">{suite.label}</strong><span className="block text-xs text-slate-400 mt-2">{suite.description}</span>
+            </button>)}
+          </div>
+          {loadingPytest && <p role="status" className="text-cyan-300 text-sm">Testler çalışıyor. Tamamlandığında her testin sonucu ve süresi burada gösterilecek.</p>}
+          {!loadingPytest && !pytestData && <EmptyState title="Henüz test sonucu yok" description="Bir test paketi seçip doğrulamayı başlatın. Geçen ve başarısız kontroller burada gösterilecek." />}
 
           {pytestData && (
             <div className="space-y-3">
               <div className="flex items-center gap-3">
                 <span
-                  className={`px-3 py-1 rounded-lg text-xs font-black ${
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold ${
                     pytestData.passed
                       ? "bg-emerald-950 border border-emerald-500/50 text-emerald-300"
                       : "bg-rose-950 border border-rose-500/50 text-rose-300"
                   }`}
                 >
-                  {pytestData.passed ? "✅ TÜM TESTLER GEÇTİ (EXIT 0)" : `❌ HATA (EXIT ${pytestData.exit_code})`}
+                  {pytestData.timed_out ? "Süre sınırına ulaşıldı" : pytestData.passed ? "Paket geçti" : `Paket başarısız (kod ${pytestData.exit_code})`}
                 </span>
+                <span className="text-xs text-slate-400">{pytestData.label} · {pytestData.duration_sec} sn · {new Date(pytestData.completed_at).toLocaleString("tr-TR")}</span>
               </div>
+              <div className="workspace-metrics" aria-live="polite">
+                {([ ["Toplam", pytestData.summary.total], ["Geçen", pytestData.summary.passed], ["Başarısız", pytestData.summary.failed], ["Hata", pytestData.summary.error], ["Atlanan", pytestData.summary.skipped] ] as const).map(([label, count]) => <MetricCard key={label} label={label} value={count} />)}
+              </div>
+              <div className="max-h-96 overflow-auto rounded-xl border border-slate-800">
+                <table className="w-full text-left text-xs"><caption className="sr-only">Test sonuçları</caption><thead className="bg-slate-900 text-slate-300"><tr><th className="p-3">Test</th><th className="p-3">Sonuç</th><th className="p-3">Süre</th></tr></thead><tbody>
+                  {pytestData.results.map((test, i) => <tr key={i} className="border-t border-slate-800"><td className="p-3 break-all text-slate-300">{test.name}{test.message && <p className="mt-1 text-rose-300">{test.message}</p>}</td><td className={`p-3 ${test.status === "passed" ? "text-emerald-300" : "text-amber-300"}`}>{({passed: "Geçti", failed: "Başarısız", error: "Hata", skipped: "Atlandı"} as Record<string, string>)[test.status]}</td><td className="p-3 text-slate-400">{test.duration_sec} sn</td></tr>)}
+                </tbody></table>
+              </div>
+              <details><summary className="cursor-pointer text-sm text-slate-400">Ayrıntılı test çıktısı</summary>
               <pre className="rounded-xl border border-slate-800 bg-slate-950 p-4 text-xs font-mono text-slate-300 overflow-x-auto max-h-[500px] overflow-y-auto whitespace-pre-wrap">
                 {pytestData.output}
               </pre>
+              </details>
             </div>
           )}
         </div>
@@ -582,10 +613,10 @@ export default function LabPage() {
 
       {/* TAB 4: LIVE SIGNAL JOURNAL */}
       {activeTab === "journal" && (
-        <div className="rounded-2xl border border-slate-800 bg-[#0f1626] p-5 space-y-4">
+        <div className="workspace-panel workspace-panel-body space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-black text-white">📓 Canlı PU30 / NU70 Sinyal Günlüğü (pu30_signal_log.csv)</h2>
+              <h2 className="text-lg font-semibold text-white">Sinyal günlüğü</h2>
               <p className="text-xs text-slate-400">
                 Tarayıcı çalıştıkça tespit edilen tüm sinyallerin `knowable_at` zaman damgası ve saatlik güven seviyeleriyle değiştirilemez (append-only) kaydı.
               </p>
@@ -595,7 +626,7 @@ export default function LabPage() {
               disabled={loadingJournal}
               className="px-4 py-2 rounded-xl border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-bold text-xs"
             >
-              {loadingJournal ? "Yükleniyor..." : "🔄 Günlüğü Yenile"}
+              {loadingJournal ? "Yükleniyor..." : "Günlüğü yenile"}
             </button>
           </div>
 
@@ -641,6 +672,7 @@ export default function LabPage() {
           )}
         </div>
       )}
-    </div>
+      </section>
+    </WorkspacePage>
   );
 }

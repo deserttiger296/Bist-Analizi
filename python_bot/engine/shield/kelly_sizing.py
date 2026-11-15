@@ -5,6 +5,7 @@ Phase 3: Quantitative Risk Management & Kelly Position Sizing
 """
 
 from typing import Dict, Any
+import math
 
 class KellySizingEngine:
     def __init__(self, default_fraction: float = 0.5, max_position_pct: float = 0.15):
@@ -16,6 +17,10 @@ class KellySizingEngine:
         """
         self.fraction = default_fraction
         self.max_cap = max_position_pct
+
+    @staticmethod
+    def _is_finite(val: float) -> bool:
+        return isinstance(val, (int, float)) and not isinstance(val, bool) and math.isfinite(val)
 
     def calculate_allocation(self, win_probability: float, reward_to_risk: float, 
                              total_capital: float, current_cash: float,
@@ -33,8 +38,25 @@ class KellySizingEngine:
         Fractional adjustment:
             f_scaled = f* * fraction
         """
-        p = win_probability
-        R = reward_to_risk
+        if not (
+            self._is_finite(win_probability)
+            and 0.0 <= float(win_probability) <= 1.0
+            and self._is_finite(reward_to_risk)
+            and self._is_finite(total_capital)
+            and float(total_capital) > 0.0
+            and self._is_finite(current_cash)
+            and float(current_cash) >= 0.0
+            and self._is_finite(sentiment_score)
+        ):
+            return {
+                "recommended_pct": 0.0,
+                "recommended_capital": 0.0,
+                "status": "REJECTED",
+                "reason": "Invalid, non-finite, or non-positive capital/probability inputs."
+            }
+
+        p = float(win_probability)
+        R = float(reward_to_risk)
         
         if R <= 0:
             return {

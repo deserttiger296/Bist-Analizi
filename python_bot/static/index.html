@@ -3,144 +3,52 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BIST Quantum Sniper | Algorithmic Trading Desk</title>
-    <link rel="stylesheet" href="/static/style.css?v=20261015-pages3">
+    <title>RSI Analizi | RSI Radarı</title>
+    <link rel="stylesheet" href="/static/style.css?v=20261115-brand1">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <!-- TradingView Lightweight Charts -->
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
-    <link rel="stylesheet" href="/static/strategy-pages.css?v=20261015-pages3">
+    <link rel="stylesheet" href="/static/strategy-pages.css?v=20261115-brand1">
+<link rel="icon" href="/static/rsi-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/app-shell.css?v=20261115-brand1">
+<link rel="stylesheet" href="/static/workspace.css?v=20261115-workspace2">
 </head>
-<body>
+<body class="rsi-app rsi-static" data-menu-open="false">
     
-    <nav class="sidebar">
-        <div class="logo">
-            <span class="icon">🎯</span>
-            <h1>QUANTUM SNIPER</h1>
-            <p class="subtitle">AI Trading Terminal v2.0</p>
-        </div>
-        
-        <ul class="nav-links">
-            <li><a href="/">← Ana uygulamaya dön</a></li>
-            <li><a href="#rsipu30">📈 Uyumsuzluk ekranı</a></li>
-            <li><a href="#dashboard">📊 Piyasa Radarı</a></li>
-            <li><a href="#architecture">🧠 Sistem Mimarisi</a></li>
-            <li><a href="#weights">⚖️ AI Ağırlıkları</a></li>
-            <li class="active"><a href="#rsipu30">📉 Klasik RSI PU30 / NU70</a></li>
-        </ul>
-        
-        <div class="system-status">
-            <h3>Terminal Status</h3>
-            <div class="status-item" id="status-backend"><span class="dot"></span> Backend: kontrol ediliyor…</div>
-            <div class="status-item" id="status-rf"><span class="dot"></span> RF Modeli: —</div>
-            <div class="status-item" id="status-lstm"><span class="dot"></span> LSTM: —</div>
-            <div class="status-item" id="status-sentiment"><span class="dot"></span> Haber Analizi: —</div>
-        </div>
-    </nav>
+    <aside class="sidebar rsi-sidebar" id="rsi-sidebar" aria-label="Ana menü">
+        <a class="rsi-brand" href="/index.html"><img src="/static/rsi-mark.svg" alt="" width="42" height="42"><div><strong>RSI Analizi</strong><span>TEKNİK ANALİZ PLATFORMU</span></div></a>
+        <nav aria-label="Tüm sistemler"><ul class="nav-links"><li class="rsi-nav-group">ANALİZ</li>
+<li><a data-system-link href="/index.html#rsipu30"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#activity"></use></svg><span>RSI Radarı</span></a></li>
+<li><a data-system-link href="/scanner"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#scan"></use></svg><span>Hisse Tarayıcı</span></a></li>
+<li><a data-system-link href="/radar"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#radar"></use></svg><span>Sinyal Radarı</span></a></li>
+<li class="rsi-nav-group">ARAŞTIRMA VE TEST</li>
+<li><a data-system-link href="/mtf-lab.html"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#layers"></use></svg><span>MTF Strateji Lab</span><small class="rsi-nav-badge">LAB</small></a></li>
+<li><a data-system-link href="/lab"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#shield"></use></svg><span>Test Merkezi</span></a></li>
+<li><a data-system-link href="/agentic-ai"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#cpu"></use></svg><span>AI Konseyi</span><small class="rsi-nav-badge">DENEYSEL</small></a></li>
+<li class="rsi-nav-group">ARAÇLAR</li>
+<li><a data-system-link href="/signal-terminal"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#terminal"></use></svg><span>Sinyal Terminali</span></a></li>
+<li><a data-system-link href="/report"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#file"></use></svg><span>Rapor Oluştur</span></a></li>
+<li><a data-system-link href="/history"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#history"></use></svg><span>Sinyal Geçmişi</span></a></li>
+<li><a data-system-link href="/index.html#architecture"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#grid"></use></svg><span>Sistem Mimarisi</span></a></li>
+<li><a data-system-link href="/index.html#weights"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#sliders"></use></svg><span>Model Ağırlıkları</span></a></li></ul></nav>
+        <div class="rsi-sidebar-footer"><details class="rsi-engine-details"><summary>Motor ve model durumu</summary><div class="system-status"><div class="status-item" id="status-backend"><span class="dot"></span>Motor kontrol ediliyor…</div><div class="status-item" id="status-rf">RF: —</div><div class="status-item" id="status-lstm">LSTM: —</div><div class="status-item" id="status-sentiment">Haber analizi: —</div></div></details><strong>Araştırın. Karşılaştırın. Doğrulayın.</strong><p>Yeni özellikler önce Test Merkezi'nde.</p></div>
+    </aside>
 
     <main class="main-content">
-        <nav class="strategy-pages" aria-label="Strateji sayfalari">
-            <a href="/index.html#rsipu30" aria-current="page">🎯 Klasik RSI Radarı (Ana Sistem)</a>
-            <a href="/mtf-lab.html">🧪 MTF Strateji Laboratuvarı (Test)</a>
-        </nav>
-        <div id="classic-system-container" role="tabpanel">
-        <div id="market-radar-controls" hidden>
-        <header class="top-bar">
-            <div class="search-box">
-                <input type="text" id="symbolInput" placeholder="Tek Hisse Ara (Örn: THYAO)" autocomplete="off">
-                <button id="scanBtn" class="btn-primary">
-                    <span class="btn-text">TARA</span>
-                    <div class="spinner hidden"></div>
-                </button>
-            </div>
-            
-            <button id="scanAllBtn" class="btn-neon">
-                <span class="btn-text">📡 TÜM BIST100'Ü TARA (RADAR)</span>
-                <div class="spinner hidden" id="scanAllSpinner"></div>
-            </button>
+<button class="rsi-menu-overlay" id="rsi-menu-overlay" aria-label="Menüyü kapat" type="button"></button>
+        <header class="rsi-topbar">
+            <button class="rsi-menu-button" id="rsi-menu-toggle" aria-label="Menüyü aç" aria-controls="rsi-sidebar" aria-expanded="false" type="button"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#menu"></use></svg></button>
+            <div class="rsi-breadcrumb"><span>Çalışma alanı</span><span>/</span><strong data-page-name>RSI Radarı</strong></div>
+            <div class="rsi-header-actions"><span class="rsi-environment">BIST · ARAŞTIRMA</span><a class="rsi-help-link" href="/lab"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#shield"></use></svg>Test Merkezi</a></div>
         </header>
-
-        <div id="scanStatus" class="alert-box hidden">
-            <div class="loader"></div>
-            <p>Kuantum Motoru BIST100'deki tüm hisseleri tarıyor, Yapay Zeka skorluyor... Lütfen bekleyin.</p>
-        </div>
-        <div id="errorMsg" class="error hidden"></div>
-
-        </div>
-
-        <!-- MAIN DASHBOARD -->
-        <section id="dashboard" class="view-section">
-            
-            <div id="radarResults" class="hidden">
-                <div class="section-header">
-                    <h2>🔥 GÜNÜN SNIPER FIRSATLARI (BIST100)</h2>
-                    <p>RF skoru %60 eşiğini geçen hisseler. GÖLGE MOD: modelin katkısı geçmiş testte doğrulanmadı; bu liste AL kararı değildir.</p>
-                </div>
-                <div id="radarGrid" class="cards-grid">
-                    <!-- JS Injects Here -->
-                </div>
-            </div>
-
-            <!-- Single Scan Results -->
-            <div id="results" class="results-container hidden">
-                <!-- Single card inject -->
-            </div>
-        </section>
-
-        <!-- SYSTEM ARCHITECTURE -->
-        <section id="architecture" class="view-section">
-            <div class="section-header">
-                <h2>🧠 Sistem Mimarisi ve Açık Kaynak Kütüphaneler (GitHub)</h2>
-                <p>Bu platform, dünyanın en güçlü açık kaynaklı Python veri bilimi kütüphaneleri üzerine inşa edilmiştir.</p>
-            </div>
-            <div class="architecture-grid">
-                <div class="arch-card">
-                    <h3>Scikit-Learn (Yapay Zeka)</h3>
-                    <p><code>RandomForestClassifier</code></p>
-                    <p>Karar ağaçlarından oluşan bu kütüphane, teknik göstergeleri ve XU100 relatif momentum özelliklerini analiz ederek hissenin Yön (UP/DOWN/FLAT) tahminini yapar. Walk-forward doğrulamalı gerçek başarı oranı ~%39 (rastgele tahmin ~%33) — küçük ama ölçülebilir bir edge; sürekli iyileştirme aşamasında.</p>
-                </div>
-                <div class="arch-card">
-                    <h3>PyTorch (Derin Öğrenme)</h3>
-                    <p><code>QuantumLSTM</code></p>
-                    <p>Facebook'un derin öğrenme kütüphanesi. 30 günlük zaman serisi hafızası ile LSTM ağı, RandomForest'in göremediği sıralı desenleri yakalar. Çapraz kontrol ikinci motoru.</p>
-                </div>
-                <div class="arch-card">
-                    <h3>SHAP (Açıklanabilir AI)</h3>
-                    <p><code>TreeExplainer</code></p>
-                    <p>Nobel ödüllü Shapley Değerleri teorisine dayanan matematiksel XAI kütüphanesi. Her tahmin için hangi göstergenin ne kadar katkı yaptığını sayısal olarak kanıtlar.</p>
-                </div>
-                <div class="arch-card">
-                    <h3>Pandas-TA (Teknik Analiz)</h3>
-                    <p><code>pandas_ta</code></p>
-                    <p>Github'ın en meşhur algoritmik trade kütüphanesidir. RSI, MACD, Bollinger, ATR ve EMA gibi göstergeleri nanosaniyeler içinde C++ hızında hesaplayıp yapay zekaya besler.</p>
-                </div>
-                <div class="arch-card">
-                    <h3>HMMlearn (Piyasa Rejimi)</h3>
-                    <p><code>hmmlearn</code></p>
-                    <p>Hidden Markov Models (Saklı Markov Modelleri). Hissenin grafiğine bakmadan, sadece fiyat hareketindeki "gizli kaosu" çözerek piyasanın AYI (Kriz) mı yoksa BOĞA (Ralli) mı olduğunu matematiksel olarak kanıtlar.</p>
-                </div>
-                <div class="arch-card">
-                    <h3>FinBERT (Haber Duygu Analizi)</h3>
-                    <p><code>Financial_Lexicon</code></p>
-                    <p>Finansal haberleri Türkçe ve İngilizce olarak analiz eden NLP motoru. Üçüncü confluence motoru olarak piyasa duyarlılığını ölçer ve zaman bozunumlu (exponential decay) sentiment skoru üretir.</p>
-                </div>
-                <div class="arch-card">
-                    <h3>VectorBT (Backtest)</h3>
-                    <p><code>vectorbt</code></p>
-                    <p>Profesyonel kuantların kullandığı vektörize backtest kütüphanesi. Sinyallerin geçmiş performansını milisaniyeler içinde simüle eder. Portföy getiri, max drawdown ve win rate hesaplar.</p>
-                </div>
-                <div class="arch-card">
-                    <h3>YFinance (Canlı Veri)</h3>
-                    <p><code>yfinance</code></p>
-                    <p>Yahoo Finance'in resmi olmayan API'sidir. BIST100 hisselerinin anlık 15-dk gecikmeli verilerini tamamen ücretsiz ve sınırsız çekmemizi sağlar.</p>
-                </div>
-            </div>
-        </section>
-
+<div class="rsi-content rsi-workspace">
+        <div id="classic-system-container" role="tabpanel">
+<section id="architecture" class="view-section"><header class="workspace-header"><div><span class="rsi-eyebrow">RSI ANALİZİ · SİSTEMLER</span><h1>Sistem mimarisi</h1><div class="workspace-description">Analiz, veri kontrolü ve doğrulama katmanlarının birlikte nasıl çalıştığını inceleyin.</div></div></header><div class="workspace-grid"><article class="workspace-panel"><div class="workspace-panel-body"><h2 class="static-panel-title">RSI uyumsuzluk motoru</h2><p class="static-panel-description">PU30 ve NU70 koşulları, fiyat pivotları ve kapanmış mum teyidiyle birlikte değerlendirilir. Sonuçlar zaman dilimine göre ayrı incelenir.</p><a class="rsi-button" href="/index.html#rsipu30">RSI Radarı</a></div></article><article class="workspace-panel"><div class="workspace-panel-body"><h2 class="static-panel-title">Çoklu zaman dilimi</h2><p class="static-panel-description">Saatlik, dört saatlik ve günlük yapıyı karşılaştırın. Alt periyot baskısını ve eksik veri gerekçelerini MTF Lab üzerinden inceleyin.</p><a class="rsi-button" href="/mtf-lab.html">MTF Strateji Lab</a></div></article><article class="workspace-panel"><div class="workspace-panel-body"><h2 class="static-panel-title">Veri kalitesi</h2><p class="static-panel-description">Veri durumu, geçmiş mum sayısı ve kapanış kontrolleri analizden önce değerlendirilir. Kullanılamayan veri onay olarak gösterilmez.</p><a class="rsi-button" href="/lab">Veri güvenilirliği testleri</a></div></article><article class="workspace-panel"><div class="workspace-panel-body"><h2 class="static-panel-title">Test ve uyumluluk</h2><p class="static-panel-description">Yeni davranışlar önce Test Merkezi’nde denenir. Regresyonlar, API sözleşmeleri ve arayüz uyumu doğrulanmadan geçiş tamamlanmış sayılmaz.</p><a class="rsi-button" href="/lab">Test Merkezi</a></div></article><article class="workspace-panel"><div class="workspace-panel-body"><h2 class="static-panel-title">Model değerlendirmesi</h2><p class="static-panel-description">Model ve haber analizi yalnızca ilgili motor kullanılabiliyorsa sonuç üretir. Kullanılabilirlik, motor durumunda ve analiz ekranında gösterilir.</p><a class="rsi-button" href="/agentic-ai">AI Konseyi</a></div></article><article class="workspace-panel"><div class="workspace-panel-body"><h2 class="static-panel-title">Sinyal ve sanal portföy</h2><p class="static-panel-description">Raporlar, sinyal koşulları ve sanal pozisyonlar ayrı takip edilir. Sanal portföy işlemleri gerçek bir borsa emri oluşturmaz.</p><a class="rsi-button" href="/signal-terminal">Sinyal Terminali</a></div></article></div></section>
         <!-- AI WEIGHTS -->
         <section id="weights" class="view-section">
             <div class="section-header">
-                <h2>⚖️ Yapay Zeka Karar Ağırlıkları (Feature Importances)</h2>
-                <p>Diskteki RF modelinin gerçek <code>feature_importances_</code> değerleri. GÖLGE MOD: modelin karar katkısı doğrulanmadı.</p>
+                <h2>Model ağırlıkları</h2>
+                <p>Bağlı motorun sağladığı gerçek özellik ağırlıkları. Model kullanılamıyorsa değer üretilmez.</p>
             </div>
 
             <div class="weights-chart" id="weights-chart">
@@ -150,33 +58,41 @@
 
         <!-- RSI PU30 & NU70 -->
         <section id="rsipu30" class="view-section active">
-            <div class="section-header">
-                <h2>📉 RSI Uyumsuzluk Radarı (PU30 & NU70)</h2>
-                <p><strong>Semih Murat Ersoy Formülü:</strong> Fiyat düşerken 1. dipte RSI &lt; 30, 2. dipte RSI &gt; 30 kalırsa <span style="color:#10b981; font-weight:bold;">🟢 PU30 (Yükseliş / Dip Sinyali)</span>. Fiyat yükselirken 1. tepede RSI &gt; 70, 2. tepede RSI &lt; 70 kalırsa <span style="color:#f43f5e; font-weight:bold;">🔴 NU70 (Düşüş / Tepe Satış Sinyali)</span>.</p>
+            <div class="rsi-page-intro">
+                <div><span class="rsi-eyebrow">RSI ANALİZİ · ÇALIŞMA ALANINIZ</span><h1>Piyasayı daha net okuyun.</h1><p>RSI uyumsuzluklarını bulun, zaman dilimlerini karşılaştırın ve stratejilerinizi aynı çalışma alanında doğrulayın.</p></div>
+                <span class="rsi-method-badge">Kapanmış mumlarla analiz</span>
             </div>
-
-            <div style="display:flex; align-items:center; gap:1rem; margin-bottom: 2rem; flex-wrap: wrap;">
-                <button id="rsiPu30ScanBtn" class="btn-neon">
-                    <span class="btn-text">📡 BIST100 UYUMSUZLUKLARI TARA</span>
-                    <div class="spinner hidden" id="rsiPu30Spinner"></div>
-                </button>
-                <div class="interval-toggle" id="rsiPu30IntervalToggle">
-                    <button type="button" class="interval-btn active" data-interval="4h">4 Saatlik (4s)</button>
-                    <button type="button" class="interval-btn" data-interval="1h">1 Saatlik (1s)</button>
-                    <button type="button" class="interval-btn" data-interval="1d">Günlük (1g)</button>
+            <nav class="rsi-system-cards" aria-label="Hızlı başlangıç">
+                <a class="rsi-system-card is-current" href="/index.html#rsipu30" aria-current="page"><span class="rsi-card-icon"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#activity"></use></svg></span><div><strong>RSI Radarı</strong><small>PU30 ve NU70 uyumsuzluklarını tarayın.</small></div><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#arrow"></use></svg></a>
+                <a class="rsi-system-card" href="/mtf-lab.html"><span class="rsi-card-icon"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#layers"></use></svg></span><div><strong>MTF Strateji Lab</strong><small>Birden fazla zaman diliminde inceleyin.</small></div><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#arrow"></use></svg></a>
+                <a class="rsi-system-card" href="/lab"><span class="rsi-card-icon"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#shield"></use></svg></span><div><strong>Test Merkezi</strong><small>Kuralları ve sistem uyumunu doğrulayın.</small></div><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#arrow"></use></svg></a>
+            </nav>
+            <div class="rsi-scan-panel">
+            <div class="rsi-scan-heading"><div><h2>BIST100 RSI taraması</h2><p>Periyodu ve sinyal türünü seçin. Sonuçlardan hisse grafiğine geçin.</p></div><span class="rsi-universe-tag">BIST100</span></div>
+            <div class="rsi-scan-controls">
+                <div><span class="rsi-control-label">ZAMAN DİLİMİ</span>
+                <div class="interval-toggle" id="rsiPu30IntervalToggle" role="group" aria-label="Zaman dilimi">
+                    <button type="button" class="interval-btn active" data-interval="4h">4 saat</button>
+                    <button type="button" class="interval-btn" data-interval="1h">1 saat</button>
+                    <button type="button" class="interval-btn" data-interval="1d">Günlük</button>
+<button type="button" class="interval-btn" data-interval="all">Tümü</button>
                 </div>
-                <div class="interval-toggle" id="rsiPu30TypeToggle">
+                </div><div><span class="rsi-control-label">SİNYAL TÜRÜ</span>
+                <div class="interval-toggle" id="rsiPu30TypeToggle" role="group" aria-label="Sinyal türü">
                     <button type="button" class="interval-btn active" data-type="all">Tümü</button>
-                    <button type="button" class="interval-btn" data-type="pu30">🟢 PU30 (Alış)</button>
-                    <button type="button" class="interval-btn" data-type="nu70">🔴 NU70 (Satış)</button>
+                    <button type="button" class="interval-btn" data-type="pu30">PU30 · Pozitif</button>
+                    <button type="button" class="interval-btn" data-type="nu70">NU70 · Negatif</button>
                 </div>
+                </div>
+                <button id="rsiPu30ScanBtn" class="btn-neon"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#scan"></use></svg><span class="btn-text">Taramayı başlat</span><div class="spinner hidden" id="rsiPu30Spinner"></div></button>
             </div>
 
             <div id="rsiPu30Status" class="alert-box hidden">
                 <div class="loader"></div>
                 <p>RSI PU30 motoru BIST100'deki tüm hisseleri tarıyor...</p>
             </div>
-            <div id="rsiPu30ErrorMsg" class="error hidden"></div>
+            <div id="rsiPu30ErrorMsg" class="error hidden" role="alert"></div>
+            <div class="rsi-empty"><div class="rsi-empty-visual"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#radar"></use></svg></div><h3>İlk taramanızı başlatın</h3><p>Seçtiğiniz periyotta BIST100 hisselerini inceleyin.<br>Bulunan uyumsuzluklar ve grafikler burada listelenecek.</p></div>
 
             <div id="rsiPu30Results" class="hidden">
                 <div class="target-grid" style="margin-top: 0; margin-bottom: 2rem;">
@@ -195,21 +111,13 @@
                 </div>
                 <div id="rsiPu30Grid" class="cards-grid"></div>
             </div>
+            </div>
+            <div class="rsi-rule-note"><svg class="rsi-icon" aria-hidden="true"><use href="/static/rsi-icons.svg#activity"></use></svg><p><strong>Uyumsuzluk nasıl okunur?</strong> Semih Murat Ersoy kurallarına göre PU30: ilk dipte RSI &lt; 30, ikinci dipte RSI &gt; 30. NU70: ilk tepede RSI &gt; 70, ikinci tepede RSI &lt; 70. Fiyat ve kapanmış mum teyidiyle birlikte değerlendirilir.</p></div>
         </section>
         </div>
 
-    </main>
-
-    <!-- Chart Modal -->
-    <div id="chartModal" class="modal hidden">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 id="chartTitle">THYAO - TradingView Analizi</h3>
-                <button id="closeModal" class="close-btn" aria-label="Grafiği kapat">&times;</button>
-            </div>
-            <div id="tvchart" style="width: 100%; height: 500px;"></div>
-        </div>
     </div>
+</main>
 
     <!-- RSI PU30 Chart Modal -->
     <div id="rsiPu30Modal" class="modal hidden">
@@ -224,6 +132,7 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=20261015-pages3"></script>
+    <script src="/static/app.js?v=20261115-brand1"></script>
+<script src="/static/app-shell.js?v=20261115-brand1"></script>
 </body>
 </html>

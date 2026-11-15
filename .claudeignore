@@ -11,3 +11,14 @@ package-lock.json
 .git/
 venv/
 .venv/
+bist_agent_core/.venv/
+.cache/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.bak*
+.backup-*/
+artifacts/
+python_bot/models/*.joblib
+python_bot/models/*.pth
+*.pdf

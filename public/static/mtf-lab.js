@@ -8,11 +8,15 @@ window.initMtfLab = function () {
     const filters = lab.querySelectorAll('[data-lab-filter]');
     const scan = lab.querySelector('[data-lab-scan]');
     const detail = lab.querySelector('[data-lab-detail]');
+    const summary = lab.querySelector('[data-lab-summary]');
+    const errors = lab.querySelector('[data-lab-errors]');
+    const cancel = lab.querySelector('[data-lab-cancel]');
+    let lastUpdated = null;
     let rows = [], selected = 'EARLY_REACTION', controller = null;
     const labels = {
-        EARLY_REACTION: '🟡 EVRE 1 · Saatlik Tepki / 4S Son Dip Bekleniyor',
-        FULL_CONFIRMATION: '🟢 EVRE 2 · Tam Onaylı Ralli / Makro Fibo',
-        LOWER_TF_NU_PRESSURE: '🔴 EVRE 3 · Alt Periyot NU Baskısı',
+        EARLY_REACTION: 'Evre 1 · Saatlik tepki / 4s son dip bekleniyor',
+        FULL_CONFIRMATION: 'Evre 2 · Tam onay / Makro Fibo',
+        LOWER_TF_NU_PRESSURE: 'Evre 3 · Alt periyot NU baskısı',
     };
     const money = value => value == null ? '—' : Number(value).toLocaleString('tr-TR', { maximumFractionDigits: 2 });
     function line(parent, text, tag = 'p') {
@@ -49,6 +53,15 @@ window.initMtfLab = function () {
     }
     function render() {
         list.replaceChildren();
+        if (summary) {
+            summary.replaceChildren();
+            const stats = [['İncelenen', rows.length], ['Tam onay', rows.filter(r => r.decision.state === 'FULL_CONFIRMATION').length], ['Bekleme / veri kontrolü', rows.filter(r => !labels[r.decision.state]).length]];
+            for (const [label, count] of stats) {
+                const card = document.createElement('article');
+                line(card, label, 'span'); line(card, String(count), 'strong'); summary.appendChild(card);
+            }
+            if (lastUpdated) line(summary, `Son çalışma: ${lastUpdated}`);
+        }
         for (const button of filters) {
             const count = rows.filter(r => r.decision.state === button.dataset.labFilter).length;
             button.textContent = `${labels[button.dataset.labFilter]} (${count})`;
@@ -94,6 +107,10 @@ window.initMtfLab = function () {
         controller?.abort();
         const own = new AbortController();
         controller = own;
+        detail.hidden = true;
+        if (errors) { errors.hidden = true; errors.replaceChildren(); }
+        lab.setAttribute('aria-busy', 'true');
+        if (cancel) cancel.hidden = false;
         message.textContent = 'Laboratuvar verisi hesaplanıyor…';
         scan.disabled = true;
         const timer = setTimeout(() => own.abort(), 280000);
@@ -104,6 +121,12 @@ window.initMtfLab = function () {
             if (!response.ok || !body.data || body.status === 'error') throw new Error(body.detail || 'Laboratuvar yanıt vermedi');
             if (own !== controller || lab.hidden) return;
             rows = symbol ? [body.data] : body.data.rows;
+            lastUpdated = new Date().toLocaleString('tr-TR');
+            if (errors && body.data.errors?.length) {
+                errors.hidden = false;
+                line(errors, 'Veri uyarıları', 'h3');
+                for (const warning of body.data.errors) line(errors, `${warning.symbol || ''}: ${warning.error || warning.detail || 'Veri alınamadı'}`);
+            }
             if (symbol && labels[body.data.decision.state]) selected = body.data.decision.state;
             render();
             const other = rows.filter(r => !labels[r.decision.state]).length;
@@ -113,11 +136,16 @@ window.initMtfLab = function () {
             if (own === controller && !lab.hidden) message.textContent = error.name === 'AbortError' ? 'İstek iptal edildi veya süre sınırına ulaştı. Tek hisseyle tekrar deneyebilirsin.' : error.message;
         } finally {
             clearTimeout(timer);
-            if (own === controller) scan.disabled = false;
+            if (own === controller) {
+                scan.disabled = false;
+                lab.setAttribute('aria-busy', 'false');
+                if (cancel) cancel.hidden = true;
+            }
         }
     }
     for (const button of filters) button.addEventListener('click', () => { selected = button.dataset.labFilter; render(); });
     scan.addEventListener('click', () => request());
+    if (cancel) cancel.addEventListener('click', () => controller?.abort());
     lab.querySelector('[data-lab-symbol-form]').addEventListener('submit', event => {
         event.preventDefault();
         const symbol = lab.querySelector('[data-lab-symbol]').value.trim().toUpperCase();

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    "AGENTS.md"
+  ],
+  "mcp": {
+    "rea": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "rea-agents@6.9.0",
+        "mcp"
+      ]
+    },
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp"
+    },
+    "pal-mcp": {
+      "type": "local",
+      "command": [
+        "node",
+        "C:\\Users\\ogun\\claude agent yapısı\\pal-mcp-bridge.js"
+      ]
+    }
+  }
+}

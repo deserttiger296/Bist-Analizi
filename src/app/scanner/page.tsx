@@ -1,24 +1,11 @@
 import BistScanner from "@/components/BistScanner";
+import { WorkspacePage } from "@/components/ui/Workspace";
 
 export const metadata = {
-  title: "Tarayıcı — BIST Quantum Sniper v2.0",
-  description: "BIST geneli trend/momentum/hacim confluans tarayıcısı",
+  title: "Hisse Tarayıcı | RSI Analizi",
+  description: "BIST hisselerini trend, momentum ve hacim göstergeleriyle karşılaştırın.",
 };
 
 export default function ScannerPage() {
-  return (
-    <div className="space-y-2">
-      <div className="pb-2 border-b border-slate-800">
-        <p className="text-xs uppercase tracking-widest text-cyan-400">Canlı Fırsat Tarayıcısı</p>
-        <h1 className="text-3xl font-black text-white mt-1">BIST Tarayıcı</h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Tüm BIST hisselerini trend, momentum ve hacim sinyalleriyle tarayarak yüksek confluanslı fırsatları tespit eder.
-        </p>
-      </div>
-
-      <div className="pt-4">
-        <BistScanner />
-      </div>
-    </div>
-  );
+  return <WorkspacePage title="Hisse Tarayıcı" description="Tarama evrenini ve filtreleri seçin; bulunan hisselerin skorlarını ve göstergelerini karşılaştırın."><BistScanner /></WorkspacePage>;
 }

@@ -766,7 +766,7 @@ def scan_universe_rsi_pu30(
                 if ci not in _cross_cache:
                     try:
                         cdf, cres = _fetch_adjusted_bars(symbol, interval=ci)
-                        ok = cdf is not None and cres is not None and cres.status == DataStatus.FRESH
+                        ok = cdf is not None and len(cdf) >= MIN_BARS_REQUIRED and cres is not None and cres.status == DataStatus.FRESH
                         _cross_cache[ci] = cdf if ok else None
                     except Exception:
                         _cross_cache[ci] = None
@@ -777,9 +777,7 @@ def scan_universe_rsi_pu30(
                     return df
                 if interval == "1h":
                     m15 = _cross_df("15m")
-                    if m15 is not None and len(m15) > 0:
-                        return m15
-                    return df
+                    return m15
                 return _cross_df("1h")
 
             def _cross_hits(detector, base_cfg) -> List[str]:

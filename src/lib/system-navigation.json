@@ -1,0 +1,28 @@
+[
+  {
+    "label": "ANALİZ",
+    "items": [
+      {"href": "/index.html#rsipu30", "label": "RSI Radarı", "icon": "activity"},
+      {"href": "/scanner", "label": "Hisse Tarayıcı", "icon": "scan"},
+      {"href": "/radar", "label": "Sinyal Radarı", "icon": "radar"}
+    ]
+  },
+  {
+    "label": "ARAŞTIRMA VE TEST",
+    "items": [
+      {"href": "/mtf-lab.html", "label": "MTF Strateji Lab", "icon": "layers", "badge": "LAB"},
+      {"href": "/lab", "label": "Test Merkezi", "icon": "shield"},
+      {"href": "/agentic-ai", "label": "AI Konseyi", "icon": "cpu", "badge": "DENEYSEL"}
+    ]
+  },
+  {
+    "label": "ARAÇLAR",
+    "items": [
+      {"href": "/signal-terminal", "label": "Sinyal Terminali", "icon": "terminal"},
+      {"href": "/report", "label": "Rapor Oluştur", "icon": "file"},
+      {"href": "/history", "label": "Sinyal Geçmişi", "icon": "history"},
+      {"href": "/index.html#architecture", "label": "Sistem Mimarisi", "icon": "grid"},
+      {"href": "/index.html#weights", "label": "Model Ağırlıkları", "icon": "sliders"}
+    ]
+  }
+]

@@ -1,4 +1,6 @@
 import "./globals.css";
+import "../../public/static/app-shell.css";
+import "../../public/static/workspace.css";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 
@@ -10,8 +12,9 @@ const inter = Inter({
 import { ClientNavigation } from "@/components/ClientNavigation";
 
 export const metadata: Metadata = {
-  title: "BIST Quantum Sniper v2.0",
-  description: "AI-powered BIST stock analysis and trading signals",
+  title: "RSI Analizi | Piyasaya daha net bakın",
+  description: "BIST RSI uyumsuzluk analizi, çoklu zaman dilimi araştırması ve strateji doğrulama platformu.",
+  icons: { icon: "/static/rsi-mark.svg" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
