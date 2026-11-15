@@ -3,33 +3,45 @@ import { signSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
+function getOrigin(req: NextRequest): string {
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "";
+  if (host.includes("localhost") || host.includes("127.0.0.1")) {
+    return "http://localhost:3000";
+  }
+  const proto = req.headers.get("x-forwarded-proto") || "https";
+  if (host) {
+    return `${proto}://${host}`;
+  }
+  return process.env.NEXT_PUBLIC_APP_URL || "https://bist-analizi.vercel.app";
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const code = searchParams.get("code");
   const state = searchParams.get("state");
   const error = searchParams.get("error");
-  const origin = req.nextUrl.origin || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const origin = getOrigin(req);
 
   if (error) {
-    return NextResponse.redirect(`${origin}/index.html?auth_error=${encodeURIComponent(error)}`);
+    return NextResponse.redirect(`${origin}/login?auth_error=${encodeURIComponent(error)}`);
   }
 
   if (!code) {
-    return NextResponse.redirect(`${origin}/index.html?auth_error=missing_code`);
+    return NextResponse.redirect(`${origin}/login?auth_error=missing_code`);
   }
 
   const savedState = req.cookies.get("oauth_state")?.value;
   if (!savedState || savedState !== state) {
     // State mismatch / CSRF guard (if state cookie expired, continue if code exists in dev)
     if (process.env.NODE_ENV === "production") {
-      return NextResponse.redirect(`${origin}/index.html?auth_error=state_mismatch`);
+      return NextResponse.redirect(`${origin}/login?auth_error=state_mismatch`);
     }
   }
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
-    return NextResponse.redirect(`${origin}/index.html?auth_error=missing_credentials`);
+    return NextResponse.redirect(`${origin}/login?auth_error=missing_credentials`);
   }
 
   const redirectUri = `${origin}/auth/callback`;
@@ -51,7 +63,7 @@ export async function GET(req: NextRequest) {
     if (!tokenRes.ok) {
       const errText = await tokenRes.text();
       console.error("[OAuth] Token exchange failed:", errText);
-      return NextResponse.redirect(`${origin}/index.html?auth_error=token_exchange_failed`);
+      return NextResponse.redirect(`${origin}/login?auth_error=token_exchange_failed`);
     }
 
     const tokenData = await tokenRes.json();
@@ -64,7 +76,7 @@ export async function GET(req: NextRequest) {
 
     if (!userRes.ok) {
       console.error("[OAuth] Userinfo failed:", await userRes.text());
-      return NextResponse.redirect(`${origin}/index.html?auth_error=userinfo_failed`);
+      return NextResponse.redirect(`${origin}/login?auth_error=userinfo_failed`);
     }
 
     const profile = await userRes.json();
@@ -95,6 +107,6 @@ export async function GET(req: NextRequest) {
     return response;
   } catch (err: any) {
     console.error("[OAuth] Callback exception:", err);
-    return NextResponse.redirect(`${origin}/index.html?auth_error=internal_error`);
+    return NextResponse.redirect(`${origin}/login?auth_error=internal_error`);
   }
 }

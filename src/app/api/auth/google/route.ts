@@ -3,6 +3,18 @@ import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
 
+function getOrigin(req: NextRequest): string {
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "";
+  if (host.includes("localhost") || host.includes("127.0.0.1")) {
+    return "http://localhost:3000";
+  }
+  const proto = req.headers.get("x-forwarded-proto") || "https";
+  if (host) {
+    return `${proto}://${host}`;
+  }
+  return process.env.NEXT_PUBLIC_APP_URL || "https://bist-analizi.vercel.app";
+}
+
 export async function GET(req: NextRequest) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) {
@@ -12,7 +24,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const origin = req.nextUrl.origin || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const origin = getOrigin(req);
   const redirectUri = `${origin}/auth/callback`;
   const state = crypto.randomBytes(16).toString("hex");
 
