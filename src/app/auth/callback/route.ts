@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signSession, verifyOAuthState } from "@/lib/auth";
+import { recordTelemetryError } from "@/lib/telemetry";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +72,14 @@ export async function GET(req: NextRequest) {
     if (!tokenRes.ok) {
       const errText = await tokenRes.text();
       console.error("[OAuth] Token exchange failed:", errText);
+      recordTelemetryError({
+        source: "oauth_callback",
+        url: req.url,
+        userAgent: req.headers.get("user-agent") || "unknown",
+        message: `OAuth token exchange failed (HTTP ${tokenRes.status})`,
+        stack: errText,
+        context: { stage: "token_exchange", status: tokenRes.status },
+      });
       return NextResponse.redirect(`${origin}/login?auth_error=token_exchange_failed`);
     }
 
@@ -83,7 +92,16 @@ export async function GET(req: NextRequest) {
     });
 
     if (!userRes.ok) {
-      console.error("[OAuth] Userinfo failed:", await userRes.text());
+      const userErrText = await userRes.text();
+      console.error("[OAuth] Userinfo failed:", userErrText);
+      recordTelemetryError({
+        source: "oauth_callback",
+        url: req.url,
+        userAgent: req.headers.get("user-agent") || "unknown",
+        message: `OAuth userinfo failed (HTTP ${userRes.status})`,
+        stack: userErrText,
+        context: { stage: "userinfo", status: userRes.status },
+      });
       return NextResponse.redirect(`${origin}/login?auth_error=userinfo_failed`);
     }
 
@@ -115,6 +133,14 @@ export async function GET(req: NextRequest) {
     return response;
   } catch (err: any) {
     console.error("[OAuth] Callback exception:", err);
+    recordTelemetryError({
+      source: "oauth_callback",
+      url: req.url,
+      userAgent: req.headers.get("user-agent") || "unknown",
+      message: err?.message ? `OAuth callback exception: ${err.message}` : "OAuth callback exception",
+      stack: err?.stack || String(err),
+      context: { stage: "exception" },
+    });
     return NextResponse.redirect(`${origin}/login?auth_error=internal_error`);
   }
 }
