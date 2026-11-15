@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import navigation from "@/lib/system-navigation.json";
+import { AuthButton } from "@/components/AuthButton";
 
 function Icon({ name }: { name: string }) {
   return <svg className="rsi-icon" aria-hidden="true"><use href={`/static/rsi-icons.svg#${name}`} /></svg>;
@@ -65,7 +66,11 @@ export function ClientNavigation({ children }: { children: React.ReactNode }) {
       <header className="rsi-topbar">
         <button className="rsi-menu-button" id="rsi-menu-toggle" type="button" aria-label="Menüyü aç" aria-controls="rsi-sidebar" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><Icon name="menu" /></button>
         <div className="rsi-breadcrumb"><span>Çalışma alanı</span><span>/</span><strong>{current?.label || "Hisse analizi"}</strong></div>
-        <div className="rsi-header-actions"><span className="rsi-environment">BIST · ARAŞTIRMA</span><Link className="rsi-help-link" href="/lab"><Icon name="shield" />Test Merkezi</Link></div>
+        <div className="rsi-header-actions">
+          <span className="rsi-environment">BIST · ARAŞTIRMA</span>
+          <Link className="rsi-help-link" href="/lab"><Icon name="shield" />Test Merkezi</Link>
+          <AuthButton />
+        </div>
       </header>
       <main className="rsi-page-scroll"><div className="rsi-content">{children}</div></main>
     </div>
