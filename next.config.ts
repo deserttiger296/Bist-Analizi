@@ -30,11 +30,6 @@ const nextConfig: NextConfig = {
         destination: "/index.html?symbol=:symbol#rsipu30",
         permanent: false,
       },
-      {
-        source: "/",
-        destination: "/index.html",
-        permanent: false,
-      },
     ];
   },
   async rewrites() {

@@ -40,6 +40,10 @@ export function ClientNavigation({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [menuOpen]);
 
+  if (pathname === "/login") {
+    return <>{children}</>;
+  }
+
   return <div className="rsi-app rsi-react" data-menu-open={menuOpen}>
     <aside className="rsi-sidebar" id="rsi-sidebar" aria-label="Ana menü">
       <Link className="rsi-brand" href="/index.html">
