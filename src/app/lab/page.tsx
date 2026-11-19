@@ -74,6 +74,7 @@ const RULE_MATRIX = [
     title: "Katı 30 / 70 Eşiği (6 Ekim 2026)",
     rule: "PU30 için 1. dip RSI < 30 ve 2. dip RSI > 30 (tam 30.0 reddedilir). NU70 için 1. tepe RSI > 70 ve 2. tepe RSI < 70.",
     examples: "KCAER (24.8 -> 27.7 RED), TOASO (32.9 -> 33.4 RED)",
+    meaning: "Aşırı satım/alım bölgesinden net dönüş gelmeden erken ve gürültülü sinyalleri eler.",
     status: "AKTİF (Üretim)",
   },
   {
@@ -81,6 +82,7 @@ const RULE_MATRIX = [
     title: "2. Dip Dönüş Mumunda RSI Kontrolü & En Derin Ana Dip (5 Kasım 2026)",
     rule: "Sol penceredeki bir mumda RSI < 30 sarkmış olsa bile, 2. dip pivot mumunun kendisinde (p) veya hemen sağındaki dönüş mumunda (p+1) RSI > 30 ise kabul edilir; birden fazla aday 1. dip varsa en derin ana dip seçilir.",
     examples: "VAKBN 1s: 1. Dip 28.82 TL (RSI 14.8) -> 2. Dip 28.40 TL çekiç mumu (RSI 32.1 > 30)",
+    meaning: "Pencere ortalama değil tepki mumunun kendi momentumunu baz alarak çekiç diplerini kaçırmaz.",
     status: "AKTİF (Üretim)",
   },
   {
@@ -88,6 +90,7 @@ const RULE_MATRIX = [
     title: "Kuruş Toleranslı İkili Dip / Yatay Mavi Çizgi (%0.25, 5 Kasım 2026)",
     rule: "2. dip fiyatı 1. dibin en fazla +%0.25 üstündeyse (BIST kademe/kuruş farkı) yatay ikili dip olarak PU30 kabul edilir; >%0.25 yüksek dipler reddedilir.",
     examples: "ISCTR 1s: 1. Dip 11.64 TL (RSI 18.7) -> 2. Dip 11.66 TL (+%0.17 / 2 kuruş fark, RSI 36.8 > 30)",
+    meaning: "BIST fiyat adımlarındaki 1-2 kademelik sapmalar yüzünden temiz ikili dip fırsatlarını atlamaz.",
     status: "AKTİF (Üretim)",
   },
   {
@@ -95,6 +98,7 @@ const RULE_MATRIX = [
     title: "Saatlik Güven Tazeleyen Tepe / Güven Kıran Dip (ASELS Örneği)",
     rule: "2. dipten (t0) sonra dibi kıramayan ilk kesinleşmiş saatlik dip (t2) oluştuğunda, aradaki en yüksek saatlik fiyat (t1) Güven Tazeleyen Tepe olur. Üzerinde saatlik kapanış = AL.",
     examples: "ASELS 4s NU70: 450.00 -> 439.50 -> Güven Kıran Dip 423.00 (kapanış 421.25)",
+    meaning: "Alt zaman diliminde yapı kırılmadan körü körüne ters yöne işlem açılmasını engeller.",
     status: "AKTİF (Üretim)",
   },
   {
@@ -102,6 +106,7 @@ const RULE_MATRIX = [
     title: "1-2 İtki Dalgası & Fibonacci Zaman Sündürme (Testbed)",
     rule: "PU30 dibi = 0 zaman (t0), 1 nolu itki dalgası tepesi = orta referans (t1), 2 nolu düzeltme dibi = zaman startı (t2). Fib Zaman 0.382 / 0.618 / 1.000 / 1.618 hedefleri ve itki kalitesi ölçülür.",
     examples: "VAKBN 1s: W1 +%5.21 (6 bar, hacim 1.45x) -> W2 28.72 (Fib 0.784) -> W3 32.30 (W1'in 2.42 katı)",
+    meaning: "Fiyatla birlikte zaman pencerelerini ölçerek 3. dalga ralli ivmesinin ne zaman geleceğini tahminler.",
     status: "TESTBED (Deneysel)",
   },
   {
@@ -109,6 +114,7 @@ const RULE_MATRIX = [
     title: "Görülen En Yüksek Fiyatta RSI < 70 & Asılan Adam Zirve Kuralı (18 Kasım 2026)",
     rule: "NU70 için 2. tepe görülen en yüksek fiyat olmalı (teyit sonrası yeni yüksek tepe kırılırsa elenir) ve 2. tepe mumunda/teyidinde RSI < 70 oluşmalıdır. Ara bölgede aynı/yüksek fiyatta daha önce RSI >= 70 görülmüşse tekrar sinyal üretilmez. Zirvede Asılan Adam veya Kayan Yıldız dönüş mumu önceliklendirilir; küçük geri çekilmeli adaylar ayrı NU70_ADAY havuzunda izlenir.",
     examples: "PGSUS 1s (158.90 @ 85.8 -> 160.60 @ 59.7 < 70), THYAO 1s (Asılan Adam), SISE 1s (Kayan Yıldız)",
+    meaning: "Zirvede momentum düşüşünü dönüş mumuyla teyit eder; yeni zirve yapan hisseleri ise listeden otomatik düşürür.",
     status: "AKTİF (NU70 Lab)",
   },
 ];
@@ -412,6 +418,9 @@ export default function LabPage() {
                     <h3 className="text-base font-extrabold text-white mt-1">
                       {lsData.market_bias}
                     </h3>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Onaylı Long (GVT üstü) ve onaylı Short (GKD altı) dengesine göre piyasanın baskın yönünü özetler.
+                    </p>
                   </div>
                   <div className="mt-3 flex items-center gap-4 text-xs font-mono">
                     <span className="text-emerald-400">🟢 Aktif Long: <strong>{lsData.long_active_count}</strong></span>
@@ -424,12 +433,14 @@ export default function LabPage() {
                   <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400">Long Sinyalleri</span>
                   <div className="text-2xl font-black text-emerald-400 mt-1">{lsData.long_total}</div>
                   <div className="text-[11px] text-slate-400 mt-1">GVT aşılan: {lsData.long_active_count} onaylı</div>
+                  <p className="text-[11px] text-slate-500 mt-1">1. dip RSI &lt; 30 sonrası yükselen RSI dip dönüşleri.</p>
                 </div>
 
                 <div className="workspace-panel workspace-panel-body border-l-4 border-l-rose-500">
                   <span className="text-[10px] uppercase font-bold tracking-wider text-rose-400">Short / Kâr Al</span>
                   <div className="text-2xl font-black text-rose-400 mt-1">{lsData.short_total}</div>
                   <div className="text-[11px] text-slate-400 mt-1">GKD kırılan: {lsData.short_active_count} teyitli</div>
+                  <p className="text-[11px] text-slate-500 mt-1">1. tepe RSI &gt; 70 sonrası düşen RSI zirve yorulmaları.</p>
                 </div>
               </div>
 
@@ -459,6 +470,9 @@ export default function LabPage() {
                     </div>
                   </div>
                   <p className="text-xs text-slate-300 mt-2">{lsData.pair_trading.thesis}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    📌 Ne Anlama Geliyor? Endeks düşse de çıksa da göreceli getiri (spread) yakalamak için aynı anda güçlü Long + zayıf Short eşleşmesi önerir.
+                  </p>
                 </div>
               )}
 
@@ -519,20 +533,30 @@ export default function LabPage() {
                               <span className="text-[10px] text-slate-500 block">Fiyat / Giriş</span>
                               <span className="text-white font-bold">{Number(item.last_close).toFixed(2)} ₺</span>
                               <span className="text-[10px] text-emerald-400/80 block">GVT: {item.entry_level != null ? Number(item.entry_level).toFixed(2) : "—"}</span>
+                              <span className="text-[9px] text-slate-500 block">Alım kırılım eşiği</span>
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-500 block">Stop-Loss</span>
                               <span className="text-rose-400 font-bold">{Number(item.stop_loss).toFixed(2)} ₺</span>
+                              <span className="text-[9px] text-slate-500 block">Dip altı koruma</span>
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-500 block">Hedef TP1</span>
                               <span className="text-emerald-400 font-bold">{Number(item.target_tp1).toFixed(2)} ₺</span>
+                              <span className="text-[9px] text-slate-500 block">2x risk kâr hedefi</span>
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-500 block">R:R Oranı</span>
                               <span className="text-cyan-300 font-bold">{item.rr_ratio}x</span>
+                              <span className="text-[9px] text-slate-500 block">Ödül / Risk katı</span>
                             </div>
                           </div>
+                          <p className="mt-2.5 pt-2 border-t border-slate-800/60 text-[11px] text-slate-400 leading-relaxed">
+                            <strong className="text-slate-300">📌 Ne Anlama Geliyor?</strong>{" "}
+                            {item.triggered
+                              ? `${item.entry_level != null ? `${Number(item.entry_level).toFixed(2)} ₺ ` : ""}GVT eşiği yukarı geçilmiş; alım teyitli. ${Number(item.stop_loss).toFixed(2)} ₺ stop altında kapanmadıkça ${Number(item.target_tp1).toFixed(2)} ₺ hedeflenir.`
+                              : `PU30 dip dönüşü oluştu; alım teyidi için ${item.entry_level != null ? `${Number(item.entry_level).toFixed(2)} ₺ ` : ""}GVT direnci üzerinde kapanış bekleniyor (Stop: ${Number(item.stop_loss).toFixed(2)} ₺).`}
+                          </p>
                         </div>
                       ))}
                     </div>
@@ -606,6 +630,7 @@ export default function LabPage() {
                               <span className="text-[10px] text-rose-400/80 block">
                                 GKD: {item.gkd_price != null ? Number(item.gkd_price).toFixed(2) : "Bekleniyor"}
                               </span>
+                              <span className="text-[9px] text-slate-500 block">Satış kırılım eşiği</span>
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-500 block">İptal Stopu</span>
@@ -613,16 +638,25 @@ export default function LabPage() {
                               {item.tepe1_rsi != null && item.tepe2_rsi != null && (
                                 <span className="text-[10px] text-slate-400 block">RSI {item.tepe1_rsi}→{item.tepe2_rsi}</span>
                               )}
+                              <span className="text-[9px] text-slate-500 block">Zirve +%2.5 stop</span>
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-500 block">Destek Hedef</span>
                               <span className="text-rose-400 font-bold">{Number(item.target_tp1).toFixed(2)} ₺</span>
+                              <span className="text-[9px] text-slate-500 block">2x risk düşüş hedefi</span>
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-500 block">R:R Oranı</span>
                               <span className="text-cyan-300 font-bold">{item.rr_ratio}x</span>
+                              <span className="text-[9px] text-slate-500 block">Ödül / Risk katı</span>
                             </div>
                           </div>
+                          <p className="mt-2.5 pt-2 border-t border-slate-800/60 text-[11px] text-slate-400 leading-relaxed">
+                            <strong className="text-slate-300">📌 Ne Anlama Geliyor?</strong>{" "}
+                            {item.triggered
+                              ? `${item.gkd_price != null ? `${Number(item.gkd_price).toFixed(2)} ₺ ` : ""}GKD desteği aşağı kırılmış (spotta kâr al / VİOP short aktif). Fiyat ${Number(item.stop_loss).toFixed(2)} ₺ üzerine çıkmadıkça ${Number(item.target_tp1).toFixed(2)} ₺ hedefi geçerlidir.`
+                              : `Zirvede NU70 yorulması var ancak ${item.gkd_price != null ? `${Number(item.gkd_price).toFixed(2)} ₺ ` : ""}GKD kırılımı henüz gelmedi; erken şort için bu desteğin altında kapanış beklenir (Stop: ${Number(item.stop_loss).toFixed(2)} ₺).`}
+                          </p>
                         </div>
                       ))}
                     </div>
@@ -814,6 +848,18 @@ export default function LabPage() {
                   />
                 </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px] text-slate-400">
+                  <div className="rounded-xl border border-slate-800/80 bg-slate-950/60 px-3 py-2">
+                    <strong className="text-slate-200">1. Tepe → 2. Tepe (NU70):</strong> Fiyat daha yüksek zirve yaparken RSI 70 üstünden 70 altına düşerse alıcı gücü zayıflıyor demektir.
+                  </div>
+                  <div className="rounded-xl border border-slate-800/80 bg-slate-950/60 px-3 py-2">
+                    <strong className="text-rose-300">GKD (Güven Kıran Dip):</strong> Alt periyottaki (1H için 15dk, 4H/1D için 1H) kırılım desteği. Altında kapanış gelmeden erken şort açılmaz.
+                  </div>
+                  <div className="rounded-xl border border-slate-800/80 bg-slate-950/60 px-3 py-2">
+                    <strong className="text-amber-300">Stop / 2R Hedef / Yaş:</strong> Stop: 2. tepe +%2.5 (aşılırsa düşüş tezi biter). 2R: riskin 2 katı kâr hedefi. Yaş: teyitten beri geçen mum sayısı.
+                  </div>
+                </div>
+
                 {nu70Data.scan_error_count > 0 && (
                   <div className="workspace-notice workspace-notice-warning text-xs font-mono">
                     <strong>Veri / Tarama Uyarıları ({nu70Data.scan_error_count}):</strong>{" "}
@@ -910,20 +956,32 @@ export default function LabPage() {
                               <span className="text-[10px] text-rose-400/80 block">
                                 GKD: {item.gkd_price != null ? `${Number(item.gkd_price).toFixed(2)} ₺` : "Bekleniyor"}
                               </span>
+                              <span className="text-[9px] text-slate-500 block">Satış tetik desteği</span>
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-500 block">İptal Stopu</span>
                               <span className="text-amber-400 font-bold">{Number(item.stop_loss).toFixed(2)} ₺</span>
+                              <span className="text-[9px] text-slate-500 block">Zirve +%2.5 koruma</span>
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-500 block">2R Hedef</span>
                               <span className="text-rose-400 font-bold">{Number(item.target_tp1).toFixed(2)} ₺</span>
+                              <span className="text-[9px] text-slate-500 block">Riskin 2 katı düşüş</span>
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-500 block">Teyit / Yaş</span>
                               <span className="text-cyan-300 font-bold">{item.rr_ratio}x · {item.bars_since_confirm} bar</span>
+                              <span className="text-[9px] text-slate-500 block">R:R · teyit sonrası</span>
                             </div>
                           </div>
+                          <p className="text-[11px] text-slate-400 pt-2 border-t border-slate-800/70 leading-relaxed">
+                            <strong className="text-slate-200">📌 Ne Anlama Geliyor?</strong>{" "}
+                            Fiyat {Number(item.tepe1_price).toFixed(2)} ₺ → {Number(item.tepe2_price).toFixed(2)} ₺ ile yeni zirve yaparken RSI {item.tepe1_rsi} → {item.tepe2_rsi} (&lt;70) gerilemiş
+                            {item.candle_label && item.candle_label !== "Yok" ? ` (${item.candle_label} mumu)` : ""}.{" "}
+                            {item.triggered
+                              ? `${item.gkd_price != null ? `${Number(item.gkd_price).toFixed(2)} ₺ ` : ""}GKD aşağı kırıldığı için satış/short aktif; ${Number(item.stop_loss).toFixed(2)} ₺ aşılmadıkça ${Number(item.target_tp1).toFixed(2)} ₺ hedeflenir.`
+                              : `${item.gkd_price != null ? `Şu an ${Number(item.last_close).toFixed(2)} ₺ fiyattan ${Number(item.gkd_price).toFixed(2)} ₺ GKD desteğinin kırılması bekleniyor.` : "Alt periyotta GKD kırılım desteği henüz oluşuyor."} ${Number(item.stop_loss).toFixed(2)} ₺ üstü iptaldir.`}
+                          </p>
                         </div>
                       ))}
                     </div>
@@ -983,6 +1041,12 @@ export default function LabPage() {
                             <span>Ara Dip: {c.entry_level != null ? `${Number(c.entry_level).toFixed(2)} ₺` : "—"} · Stop: {Number(c.stop_loss).toFixed(2)} ₺</span>
                             <span>Çekilme %{c.pullback_pct} · {c.gap_bars} bar · {c.confirm_date}</span>
                           </div>
+                          <p className="font-sans text-[11px] text-slate-400 pt-1.5 border-t border-slate-800/60 leading-relaxed">
+                            <strong className="text-amber-200">📌 Ne Anlama Geliyor?</strong>{" "}
+                            Görülen en yüksek tepede RSI {c.tepe2_rsi} (&lt;70) oluştu ama ara çekilme (%{c.pullback_pct}) veya {c.gap_bars} bar mesafe nedeniyle henüz erken izleme aşamasında.{" "}
+                            {c.entry_level != null ? `${Number(c.entry_level).toFixed(2)} ₺ ara dip aşağı kırılırsa zayıflık hızlanabilir; ` : ""}
+                            {Number(c.stop_loss).toFixed(2)} ₺ üstü iptaldir.
+                          </p>
                         </div>
                       ))}
                     </div>
@@ -1025,6 +1089,10 @@ export default function LabPage() {
                           <div className="text-[11px] text-slate-500">
                             Mum: {inv.candle_label} · Teyit: {inv.confirm_date}
                           </div>
+                          <p className="font-sans text-[11px] text-slate-400 pt-1 border-t border-slate-800/60">
+                            <strong className="text-slate-300">📌 Neden Elendi?</strong>{" "}
+                            Eski {Number(inv.tepe2_price).toFixed(2)} ₺ zirvesi sonradan yukarı kırıldığı için (son fiyat {Number(inv.last_close).toFixed(2)} ₺) önceki düşüş uyumu geçersizleşti.
+                          </p>
                         </div>
                       ))}
                     </div>
@@ -1170,6 +1238,9 @@ export default function LabPage() {
                           <div className="text-slate-500 mt-1">
                             {item.dip1.date} → {item.dip2.date}
                           </div>
+                          <p className="text-[11px] text-slate-400 mt-1.5 pt-1.5 border-t border-slate-800/60">
+                            Dönüşün başladığı ana taban ve RSI güçlenmesi.
+                          </p>
                         </div>
 
                         {w1 ? (
@@ -1184,10 +1255,16 @@ export default function LabPage() {
                             <div className="text-slate-400 mt-1">
                               Yeşil Mum: %{Math.round(w1.bull_bar_ratio * 100)} | Gövde/Boy: {w1.avg_body_to_range} | Hacim: {w1.volume_multiplier}x
                             </div>
+                            <p className="text-[11px] text-slate-400 mt-1.5 pt-1.5 border-t border-slate-800/60">
+                              İlk yükseliş dalgasının hızı, alıcı iştahı ve hacim desteği.
+                            </p>
                           </div>
                         ) : (
                           <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3.5 text-slate-400">
-                            1-2 yapısı henüz kesinleşmedi ({imp.durum})
+                            <div>1-2 yapısı henüz kesinleşmedi ({imp.durum})</div>
+                            <p className="text-[11px] text-slate-500 mt-1.5">
+                              1. tepe sonrası sağlıklı bir 2. dip oluşmadan Dalga 3 ölçülmez.
+                            </p>
                           </div>
                         )}
 
@@ -1203,6 +1280,9 @@ export default function LabPage() {
                             <div className="text-slate-400 mt-1">
                               t2 Tarihi: {w2.t2_date} | t1 Konumu (0..2): {w2.t1_position_in_02}
                             </div>
+                            <p className="text-[11px] text-slate-400 mt-1.5 pt-1.5 border-t border-slate-800/60">
+                              Ana dibi bozmayan geri çekilme derinliği; 0.382-0.786 arası idealdir.
+                            </p>
                           </div>
                         )}
 
@@ -1218,48 +1298,57 @@ export default function LabPage() {
                             <div className="text-slate-400 mt-1">
                               Zirve Tarihi: {w3.max_date_after_w2} (+{w3.bars_from_t2_to_peak} bar)
                             </div>
+                            <p className="text-[11px] text-slate-400 mt-1.5 pt-1.5 border-t border-slate-800/60">
+                              W1 tepesi geçildiyse ana ralli fazı başlamış demektir (&gt;1.618x güçlü).
+                            </p>
                           </div>
                         )}
                       </div>
 
                       {/* Fib Time Table */}
                       {imp.fib_zaman_w1_referans && (
-                        <div className="overflow-x-auto rounded-xl border border-slate-800">
-                          <table className="w-full text-left text-xs">
-                            <thead className="bg-slate-900/90 text-slate-400 uppercase">
-                              <tr>
-                                <th className="py-2.5 px-3">Fib Zaman Seviyesi</th>
-                                <th className="py-2.5 px-3">Mod A: W1-Bazlı (Δt1 × Oran)</th>
-                                <th className="py-2.5 px-3">Mod A Kapanış</th>
-                                <th className="py-2.5 px-3">Mod B: 0–2 Sündürme (Δt02 × Oran)</th>
-                                <th className="py-2.5 px-3">Mod B Kapanış</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-800/70 font-mono">
-                              {["0.382", "0.618", "1.000", "1.382", "1.618", "2.618"].map((k) => {
-                                const fa = imp.fib_zaman_w1_referans[k];
-                                const fb = imp.fib_zaman_02_sundurme[k];
-                                if (!fa || !fb) return null;
-                                return (
-                                  <tr key={k} className="hover:bg-slate-900/40">
-                                    <td className="py-2 px-3 font-bold text-violet-300">Fib {k}</td>
-                                    <td className="py-2 px-3 text-slate-300">
-                                      +{fa.bar_offset} bar → {fa.target_date}
-                                    </td>
-                                    <td className="py-2 px-3 text-emerald-400 font-bold">
-                                      {fa.close_at_target ? `${fa.close_at_target} ₺` : "Gelecek Bar"}
-                                    </td>
-                                    <td className="py-2 px-3 text-slate-300">
-                                      +{fb.bar_offset} bar → {fb.target_date}
-                                    </td>
-                                    <td className="py-2 px-3 text-cyan-400 font-bold">
-                                      {fb.close_at_target ? `${fb.close_at_target} ₺` : "Gelecek Bar"}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
+                        <div className="space-y-2">
+                          <div className="overflow-x-auto rounded-xl border border-slate-800">
+                            <table className="w-full text-left text-xs">
+                              <thead className="bg-slate-900/90 text-slate-400 uppercase">
+                                <tr>
+                                  <th className="py-2.5 px-3">Fib Zaman Seviyesi</th>
+                                  <th className="py-2.5 px-3">Mod A: W1-Bazlı (Δt1 × Oran)</th>
+                                  <th className="py-2.5 px-3">Mod A Kapanış</th>
+                                  <th className="py-2.5 px-3">Mod B: 0–2 Sündürme (Δt02 × Oran)</th>
+                                  <th className="py-2.5 px-3">Mod B Kapanış</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800/70 font-mono">
+                                {["0.382", "0.618", "1.000", "1.382", "1.618", "2.618"].map((k) => {
+                                  const fa = imp.fib_zaman_w1_referans[k];
+                                  const fb = imp.fib_zaman_02_sundurme[k];
+                                  if (!fa || !fb) return null;
+                                  return (
+                                    <tr key={k} className="hover:bg-slate-900/40">
+                                      <td className="py-2 px-3 font-bold text-violet-300">Fib {k}</td>
+                                      <td className="py-2 px-3 text-slate-300">
+                                        +{fa.bar_offset} bar → {fa.target_date}
+                                      </td>
+                                      <td className="py-2 px-3 text-emerald-400 font-bold">
+                                        {fa.close_at_target ? `${fa.close_at_target} ₺` : "Gelecek Bar"}
+                                      </td>
+                                      <td className="py-2 px-3 text-slate-300">
+                                        +{fb.bar_offset} bar → {fb.target_date}
+                                      </td>
+                                      <td className="py-2 px-3 text-cyan-400 font-bold">
+                                        {fb.close_at_target ? `${fb.close_at_target} ₺` : "Gelecek Bar"}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                          <p className="text-[11px] text-slate-400 px-1">
+                            <strong className="text-slate-200">📌 Tablo Nasıl Okunur?</strong>{" "}
+                            Mod A (yalnızca 1. dalga süresi bazlı) ve Mod B (0→2 toplam düzeltme döngüsü bazlı), fiyatın ivme veya dönüş yapabileceği hedef tarih pencerelerini verir; <code className="text-slate-300">Gelecek Bar</code> yazan satırlar henüz gelmemiş ileri tarihli zaman hedefleridir.
+                          </p>
                         </div>
                       )}
                     </>
@@ -1314,12 +1403,16 @@ export default function LabPage() {
                 </tbody>
               </table>
             </div>
+            <p className="text-[11px] text-slate-400">
+              <strong className="text-slate-200">📌 Sütun Rehberi:</strong>{" "}
+              <strong>Başarı (Win Rate)</strong> kârlı kapanan işlem yüzdesini, <strong>Ort. / Medyan Getiri</strong> sinyal başına getiriyi (medyan uç değer etkisini ayıklar), <strong>Profit Factor</strong> ise toplam kârın toplam zarara oranını (&gt;1.50 güçlü sistem) gösterir.
+            </p>
           </div>
 
           <div className="workspace-panel workspace-panel-body space-y-4">
             <h2 className="text-lg font-semibold text-white">Kural doğrulama matrisi</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {RULE_MATRIX.map((r) => (
+              {RULE_MATRIX.map((r: any) => (
                 <div key={r.id} className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-mono font-bold text-emerald-400">{r.id}</span>
@@ -1332,6 +1425,11 @@ export default function LabPage() {
                   <div className="text-[11px] font-mono text-cyan-300 bg-cyan-950/30 border border-cyan-500/20 rounded-lg px-2.5 py-1.5">
                     Örnek: {r.examples}
                   </div>
+                  {r.meaning && (
+                    <p className="text-[11px] text-slate-400 pt-1">
+                      <strong className="text-slate-300">📌 Pratik Etkisi:</strong> {r.meaning}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -1394,6 +1492,10 @@ export default function LabPage() {
               <div className="workspace-metrics" aria-live="polite">
                 {([ ["Toplam", pytestData.summary.total], ["Geçen", pytestData.summary.passed], ["Başarısız", pytestData.summary.failed], ["Hata", pytestData.summary.error], ["Atlanan", pytestData.summary.skipped] ] as const).map(([label, count]) => <MetricCard key={label} label={label} value={count} />)}
               </div>
+              <p className="text-[11px] text-slate-400">
+                <strong className="text-slate-200">📌 Sonuçlar Ne Anlama Geliyor?</strong>{" "}
+                Üretim geçişi için <strong>Başarısız = 0</strong>, <strong>Hata = 0</strong> ve <strong>Atlanan = 0</strong> olmalıdır; geçen her test ilgili matematiksel kuralın ve veri korumasının bozulmadığını doğrular.
+              </p>
               <div className="max-h-96 overflow-auto rounded-xl border border-slate-800">
                 <table className="w-full text-left text-xs"><caption className="sr-only">Test sonuçları</caption><thead className="bg-slate-900 text-slate-300"><tr><th className="p-3">Test</th><th className="p-3">Sonuç</th><th className="p-3">Süre</th></tr></thead><tbody>
                   {pytestData.results.map((test, i) => <tr key={i} className="border-t border-slate-800"><td className="p-3 break-all text-slate-300">{test.name}{test.message && <p className="mt-1 text-rose-300">{test.message}</p>}</td><td className={`p-3 ${test.status === "passed" ? "text-emerald-300" : "text-amber-300"}`}>{({passed: "Geçti", failed: "Başarısız", error: "Hata", skipped: "Atlandı"} as Record<string, string>)[test.status]}</td><td className="p-3 text-slate-400">{test.duration_sec} sn</td></tr>)}
@@ -1468,6 +1570,10 @@ export default function LabPage() {
               </table>
             </div>
           )}
+          <p className="text-[11px] text-slate-400">
+            <strong className="text-slate-200">📌 Tablo Sütunları Ne Anlama Geliyor?</strong>{" "}
+            <strong>1./2. Dip/Tepe</strong> uyumsuzluğun iki fiyat ve RSI ucunu, <strong>Saatlik Güven Seviyesi</strong> alt-periyot GVT/GKD kırılım eşik fiyatını, <strong>Durum</strong> eşiğin kırılıp kırılmadığını, <strong>Bilinebilir Zaman (knowable_at)</strong> ise sinyalin mum kapandıktan sonra canlıda ilk görülebildiği anı (gelecekten veri sızıntısı önlemi) gösterir.
+          </p>
         </div>
       )}
       </section>
