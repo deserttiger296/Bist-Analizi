@@ -97,17 +97,17 @@ def scan_rsi_pu30(response: Response, interval: str = "4h", signal_type: str = "
 
 @router.get("/api/scan/rsi-pu30/{symbol}")
 def get_rsi_pu30_symbol_detail(response: Response, symbol: str, interval: str = "4h"):
-    """Full price+RSI series and PU30 / NU70 divergence pairs. interval: '1d', '4h', or '1h'.
+    """Full price+RSI series and PU30 / NU70 divergence pairs. interval: '1d', '4h', '1h', or '15m'.
 
     Response includes:
       data_status       — FRESH | STALE | INSUFFICIENT_HISTORY | ERROR
       data_updated_at   — ISO timestamp of last successful fetch
       history_limit_note — human-readable provider limit description
     """
-    if interval not in ("1d", "4h", "1h"):
+    if interval not in ("1d", "4h", "1h", "15m"):
         raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
     try:
-        result = get_symbol_chart_data(symbol.upper(), interval=interval)
+        result = get_symbol_chart_data(symbol.upper(), interval=interval, enrich=True)
         if result is None:
             raise HTTPException(status_code=404, detail=f"No data for {symbol}")
         # Ensure data quality fields are always present at top level
@@ -180,6 +180,7 @@ def run_lab_suite(
     """
     import dataclasses
     from pathlib import Path
+    import numpy as np
     from python_bot.engine.data.provider import DataStatus, get_default_provider
     from python_bot.engine.signals.rsi_pu30 import (
         MIN_BARS_REQUIRED,
@@ -188,6 +189,7 @@ def run_lab_suite(
         SCAN_MIN_GAP_BARS,
         apply_hourly_trust_level,
         detect_rsi_pu30,
+        wilder_rsi,
     )
     from python_bot.scripts.testbed_impulse_fib_time import analyze_impulse_and_fib_time
 
@@ -200,8 +202,10 @@ def run_lab_suite(
         return run_test_suite(suite)
 
     if mode == "impulse":
-        if interval not in ("1h", "4h", "1d"):
-            raise HTTPException(status_code=400, detail="Zaman dilimi 1h, 4h veya 1d olmalı.")
+        from python_bot.engine.signals.long_short_matrix import detect_oversold_pre_pu30
+
+        if interval not in ("15m", "1h", "4h", "1d"):
+            raise HTTPException(status_code=400, detail="Zaman dilimi 15m, 1h, 4h veya 1d olmalı.")
         sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
         provider = get_default_provider()
         if len(sym_list) > 1 and hasattr(provider, "prefetch_ohlcv_batch"):
@@ -223,18 +227,21 @@ def run_lab_suite(
                 items.append({"symbol": sym, "interval": interval, "has_signal": False, "status": status, "error_message": res.error_message, "bar_count": len(res.df) if res.df is not None else 0})
                 continue
             sig = detect_rsi_pu30(res.df, cfg, ignore_lifetime=True, interval=interval)
+            pre_pu30 = detect_oversold_pre_pu30(res.df, sig, cfg=cfg)
             if not sig:
                 items.append({
                     "symbol": sym,
                     "interval": interval,
                     "has_signal": False,
                     "last_close": round(float(res.df["close"].iloc[-1]), 2),
+                    "pre_pu30": pre_pu30,
                 })
                 continue
-            sub_interval = "15m" if interval == "1h" else "1h"
-            sub = provider.fetch_ohlcv(sym, interval=sub_interval, include_forming_bar=False)
-            h1_df = sub.df if sub.status == DataStatus.FRESH and sub.df is not None and len(sub.df) >= MIN_BARS_REQUIRED else None
-            apply_hourly_trust_level(sig, res.df, h1_df, interval)
+            if interval in ("1h", "4h", "1d"):
+                sub_interval = "15m" if interval == "1h" else "1h"
+                sub = provider.fetch_ohlcv(sym, interval=sub_interval, include_forming_bar=False)
+                h1_df = sub.df if sub.status == DataStatus.FRESH and sub.df is not None and len(sub.df) >= MIN_BARS_REQUIRED else None
+                apply_hourly_trust_level(sig, res.df, h1_df, interval)
             lab_report = analyze_impulse_and_fib_time(res.df, sig)
             items.append({
                 "symbol": sym,
@@ -247,30 +254,42 @@ def run_lab_suite(
                 "dip2": sig["dip2"],
                 "saatlik_seviye": sig.get("saatlik_seviye"),
                 "impulse_analysis": lab_report,
+                "pre_pu30": pre_pu30,
             })
         return {"status": "success", "mode": "impulse", "interval": interval, "items": items}
 
     if mode == "journal":
-        import pandas as pd
-        root_dir = Path(__file__).resolve().parents[1]
-        log_path = root_dir / "python_bot" / "data" / "pu30_signal_log.csv"
-        rows = []
-        if log_path.exists():
-            df_log = pd.read_csv(log_path).fillna("")
-            rows = df_log.tail(50).to_dict(orient="records")[::-1]
+        from python_bot.engine.journal.daily_history import log_pu30_signals, read_signal_journal_rows
+
+        rows = read_signal_journal_rows()
+        if suite == "scan" or not rows:
+            for itv in ("1d", "4h", "1h"):
+                try:
+                    res = scan_universe_rsi_pu30(
+                        BIST100_SYMBOLS,
+                        max_workers=SCAN_MAX_WORKERS,
+                        interval=itv,
+                        signal_type="all",
+                    )
+                    if res.get("signals"):
+                        log_pu30_signals(res["signals"], interval=itv)
+                except Exception:
+                    pass
+            rows = read_signal_journal_rows()
+        rows = rows[-200:][::-1]
         return {"status": "success", "mode": "journal", "count": len(rows), "rows": rows}
 
     if mode == "longshort":
         from python_bot.engine.signals.long_short_matrix import build_long_short_matrix
         sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()] if symbols and symbols != "ALL" else None
-        itv_list = (interval,) if interval in ("1h", "4h", "1d") else ("1h", "4h")
+        itv_list = (interval,) if interval in ("15m", "1h", "4h", "1d") else ("1h", "4h")
         viop_flag = viop_only.lower() in ("true", "1", "yes")
         return build_long_short_matrix(symbols=sym_list, intervals=itv_list, viop_only=viop_flag)
 
     if mode == "nu70lab":
         from python_bot.engine.signals.long_short_matrix import build_nu70_peak_lab
         sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()] if symbols and symbols != "ALL" else None
-        itv = interval if interval in ("1h", "4h", "1d") else "1h"
+        itv = interval if interval in ("15m", "1h", "4h", "1d") else "1h"
         viop_flag = viop_only.lower() in ("true", "1", "yes")
         return build_nu70_peak_lab(symbols=sym_list, interval=itv, viop_only=viop_flag)
 

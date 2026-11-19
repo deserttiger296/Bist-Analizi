@@ -1,6 +1,6 @@
 {
   "passed": true,
-  "generated_at": "2026-11-19T16:55:40.417942+00:00",
+  "generated_at": "2026-11-19T17:32:08.142584+00:00",
   "suites": [
     {
       "status": "success",
@@ -10,8 +10,8 @@
       "exit_code": 0,
       "passed": true,
       "timed_out": false,
-      "duration_sec": 6.88,
-      "completed_at": "2026-11-19T16:55:22.513172+00:00",
+      "duration_sec": 7.44,
+      "completed_at": "2026-11-19T17:31:45.757023+00:00",
       "summary": {
         "passed": 28,
         "failed": 0,
@@ -24,35 +24,35 @@
           "name": "test_retry_recovers_and_caches_success[first0]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.01,
+          "duration_sec": 0.007,
           "message": ""
         },
         {
           "name": "test_retry_recovers_and_caches_success[first1]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.005,
           "message": ""
         },
         {
           "name": "test_retry_recovers_and_caches_success[first2]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.002,
+          "duration_sec": 0.003,
           "message": ""
         },
         {
           "name": "test_exhausted_retry_preserves_error_contract_without_caching[outcomes0-True]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.002,
+          "duration_sec": 0.001,
           "message": ""
         },
         {
           "name": "test_exhausted_retry_preserves_error_contract_without_caching[outcomes1-True]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.002,
+          "duration_sec": 0.001,
           "message": ""
         },
         {
@@ -73,35 +73,35 @@
           "name": "test_15m_batch_caches_only_successful_symbols[absent-None]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.014,
+          "duration_sec": 0.007,
           "message": ""
         },
         {
           "name": "test_15m_batch_caches_only_successful_symbols[absent-5d]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.005,
+          "duration_sec": 0.004,
           "message": ""
         },
         {
           "name": "test_15m_batch_caches_only_successful_symbols[empty-None]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.005,
+          "duration_sec": 0.006,
           "message": ""
         },
         {
           "name": "test_15m_batch_caches_only_successful_symbols[empty-5d]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.006,
+          "duration_sec": 0.007,
           "message": ""
         },
         {
           "name": "test_scanner_gates_cross_confirmation_and_trust[24-pu30-1h]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
@@ -122,7 +122,7 @@
           "name": "test_scanner_gates_cross_confirmation_and_trust[24-nu70-1h]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.002,
+          "duration_sec": 0.003,
           "message": ""
         },
         {
@@ -136,7 +136,7 @@
           "name": "test_scanner_gates_cross_confirmation_and_trust[24-nu70-1d]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
@@ -157,28 +157,28 @@
           "name": "test_scanner_gates_cross_confirmation_and_trust[25-pu30-1d]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.002,
+          "duration_sec": 0.003,
           "message": ""
         },
         {
           "name": "test_scanner_gates_cross_confirmation_and_trust[25-nu70-1h]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.002,
+          "duration_sec": 0.003,
           "message": ""
         },
         {
           "name": "test_scanner_gates_cross_confirmation_and_trust[25-nu70-4h]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
           "name": "test_scanner_gates_cross_confirmation_and_trust[25-nu70-1d]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
@@ -192,28 +192,28 @@
           "name": "test_flexible_scanner_skips_short_history[nu70]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.001,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
           "name": "test_flexible_scanner_skips_short_history[all]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 0.001,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
           "name": "test_agent_checks_minimum_after_cleaning_and_uses_timeout[nan]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 2.368,
+          "duration_sec": 2.467,
           "message": ""
         },
         {
           "name": "test_agent_checks_minimum_after_cleaning_and_uses_timeout[duplicate]",
           "group": "python_bot.tests.test_data_resilience",
           "status": "passed",
-          "duration_sec": 1.655,
+          "duration_sec": 1.926,
           "message": ""
         }
       ],
@@ -229,35 +229,35 @@
       "exit_code": 0,
       "passed": true,
       "timed_out": false,
-      "duration_sec": 3.69,
-      "completed_at": "2026-11-19T16:55:26.198350+00:00",
+      "duration_sec": 5.81,
+      "completed_at": "2026-11-19T17:31:51.574024+00:00",
       "summary": {
-        "passed": 119,
+        "passed": 121,
         "failed": 0,
         "error": 0,
         "skipped": 0,
-        "total": 119
+        "total": 121
       },
       "results": [
         {
           "name": "test_default_pu30_thresholds[1h-24.8-27.7-False]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.016,
+          "duration_sec": 0.008,
           "message": ""
         },
         {
           "name": "test_default_pu30_thresholds[1h-32.9-33.4-False]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.004,
           "message": ""
         },
         {
           "name": "test_default_pu30_thresholds[1h-30.0-33.4-False]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.002,
+          "duration_sec": 0.003,
           "message": ""
         },
         {
@@ -271,28 +271,28 @@
           "name": "test_default_pu30_thresholds[1h-30.0-30.0-False]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
           "name": "test_default_pu30_thresholds[1h-24.8-33.4-True]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.007,
+          "duration_sec": 0.003,
           "message": ""
         },
         {
           "name": "test_default_pu30_thresholds[1h-29.999-30.001-True]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.004,
           "message": ""
         },
         {
           "name": "test_default_pu30_thresholds[4h-24.8-27.7-False]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.002,
+          "duration_sec": 0.004,
           "message": ""
         },
         {
@@ -320,7 +320,7 @@
           "name": "test_default_pu30_thresholds[4h-30.0-30.0-False]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.002,
+          "duration_sec": 0.004,
           "message": ""
         },
         {
@@ -348,21 +348,21 @@
           "name": "test_default_pu30_thresholds[1d-32.9-33.4-False]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.002,
+          "duration_sec": 0.003,
           "message": ""
         },
         {
           "name": "test_default_pu30_thresholds[1d-30.0-33.4-False]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.002,
+          "duration_sec": 0.006,
           "message": ""
         },
         {
           "name": "test_default_pu30_thresholds[1d-24.8-30.0-False]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.002,
+          "duration_sec": 0.003,
           "message": ""
         },
         {
@@ -376,7 +376,7 @@
           "name": "test_default_pu30_thresholds[1d-24.8-33.4-True]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.004,
           "message": ""
         },
         {
@@ -397,28 +397,28 @@
           "name": "test_shared_api_scanner_uses_strict_defaults[24.8-27.7-0]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.615,
+          "duration_sec": 0.601,
           "message": ""
         },
         {
           "name": "test_shared_api_scanner_uses_strict_defaults[32.9-33.4-0]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.005,
+          "duration_sec": 0.004,
           "message": ""
         },
         {
           "name": "test_shared_api_scanner_uses_strict_defaults[24.8-33.4-1]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.017,
+          "duration_sec": 0.014,
           "message": ""
         },
         {
           "name": "test_default_nu70_thresholds[72.0-65.0-True]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.004,
+          "duration_sec": 0.005,
           "message": ""
         },
         {
@@ -432,28 +432,28 @@
           "name": "test_default_nu70_thresholds[70.0-65.0-False]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
           "name": "test_default_nu70_thresholds[72.0-70.0-False]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
           "name": "test_default_nu70_thresholds[68.5-60.0-False]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.005,
+          "duration_sec": 0.003,
           "message": ""
         },
         {
           "name": "test_default_nu70_thresholds[75.0-71.0-False]",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.005,
           "message": ""
         },
         {
@@ -467,14 +467,14 @@
           "name": "test_semih_isctr_kurus_tolerance_double_bottom",
           "group": "python_bot.tests.test_pu30_strict",
           "status": "passed",
-          "duration_sec": 0.006,
+          "duration_sec": 0.004,
           "message": ""
         },
         {
           "name": "test_asels_example_level_and_break",
           "group": "python_bot.tests.test_hourly_trust_level",
           "status": "passed",
-          "duration_sec": 0.004,
+          "duration_sec": 0.005,
           "message": ""
         },
         {
@@ -488,28 +488,28 @@
           "name": "test_waiting_for_lower_high",
           "group": "python_bot.tests.test_hourly_trust_level",
           "status": "passed",
-          "duration_sec": 0.005,
+          "duration_sec": 0.003,
           "message": ""
         },
         {
           "name": "test_zirve_exceeded_invalidates_structure",
           "group": "python_bot.tests.test_hourly_trust_level",
           "status": "passed",
-          "duration_sec": 0.004,
+          "duration_sec": 0.003,
           "message": ""
         },
         {
           "name": "test_pu_mirror_rule",
           "group": "python_bot.tests.test_hourly_trust_level",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.004,
           "message": ""
         },
         {
           "name": "test_apply_replaces_trigger_level_and_keeps_between_extreme",
           "group": "python_bot.tests.test_hourly_trust_level",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.004,
           "message": ""
         },
         {
@@ -565,7 +565,7 @@
           "name": "test_rsi_bounds",
           "group": "python_bot.tests.test_rsi_pu30.TestWilderRSI",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.001,
           "message": ""
         },
         {
@@ -593,28 +593,28 @@
           "name": "test_clean_data_passes",
           "group": "python_bot.tests.test_rsi_pu30.TestValidateAndClean",
           "status": "passed",
-          "duration_sec": 0.013,
+          "duration_sec": 0.006,
           "message": ""
         },
         {
           "name": "test_duplicate_timestamps_removed",
           "group": "python_bot.tests.test_rsi_pu30.TestValidateAndClean",
           "status": "passed",
-          "duration_sec": 0.009,
+          "duration_sec": 0.01,
           "message": ""
         },
         {
           "name": "test_nan_close_row_dropped",
           "group": "python_bot.tests.test_rsi_pu30.TestValidateAndClean",
           "status": "passed",
-          "duration_sec": 0.008,
+          "duration_sec": 0.007,
           "message": ""
         },
         {
           "name": "test_insufficient_after_clean_returns_status",
           "group": "python_bot.tests.test_rsi_pu30.TestValidateAndClean",
           "status": "passed",
-          "duration_sec": 0.005,
+          "duration_sec": 0.007,
           "message": ""
         },
         {
@@ -635,63 +635,63 @@
           "name": "test_high_lt_low_row_dropped",
           "group": "python_bot.tests.test_rsi_pu30.TestValidateAndClean",
           "status": "passed",
-          "duration_sec": 0.006,
+          "duration_sec": 0.011,
           "message": ""
         },
         {
           "name": "test_output_has_fewer_bars_than_input",
           "group": "python_bot.tests.test_rsi_pu30.TestResampleBist4h",
           "status": "passed",
-          "duration_sec": 0.018,
+          "duration_sec": 0.01,
           "message": ""
         },
         {
           "name": "test_ohlcv_aggregation_open_is_first",
           "group": "python_bot.tests.test_rsi_pu30.TestResampleBist4h",
           "status": "passed",
-          "duration_sec": 0.006,
+          "duration_sec": 0.005,
           "message": ""
         },
         {
           "name": "test_ohlcv_aggregation_volume_is_sum",
           "group": "python_bot.tests.test_rsi_pu30.TestResampleBist4h",
           "status": "passed",
-          "duration_sec": 0.006,
+          "duration_sec": 0.005,
           "message": ""
         },
         {
           "name": "test_no_weekend_bars_in_output",
           "group": "python_bot.tests.test_rsi_pu30.TestResampleBist4h",
           "status": "passed",
-          "duration_sec": 0.008,
+          "duration_sec": 0.009,
           "message": ""
         },
         {
           "name": "test_opening_0930_bar_is_part_of_morning_bar",
           "group": "python_bot.tests.test_rsi_pu30.TestResampleBist4h",
           "status": "passed",
-          "duration_sec": 0.005,
+          "duration_sec": 0.006,
           "message": ""
         },
         {
           "name": "test_afternoon_bar_labelled_at_1430",
           "group": "python_bot.tests.test_rsi_pu30.TestResampleBist4h",
           "status": "passed",
-          "duration_sec": 0.006,
+          "duration_sec": 0.008,
           "message": ""
         },
         {
           "name": "test_empty_input_returns_empty",
           "group": "python_bot.tests.test_rsi_pu30.TestResampleBist4h",
           "status": "passed",
-          "duration_sec": 0.002,
+          "duration_sec": 0.001,
           "message": ""
         },
         {
           "name": "test_single_bar_no_crash",
           "group": "python_bot.tests.test_rsi_pu30.TestResampleBist4h",
           "status": "passed",
-          "duration_sec": 0.008,
+          "duration_sec": 0.005,
           "message": ""
         },
         {
@@ -712,7 +712,7 @@
           "name": "test_4h_morning_bar_after_14_is_closed",
           "group": "python_bot.tests.test_rsi_pu30.TestIsBarClosed",
           "status": "passed",
-          "duration_sec": 0.001,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
@@ -782,7 +782,7 @@
           "name": "test_pivot_at_boundary_not_counted",
           "group": "python_bot.tests.test_rsi_pu30.TestPivotLookAhead",
           "status": "passed",
-          "duration_sec": 0.001,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
@@ -810,28 +810,28 @@
           "name": "test_pu30_signal_detected",
           "group": "python_bot.tests.test_rsi_pu30.TestDetectRsiPU30",
           "status": "passed",
-          "duration_sec": 0.009,
+          "duration_sec": 0.005,
           "message": ""
         },
         {
           "name": "test_pu30_rsi_threshold_rule",
           "group": "python_bot.tests.test_rsi_pu30.TestDetectRsiPU30",
           "status": "passed",
-          "duration_sec": 0.01,
+          "duration_sec": 0.011,
           "message": ""
         },
         {
           "name": "test_pu30_signal_has_required_fields",
           "group": "python_bot.tests.test_rsi_pu30.TestDetectRsiPU30",
           "status": "passed",
-          "duration_sec": 0.007,
+          "duration_sec": 0.006,
           "message": ""
         },
         {
           "name": "test_pu30_dip2_rsi_above_30",
           "group": "python_bot.tests.test_rsi_pu30.TestDetectRsiPU30",
           "status": "passed",
-          "duration_sec": 0.006,
+          "duration_sec": 0.007,
           "message": ""
         },
         {
@@ -852,42 +852,42 @@
           "name": "test_pu30_no_signal_on_insufficient_bars",
           "group": "python_bot.tests.test_rsi_pu30.TestDetectRsiPU30",
           "status": "passed",
-          "duration_sec": 0.001,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
           "name": "test_pu30_no_lookahead_bias",
           "group": "python_bot.tests.test_rsi_pu30.TestDetectRsiPU30",
           "status": "passed",
-          "duration_sec": 0.007,
+          "duration_sec": 0.006,
           "message": ""
         },
         {
           "name": "test_pu30_max_rsi_dip_bounds_only_first_dip",
           "group": "python_bot.tests.test_rsi_pu30.TestDetectRsiPU30",
           "status": "passed",
-          "duration_sec": 0.006,
+          "duration_sec": 0.007,
           "message": ""
         },
         {
           "name": "test_pu30_signal_lifetime_filter",
           "group": "python_bot.tests.test_rsi_pu30.TestDetectRsiPU30",
           "status": "passed",
-          "duration_sec": 0.008,
+          "duration_sec": 0.007,
           "message": ""
         },
         {
           "name": "test_nu70_signal_detected",
           "group": "python_bot.tests.test_rsi_pu30.TestDetectRsiNU70",
           "status": "passed",
-          "duration_sec": 0.005,
+          "duration_sec": 0.008,
           "message": ""
         },
         {
           "name": "test_nu70_signal_has_required_fields",
           "group": "python_bot.tests.test_rsi_pu30.TestDetectRsiNU70",
           "status": "passed",
-          "duration_sec": 0.005,
+          "duration_sec": 0.007,
           "message": ""
         },
         {
@@ -915,14 +915,14 @@
           "name": "test_nu70_min_rsi_peak_bounds_only_first_peak",
           "group": "python_bot.tests.test_rsi_pu30.TestDetectRsiNU70",
           "status": "passed",
-          "duration_sec": 0.007,
+          "duration_sec": 0.008,
           "message": ""
         },
         {
           "name": "test_all_nan_closes_returns_none",
           "group": "python_bot.tests.test_rsi_pu30.TestEdgeCases",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.004,
           "message": ""
         },
         {
@@ -950,14 +950,14 @@
           "name": "test_flat_price_no_nu70_signal",
           "group": "python_bot.tests.test_rsi_pu30.TestEdgeCases",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.005,
           "message": ""
         },
         {
           "name": "test_resample_bist_4h_single_weekday_bar_produces_one_row",
           "group": "python_bot.tests.test_rsi_pu30.TestEdgeCases",
           "status": "passed",
-          "duration_sec": 0.006,
+          "duration_sec": 0.005,
           "message": ""
         },
         {
@@ -971,42 +971,42 @@
           "name": "test_dip2_oncesi_dip1_altina_inen_klasik_uyumsuzluk_yakalanir",
           "group": "python_bot.tests.test_rsi_pu30.TestSemihKurallari",
           "status": "passed",
-          "duration_sec": 0.141,
+          "duration_sec": 0.003,
           "message": ""
         },
         {
           "name": "test_strict_modda_dip2_rsi_30_alti_reddedilir",
           "group": "python_bot.tests.test_rsi_pu30.TestSemihKurallari",
           "status": "passed",
-          "duration_sec": 0.005,
+          "duration_sec": 0.008,
           "message": ""
         },
         {
           "name": "test_nu70_ayna_ve_guven_kiran_dip",
           "group": "python_bot.tests.test_rsi_pu30.TestSemihKurallari",
           "status": "passed",
-          "duration_sec": 0.005,
+          "duration_sec": 0.006,
           "message": ""
         },
         {
           "name": "test_pu_guven_tazeleyen_tepe_kirilinca_tetiklenir",
           "group": "python_bot.tests.test_rsi_pu30.TestSemihKurallari",
           "status": "passed",
-          "duration_sec": 0.006,
+          "duration_sec": 0.007,
           "message": ""
         },
         {
           "name": "test_strict_pair_reported_once_as_pu30",
           "group": "python_bot.tests.test_screener_cli",
           "status": "passed",
-          "duration_sec": 0.01,
+          "duration_sec": 0.009,
           "message": ""
         },
         {
           "name": "test_flexible_pair_never_labelled_pu30",
           "group": "python_bot.tests.test_screener_cli",
           "status": "passed",
-          "duration_sec": 0.009,
+          "duration_sec": 0.01,
           "message": ""
         },
         {
@@ -1027,14 +1027,14 @@
           "name": "test_nu70_rejects_isctr_style_prior_same_high_over_70",
           "group": "python_bot.tests.test_nu70_semih_rules",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.005,
           "message": ""
         },
         {
           "name": "test_nu70_invalidates_after_higher_high_break_and_prefix_replay",
           "group": "python_bot.tests.test_nu70_semih_rules",
           "status": "passed",
-          "duration_sec": 0.007,
+          "duration_sec": 0.006,
           "message": ""
         },
         {
@@ -1048,7 +1048,7 @@
           "name": "test_long_short_matrix_gkd_reclaim_not_triggered_and_rounded",
           "group": "python_bot.tests.test_nu70_semih_rules",
           "status": "passed",
-          "duration_sec": 0.001,
+          "duration_sec": 0.009,
           "message": ""
         },
         {
@@ -1069,7 +1069,21 @@
           "name": "test_nu70lab_endpoint_separates_strict_early_and_invalidated",
           "group": "python_bot.tests.test_nu70_semih_rules",
           "status": "passed",
-          "duration_sec": 0.012,
+          "duration_sec": 0.016,
+          "message": ""
+        },
+        {
+          "name": "test_nu70lab_15m_fractal_cascade_and_oversold_dip_watch",
+          "group": "python_bot.tests.test_nu70_semih_rules",
+          "status": "passed",
+          "duration_sec": 0.013,
+          "message": ""
+        },
+        {
+          "name": "test_symbol_chart_data_enriches_early_nu70_fractal_and_pre_pu30",
+          "group": "python_bot.tests.test_nu70_semih_rules",
+          "status": "passed",
+          "duration_sec": 1.784,
           "message": ""
         }
       ],
@@ -1089,8 +1103,8 @@
       "exit_code": 0,
       "passed": true,
       "timed_out": false,
-      "duration_sec": 6.03,
-      "completed_at": "2026-11-19T16:55:32.233440+00:00",
+      "duration_sec": 6.7,
+      "completed_at": "2026-11-19T17:31:58.282830+00:00",
       "summary": {
         "passed": 57,
         "failed": 0,
@@ -1103,84 +1117,84 @@
           "name": "test_bagfs_lower_low_invalidates_without_new_pivot[True]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.009,
+          "duration_sec": 0.011,
           "message": ""
         },
         {
           "name": "test_bagfs_lower_low_invalidates_without_new_pivot[False]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.005,
+          "duration_sec": 0.01,
           "message": ""
         },
         {
           "name": "test_bagfs_rsi_292_invalidates_even_without_price_break[True]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.005,
+          "duration_sec": 0.004,
           "message": ""
         },
         {
           "name": "test_bagfs_rsi_292_invalidates_even_without_price_break[False]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.004,
+          "duration_sec": 0.006,
           "message": ""
         },
         {
           "name": "test_open_resistance_cross_never_activates_and_age_is_explicit",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.005,
+          "duration_sec": 0.006,
           "message": ""
         },
         {
           "name": "test_forming_right_bar_cannot_confirm_new_pivot",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.002,
+          "duration_sec": 0.004,
           "message": ""
         },
         {
           "name": "test_state_a_hourly_valid_but_session_invalid",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.009,
+          "duration_sec": 0.01,
           "message": ""
         },
         {
           "name": "test_state_b_requires_closed_breakout_and_daily_structure_not_hourly_pu",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.019,
+          "duration_sec": 0.024,
           "message": ""
         },
         {
           "name": "test_missing_or_stale_timeframe_never_confirms[1h]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.01,
+          "duration_sec": 0.011,
           "message": ""
         },
         {
           "name": "test_missing_or_stale_timeframe_never_confirms[4h]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.009,
+          "duration_sec": 0.01,
           "message": ""
         },
         {
           "name": "test_missing_or_stale_timeframe_never_confirms[1d]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.011,
+          "duration_sec": 0.015,
           "message": ""
         },
         {
           "name": "test_daily_support_break_vetoes_even_otherwise_full_confirmation",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.008,
+          "duration_sec": 0.01,
           "message": ""
         },
         {
@@ -1194,7 +1208,7 @@
           "name": "test_current_open_price_back_under_resistance_removes_green_state",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.014,
+          "duration_sec": 0.016,
           "message": ""
         },
         {
@@ -1208,14 +1222,14 @@
           "name": "test_hourly_equal_price_second_dip_is_allowed[4h-False]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.004,
           "message": ""
         },
         {
           "name": "test_hourly_equal_price_second_dip_is_allowed[1d-False]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.002,
+          "duration_sec": 0.003,
           "message": ""
         },
         {
@@ -1229,14 +1243,14 @@
           "name": "test_one_hour_open_low_invalidates_session_even_if_four_hour_frame_is_old",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.009,
+          "duration_sec": 0.012,
           "message": ""
         },
         {
           "name": "test_hourly_low_before_session_dip_does_not_invalidate_later_pair",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.009,
+          "duration_sec": 0.01,
           "message": ""
         },
         {
@@ -1250,28 +1264,28 @@
           "name": "test_lab_pressure_only_when_lower_trend_unbroken_and_macro_not_aligned[False-False-LOWER_TF_NU_PRESSURE]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.009,
+          "duration_sec": 0.012,
           "message": ""
         },
         {
           "name": "test_lab_pressure_only_when_lower_trend_unbroken_and_macro_not_aligned[True-False-EARLY_REACTION]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.008,
+          "duration_sec": 0.009,
           "message": ""
         },
         {
           "name": "test_lab_pressure_only_when_lower_trend_unbroken_and_macro_not_aligned[False-True-FULL_CONFIRMATION]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.01,
+          "duration_sec": 0.011,
           "message": ""
         },
         {
           "name": "test_lower_pressure_does_not_hide_unknown_daily_structure",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.009,
+          "duration_sec": 0.013,
           "message": ""
         },
         {
@@ -1292,21 +1306,21 @@
           "name": "test_resampling_keeps_latest_forming_bagfs_low",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.025,
+          "duration_sec": 0.026,
           "message": ""
         },
         {
           "name": "test_intraday_delay_and_weekend_freshness[2026-10-14 17:30-2026-10-15 15:30-4h-True]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.001,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
           "name": "test_intraday_delay_and_weekend_freshness[2026-10-15 14:30-2026-10-15 15:30-4h-False]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.001,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
@@ -1327,35 +1341,35 @@
           "name": "test_intraday_delay_and_weekend_freshness[2026-10-13-2026-10-15 15:30-1d-True]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.001,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
           "name": "test_lab_endpoint_never_caches",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.051,
+          "duration_sec": 0.059,
           "message": ""
         },
         {
           "name": "test_lab_api_removes_broken_pair_and_exposes_reason",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.043,
+          "duration_sec": 0.048,
           "message": ""
         },
         {
           "name": "test_daily_live_new_low_uses_rsi_divergence_before_pivot_confirmation[23.3-33.1-INTACT-True]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.006,
           "message": ""
         },
         {
           "name": "test_daily_live_new_low_uses_rsi_divergence_before_pivot_confirmation[23.3-33.1-INTACT-False]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.004,
           "message": ""
         },
         {
@@ -1376,7 +1390,7 @@
           "name": "test_daily_live_new_low_uses_rsi_divergence_before_pivot_confirmation[23.3-29.99-BROKEN-True]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.004,
           "message": ""
         },
         {
@@ -1404,14 +1418,14 @@
           "name": "test_daily_live_new_low_uses_rsi_divergence_before_pivot_confirmation[35.0-34.0-BROKEN-True]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.005,
           "message": ""
         },
         {
           "name": "test_daily_live_new_low_uses_rsi_divergence_before_pivot_confirmation[35.0-34.0-BROKEN-False]",
           "group": "python_bot.tests.test_pu30_mtf",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.004,
           "message": ""
         },
         {
@@ -1446,14 +1460,14 @@
           "name": "test_lower_nu_without_70_threshold_and_regression_line",
           "group": "python_bot.tests.test_mtf_lab_isolation",
           "status": "passed",
-          "duration_sec": 0.015,
+          "duration_sec": 0.007,
           "message": ""
         },
         {
           "name": "test_closed_rsi_break_releases_pressure",
           "group": "python_bot.tests.test_mtf_lab_isolation",
           "status": "passed",
-          "duration_sec": 0.006,
+          "duration_sec": 0.007,
           "message": ""
         },
         {
@@ -1467,35 +1481,35 @@
           "name": "test_one_unbroken_timeframe_keeps_pressure_even_if_other_breaks",
           "group": "python_bot.tests.test_mtf_lab_isolation",
           "status": "passed",
-          "duration_sec": 0.006,
+          "duration_sec": 0.007,
           "message": ""
         },
         {
           "name": "test_classic_scan_keeps_original_keys_and_local_fibonacci",
           "group": "python_bot.tests.test_mtf_lab_isolation",
           "status": "passed",
-          "duration_sec": 0.009,
+          "duration_sec": 0.008,
           "message": ""
         },
         {
           "name": "test_classic_detail_keeps_original_format",
           "group": "python_bot.tests.test_mtf_lab_isolation",
           "status": "passed",
-          "duration_sec": 0.01,
+          "duration_sec": 0.012,
           "message": ""
         },
         {
           "name": "test_lab_routes_are_separate_and_validate_symbols",
           "group": "python_bot.tests.test_mtf_lab_isolation",
           "status": "passed",
-          "duration_sec": 0.016,
+          "duration_sec": 0.015,
           "message": ""
         },
         {
           "name": "test_classic_api_starts_when_lab_calculation_module_cannot_import",
           "group": "python_bot.tests.test_mtf_lab_isolation",
           "status": "passed",
-          "duration_sec": 2.607,
+          "duration_sec": 2.666,
           "message": ""
         }
       ],
@@ -1512,8 +1526,8 @@
       "exit_code": 0,
       "passed": true,
       "timed_out": false,
-      "duration_sec": 8.19,
-      "completed_at": "2026-11-19T16:55:40.417247+00:00",
+      "duration_sec": 9.86,
+      "completed_at": "2026-11-19T17:32:08.142584+00:00",
       "summary": {
         "passed": 37,
         "failed": 0,
@@ -1526,14 +1540,14 @@
           "name": "test_lab_catalog_is_explicit_and_unknown_suite_rejected",
           "group": "python_bot.tests.test_lab_runner",
           "status": "passed",
-          "duration_sec": 0.004,
+          "duration_sec": 0.006,
           "message": ""
         },
         {
           "name": "test_runner_reports_per_test_results",
           "group": "python_bot.tests.test_lab_runner",
           "status": "passed",
-          "duration_sec": 0.005,
+          "duration_sec": 0.006,
           "message": ""
         },
         {
@@ -1554,21 +1568,21 @@
           "name": "test_impulse_short_history_is_data_problem",
           "group": "python_bot.tests.test_lab_runner",
           "status": "passed",
-          "duration_sec": 0.001,
+          "duration_sec": 0.003,
           "message": ""
         },
         {
           "name": "test_health_reports_lite_deployment_without_ml",
           "group": "python_bot.tests.test_vercel_engine",
           "status": "passed",
-          "duration_sec": 0.013,
+          "duration_sec": 0.015,
           "message": ""
         },
         {
           "name": "test_scan_all_and_predict_are_explicitly_unavailable",
           "group": "python_bot.tests.test_vercel_engine",
           "status": "passed",
-          "duration_sec": 0.008,
+          "duration_sec": 0.01,
           "message": ""
         },
         {
@@ -1582,14 +1596,14 @@
           "name": "test_most_price_ema9_and_11_percent_hand_calculation",
           "group": "python_bot.tests.test_mtf_lab_isolation",
           "status": "passed",
-          "duration_sec": 0.001,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
           "name": "test_most_insufficient_data_is_unknown_not_fabricated_green",
           "group": "python_bot.tests.test_mtf_lab_isolation",
           "status": "passed",
-          "duration_sec": 0.001,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
@@ -1603,7 +1617,7 @@
           "name": "test_closed_rsi_break_releases_pressure",
           "group": "python_bot.tests.test_mtf_lab_isolation",
           "status": "passed",
-          "duration_sec": 0.005,
+          "duration_sec": 0.008,
           "message": ""
         },
         {
@@ -1617,42 +1631,42 @@
           "name": "test_one_unbroken_timeframe_keeps_pressure_even_if_other_breaks",
           "group": "python_bot.tests.test_mtf_lab_isolation",
           "status": "passed",
-          "duration_sec": 0.006,
+          "duration_sec": 0.008,
           "message": ""
         },
         {
           "name": "test_classic_scan_keeps_original_keys_and_local_fibonacci",
           "group": "python_bot.tests.test_mtf_lab_isolation",
           "status": "passed",
-          "duration_sec": 0.007,
+          "duration_sec": 0.009,
           "message": ""
         },
         {
           "name": "test_classic_detail_keeps_original_format",
           "group": "python_bot.tests.test_mtf_lab_isolation",
           "status": "passed",
-          "duration_sec": 0.008,
+          "duration_sec": 0.011,
           "message": ""
         },
         {
           "name": "test_lab_routes_are_separate_and_validate_symbols",
           "group": "python_bot.tests.test_mtf_lab_isolation",
           "status": "passed",
-          "duration_sec": 0.013,
+          "duration_sec": 0.019,
           "message": ""
         },
         {
           "name": "test_classic_api_starts_when_lab_calculation_module_cannot_import",
           "group": "python_bot.tests.test_mtf_lab_isolation",
           "status": "passed",
-          "duration_sec": 2.272,
+          "duration_sec": 2.786,
           "message": ""
         },
         {
           "name": "test_ev_filter_backward_compatibility_and_roundtrip_cost",
           "group": "python_bot.tests.test_shield_risk",
           "status": "passed",
-          "duration_sec": 0.003,
+          "duration_sec": 0.001,
           "message": ""
         },
         {
@@ -1666,7 +1680,7 @@
           "name": "test_ev_filter_invalid_inputs_rejected[-0.1-5.0-3.0]",
           "group": "python_bot.tests.test_shield_risk",
           "status": "passed",
-          "duration_sec": 0.001,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
@@ -1722,7 +1736,7 @@
           "name": "test_var_and_cvar_parametric_and_historical_with_bist_tail_shocks",
           "group": "python_bot.tests.test_shield_risk",
           "status": "passed",
-          "duration_sec": 0.004,
+          "duration_sec": 0.002,
           "message": ""
         },
         {
@@ -1743,42 +1757,42 @@
           "name": "test_all_active_screens_use_one_workspace_layout",
           "group": "python_bot.tests.test_ui_shell",
           "status": "passed",
-          "duration_sec": 0.018,
+          "duration_sec": 0.016,
           "message": ""
         },
         {
           "name": "test_shared_workspace_accessibility_and_states",
           "group": "python_bot.tests.test_ui_shell",
           "status": "passed",
-          "duration_sec": 0.559,
+          "duration_sec": 0.534,
           "message": ""
         },
         {
           "name": "test_legacy_market_screen_is_consolidated_into_the_scanner",
           "group": "python_bot.tests.test_ui_shell",
           "status": "passed",
-          "duration_sec": 0.002,
+          "duration_sec": 0.001,
           "message": ""
         },
         {
           "name": "test_navigation_lists_real_systems_once_and_has_no_dead_routes",
           "group": "python_bot.tests.test_ui_shell",
           "status": "passed",
-          "duration_sec": 0.078,
+          "duration_sec": 0.12,
           "message": ""
         },
         {
           "name": "test_static_pages_share_brand_navigation_and_accessible_mobile_controls",
           "group": "python_bot.tests.test_ui_shell",
           "status": "passed",
-          "duration_sec": 0.002,
+          "duration_sec": 0.003,
           "message": ""
         },
         {
           "name": "test_vector_logo_and_mirrored_static_assets_are_consistent",
           "group": "python_bot.tests.test_ui_shell",
           "status": "passed",
-          "duration_sec": 0.007,
+          "duration_sec": 0.006,
           "message": ""
         }
       ],

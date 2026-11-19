@@ -29,7 +29,9 @@ export async function GET(req: NextRequest) {
     const qs = new URLSearchParams({ mode, symbols, interval, suite, viop_only: viopOnly }).toString();
     const res = await fetch(`${BACKEND_URL}/api/lab?${qs}`, {
       cache: "no-store",
-      signal: AbortSignal.timeout(mode === "pytest" ? 70000 : 45000),
+      signal: AbortSignal.timeout(
+        mode === "pytest" || (mode === "journal" && suite === "scan") ? 110000 : 45000
+      ),
     });
     if (res.ok) {
       const data = await res.json();

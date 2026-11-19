@@ -356,3 +356,153 @@ def test_nu70lab_endpoint_separates_strict_early_and_invalidated(monkeypatch):
     assert res["invalidated_count"] == 1
     assert res["hanging_man_count"] == 2
     assert res["triggered_count"] == 1
+
+
+def test_nu70lab_15m_fractal_cascade_and_oversold_dip_watch(monkeypatch):
+    """15dk NU70'te 1s kaskad ayrımı (Tuzak vs Gerçek Basış) ve RSI<30 '1 dip daha' izleme listesi."""
+    from python_bot import signal_api
+
+    df_thyao = _peak_df(45)
+    df_thyao["close"] = 320.0
+    df_tuprs = _peak_df(45)
+    df_tuprs["close"] = 180.0
+
+    # ASELS 15dk: dalgalı yatay sonrası sert düşüş (RSI < 30) ve tepki (2. dip PU30 henüz yok)
+    closes_asels = np.concatenate([
+        355.0 + np.array([0.5, -0.4, 0.6, -0.3, 0.7, -0.5, 0.8, -0.4, 0.6, -0.2, 0.9, -0.3, 0.5, -0.4, 0.8, -0.3, 0.6, -0.4, 0.7, -0.2, 0.5, -0.3, 0.4, -0.2, 0.6]),
+        np.linspace(354.0, 336.0, 12),
+        np.array([337.5, 339.2, 341.0, 342.8, 344.5, 345.2, 344.8, 345.5]),
+    ])
+    n_asels = len(closes_asels)
+    df_asels = pd.DataFrame({
+        "date": pd.date_range("2026-11-18 10:00", periods=n_asels, freq="15min", tz="Europe/Istanbul"),
+        "open": closes_asels,
+        "high": closes_asels + 0.8,
+        "low": closes_asels - 0.6,
+        "close": closes_asels,
+        "volume": np.full(n_asels, 5000.0),
+        "is_closed": np.ones(n_asels, dtype=bool),
+    })
+
+    frames = {"THYAO": df_thyao, "TUPRS": df_tuprs, "ASELS": df_asels}
+    monkeypatch.setattr(matrix_mod, "get_default_provider", lambda: object())
+    monkeypatch.setattr(
+        matrix_mod,
+        "_fetch_adjusted_bars",
+        lambda sym, interval="1h": (
+            frames[sym].copy(),
+            DataResult(symbol=sym, interval=interval, df=frames[sym].copy(), status=DataStatus.FRESH),
+        ),
+    )
+
+    def _fake_nu70(df, cfg=None, ignore_lifetime=False, interval="1h", include_invalidated=False):
+        px = round(float(df["close"].iloc[-1]), 1)
+        if px == 320.0 and interval == "15m":
+            return {
+                "type": "NU70",
+                "tepe1": {"price": 318.0, "rsi": 74.0, "date": "2026-11-19 10:00"},
+                "tepe2": {"price": 322.0, "rsi": 65.0, "rsi_at_peak": 65.0, "date": "2026-11-19 14:00"},
+                "peak_candle": {"pattern": "NONE", "label_tr": "Yok", "is_hanging_man": False, "is_shooting_star": False},
+                "invalidated": False,
+                "confirm_date": "2026-11-19 14:15",
+                "pullback_pct": 3.5,
+                "gap_bars": 8,
+                "bars_since_confirm": 2,
+            }
+        if px == 180.0 and interval in ("15m", "1h"):
+            return {
+                "type": "NU70",
+                "tepe1": {"price": 178.0, "rsi": 76.0, "date": "2026-11-19 10:00"},
+                "tepe2": {"price": 182.0, "rsi": 63.0, "rsi_at_peak": 63.0, "date": "2026-11-19 15:00"},
+                "peak_candle": {"pattern": "ASILAN_ADAM", "label_tr": "Asılan Adam", "is_hanging_man": True, "is_shooting_star": False},
+                "invalidated": False,
+                "confirm_date": "2026-11-19 15:15",
+                "pullback_pct": 3.8,
+                "gap_bars": 9,
+                "bars_since_confirm": 1,
+            }
+        return None
+
+    monkeypatch.setattr(matrix_mod, "detect_rsi_nu70", _fake_nu70)
+    monkeypatch.setattr(
+        matrix_mod,
+        "apply_hourly_trust_level",
+        lambda sig, df, sub_df, interval: sig.__setitem__(
+            "saatlik_seviye", {"price": float(df["close"].iloc[-1]) - 1.0, "durum": "bekleniyor", "alt_periyot": "15dk", "fiyat_seviyenin": "ustunde"}
+        ),
+    )
+    monkeypatch.setattr(matrix_mod, "detect_early_highest_nu70_candidate", lambda *a, **k: None)
+
+    res = signal_api.run_lab_suite(mode="nu70lab", symbols="THYAO,TUPRS,ASELS", interval="15m")
+    assert res["status"] == "success"
+    assert res["interval"] == "15m"
+    strict_map = {x["symbol"]: x for x in res["strict_signals"]}
+    assert strict_map["THYAO"]["fractal_phase_code"] == "TUZAK_15DK_YENI_ZIRVE_BEKLENIR"
+    assert strict_map["THYAO"]["recommended_tp_price"] == strict_map["THYAO"]["target_1r"]
+    assert strict_map["TUPRS"]["fractal_phase_code"] == "KASKAD_15DK_1S_ONAYLI"
+    assert strict_map["TUPRS"]["recommended_tp_price"] == strict_map["TUPRS"]["target_tp1"]
+    assert res["oversold_watch_count"] >= 1
+    ov_asels = next(x for x in res["oversold_dip_watch"] if x["symbol"] == "ASELS")
+    assert ov_asels["oversold_rsi"] < 30.0
+    assert ov_asels["has_reaction"] is True
+
+
+def test_symbol_chart_data_enriches_early_nu70_fractal_and_pre_pu30(monkeypatch):
+    """get_symbol_chart_data NU70 erken adayını, fraktal planı, pre_pu30'u ve 4-TF özetini döner."""
+    closes = np.concatenate([
+        355.0 + np.array([0.5, -0.4, 0.6, -0.3, 0.7, -0.5, 0.8, -0.4, 0.6, -0.2, 0.9, -0.3, 0.5, -0.4, 0.8, -0.3, 0.6, -0.4, 0.7, -0.2, 0.5, -0.3, 0.4, -0.2, 0.6]),
+        np.linspace(354.0, 336.0, 12),
+        np.array([337.5, 339.2, 341.0, 342.8, 344.5, 345.2]),
+    ])
+    n = len(closes)
+    df = pd.DataFrame({
+        "date": pd.date_range("2026-11-18 10:00", periods=n, freq="15min", tz="Europe/Istanbul"),
+        "open": closes,
+        "high": closes + 0.8,
+        "low": closes - 0.6,
+        "close": closes,
+        "volume": np.full(n, 4000.0),
+        "is_closed": np.ones(n, dtype=bool),
+    })
+
+    monkeypatch.setattr(
+        engine,
+        "_fetch_adjusted_bars",
+        lambda sym, interval="4h", period=None: (
+            df.copy(),
+            DataResult(symbol=sym, interval=interval, df=df.copy(), status=DataStatus.FRESH),
+        ),
+    )
+    monkeypatch.setattr(engine, "detect_rsi_pu30", lambda *a, **k: None)
+    monkeypatch.setattr(engine, "detect_rsi_nu70", lambda *a, **k: None)
+
+    from python_bot.engine.signals import nu70_confirmation as nu_conf
+
+    monkeypatch.setattr(
+        nu_conf,
+        "detect_early_highest_nu70_candidate",
+        lambda df_in, rsi_in, interval="4h": {
+            "type": "NU70_ADAY",
+            "candidate_kind": "ASILAN_ADAM_TEPE",
+            "tepe1": {"index": 5, "price": 355.8, "rsi": 74.2, "date": "2026-11-18 11:15"},
+            "tepe2": {"index": 12, "price": 356.0, "rsi": 66.5, "rsi_at_peak": 66.5, "date": "2026-11-18 13:00"},
+            "peak_candle": {"pattern": "ASILAN_ADAM", "label_tr": "Asılan Adam", "is_hanging_man": True, "is_shooting_star": False},
+            "guven_kiran_dip": {"price": 352.0, "kirildi": True},
+            "pullback_pct": 1.8,
+            "gap_bars": 7,
+            "bars_since_confirm": 4,
+            "confirm_date": "2026-11-18 13:15",
+            "last_close": 341.0,
+        },
+    )
+
+    detail = engine.get_symbol_chart_data("ASELS", interval="15m", enrich=True)
+    assert detail is not None
+    assert detail["nu70_signal"] is not None
+    assert detail["nu70_signal"]["is_early_candidate"] is True
+    assert detail["nu70_signal"]["is_hanging_man"] is True
+    assert detail["nu70_signal"]["target_1r"] is not None
+    assert detail["nu70_signal"]["fractal_phase_code"] == "TUZAK_15DK_YENI_ZIRVE_BEKLENIR"
+    assert detail["pre_pu30"] is not None
+    assert detail["pre_pu30"]["has_oversold_dip1"] is True
+    assert sorted(detail["mtf_nu_pu_summary"].keys()) == ["15m", "1d", "1h", "4h"]

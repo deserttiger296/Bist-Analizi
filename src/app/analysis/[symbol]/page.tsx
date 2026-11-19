@@ -167,8 +167,8 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
 
             <Panel className="print:border-gray-300 print:bg-white print:shadow-none print:p-0 print:mt-4">
               <div className="flex items-center justify-between print:mb-2">
-                <h2 className="text-lg sm:text-xl font-semibold text-white print:text-black">İnteraktif Grafik</h2>
-                <span className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-gray-400 print:text-gray-500">150 Günlük Veri</span>
+                <h2 className="text-lg sm:text-xl font-semibold text-white print:text-black">Semih Ersoy PU30 / NU70 Uyumsuzluk, Fraktal &amp; İtki Analizi (İnteraktif Grafik)</h2>
+                <span className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-gray-400 print:text-gray-500">15DK · 1S · 4S · GÜNLÜK</span>
               </div>
               <div className="mt-4 sm:mt-6 print:mt-0">
                 <InteractiveChartWrapper symbol={quote.ticker} />

@@ -17,12 +17,14 @@ from python_bot.engine.data.provider import DataStatus, get_default_provider
 from python_bot.engine.signals.nu70_confirmation import detect_early_highest_nu70_candidate
 from python_bot.engine.signals.rsi_pu30 import (
     DEFAULT_NU70_CONFIG,
+    DEFAULT_PU30_CONFIG,
     MIN_BARS_REQUIRED,
     SCAN_LIFETIME_BARS,
     SCAN_MIN_GAP_BARS,
     _fetch_adjusted_bars,
     apply_hourly_trust_level,
     detect_rsi_nu70,
+    detect_rsi_pu30,
     scan_universe_rsi_pu30,
     wilder_rsi,
 )
@@ -39,7 +41,7 @@ VIOP_SYMBOLS: Set[str] = {
 
 def _sub_tf_label(lvl: Dict[str, Any], interval: str) -> str:
     alt = lvl.get("alt_periyot")
-    if alt == "15dk" or interval == "1h":
+    if alt == "15dk" or interval in ("15m", "1h"):
         return "15dk"
     return "Saatlik"
 
@@ -140,6 +142,12 @@ def build_long_short_matrix(
 
     for itv in intervals:
         scan_res = scan_universe_rsi_pu30(target_symbols, max_workers=max_workers, interval=itv, signal_type="all")
+        if scan_res.get("signals"):
+            try:
+                from python_bot.engine.journal.daily_history import log_pu30_signals
+                log_pu30_signals(scan_res["signals"], interval=itv)
+            except Exception:
+                pass
         for err_msg in scan_res.get("errors") or []:
             scan_errors.append({
                 "symbol": "*",
@@ -342,6 +350,88 @@ def build_long_short_matrix(
     }
 
 
+def _last_finite_rsi(df: Any) -> Optional[float]:
+    rsi_arr = wilder_rsi(df["close"].to_numpy(dtype=np.float64), 14)
+    finite_vals = rsi_arr[np.isfinite(rsi_arr)]
+    return round(float(finite_vals[-1]), 1) if len(finite_vals) > 0 else None
+
+
+def detect_oversold_pre_pu30(
+    raw_df: Any,
+    active_sig: Optional[Dict[str, Any]] = None,
+    lookback_bars: int = 36,
+    cfg: Any = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Aşırı satım (RSI < 30) bölgesine inip henüz RSI > 30 üzerinde 2. dip (PU30)
+    kurmamış hisseleri tespit eder (Semih Hoca ASELS 15dk Kuralı).
+    """
+    if raw_df is None:
+        return None
+    df_imp = raw_df.reset_index(drop=True)
+    if "is_closed" in df_imp.columns:
+        df_imp = df_imp[df_imp["is_closed"]].reset_index(drop=True)
+    if len(df_imp) < MIN_BARS_REQUIRED:
+        return None
+    pu_cfg = cfg or DEFAULT_PU30_CONFIG
+    closes_arr = df_imp["close"].to_numpy(dtype=np.float64)
+    highs_arr = df_imp["high"].to_numpy(dtype=np.float64)
+    lows_arr = df_imp["low"].to_numpy(dtype=np.float64)
+    rsi_arr = wilder_rsi(closes_arr, pu_cfg.rsi_length)
+    after_idx = int(active_sig["dip2"]["index"]) + 1 if (active_sig and active_sig.get("dip2")) else 0
+    look_start = max(after_idx, len(df_imp) - lookback_bars)
+    if look_start >= len(df_imp):
+        return None
+    win_rsi = rsi_arr[look_start:]
+    fin_mask = np.isfinite(win_rsi)
+    if not np.any(fin_mask):
+        return None
+    rel_min = int(np.argmin(np.where(fin_mask, win_rsi, np.inf)))
+    min_rsi = float(win_rsi[rel_min])
+    if not np.isfinite(min_rsi) or min_rsi >= pu_cfg.rsi_threshold:
+        return None
+    abs_idx = look_start + rel_min
+    oversold_price = float(lows_arr[abs_idx])
+    if not np.isfinite(oversold_price):
+        return None
+    last_fin = rsi_arr[np.isfinite(rsi_arr)]
+    current_rsi = float(last_fin[-1]) if len(last_fin) > 0 else min_rsi
+    tail_highs = highs_arr[abs_idx:]
+    fin_highs = tail_highs[np.isfinite(tail_highs)]
+    bounce_high = float(fin_highs.max()) if len(fin_highs) > 0 else oversold_price
+    tail_rsi = rsi_arr[abs_idx:]
+    fin_tail_rsi = tail_rsi[np.isfinite(tail_rsi)]
+    max_rsi_after = float(fin_tail_rsi.max()) if len(fin_tail_rsi) > 0 else current_rsi
+    has_reaction = bool(
+        current_rsi >= 38.0
+        or max_rsi_after >= 38.0
+        or ((bounce_high / max(oversold_price, 0.01) - 1.0) * 100.0 >= 0.8)
+    )
+    oversold_date = str(df_imp["date"].iloc[abs_idx])[:16] if "date" in df_imp.columns else str(abs_idx)
+    return {
+        "has_oversold_dip1": True,
+        "oversold_rsi": round(min_rsi, 1),
+        "oversold_price": round(oversold_price, 2),
+        "oversold_date": oversold_date,
+        "current_rsi": round(current_rsi, 1),
+        "has_reaction": has_reaction,
+        "reaction_label": "Tepki Geldi → 2. Dip (PU30) Bekleniyor" if has_reaction else "Tepkisiz Düşüş → Şelale Riski",
+        "next_dip_zone_below": round(oversold_price, 2),
+        "badge": (
+            f"⚠️ 1. Dip ({oversold_price:.2f} ₺, RSI {min_rsi:.1f} < 30) Görüldü · "
+            f"Henüz RSI > 30 Dip Yok → {oversold_price:.2f} ₺ Altına En Az 1 Dip Daha Gelecek"
+        ),
+        "explanation": (
+            f"Fiyat {oversold_date} mumunda {oversold_price:.2f} ₺ ile aşırı satıma (RSI {min_rsi:.1f} < 30) indi ve "
+            f"şu an RSI {current_rsi:.1f} seviyesinde. Henüz RSI > 30 üzerinde 2. bir dip (PU30) yapmadı. "
+            f"Semih Hoca İki Senaryolu Kuralı (ASELS 15dk): "
+            f"(1) Tepki ile yükselip RSI güç toplarsa ({current_rsi:.1f}), oradan en az {oversold_price:.2f} ₺ altına bir dip daha sarkıp "
+            f"RSI > 30 kalarak hızla kalkar (PU30). "
+            f"(2) Tepki gelmeden / RSI güç toplamadan direkt aşağı basarlarsa şelale düşüşü devam eder, uzak durulur."
+        ),
+    }
+
+
 def _evaluate_4h_fractal_context(
     sym: str,
     itv: str,
@@ -349,21 +439,97 @@ def _evaluate_4h_fractal_context(
     target_2r: float,
 ) -> Dict[str, Any]:
     """
-    Semih Hoca 1S / 4S Fraktal Kuralı:
+    Semih Hoca 1S / 4S Fraktal & Günlük Döngü Kuralı:
     1S'de NU70 varken 4S'de henüz NU70 yoksa ara salınım (1R) sonrası
     4S NU70'i kurmak için en az 1 zirve daha beklenir; asıl sert satış o zirvededir.
+    Günlükte RSI < 70 (düşüş/tepki trendi) ise günlükte tepe aramak anlamsızdır;
+    satışlar Günlük RSI < 30'a inip tepki + yeni dip (PU30) kurana kadar sürer.
     """
+    rsi_1d: Optional[float] = None
+    try:
+        df_1d, res_1d = _fetch_adjusted_bars(sym, interval="1d")
+        if df_1d is not None and len(df_1d) >= MIN_BARS_REQUIRED and (res_1d is None or res_1d.status == DataStatus.FRESH):
+            rsi_1d = _last_finite_rsi(df_1d)
+    except Exception:
+        rsi_1d = None
+
+    daily_note = (
+        f" Günlükte tepe aramak anlamsız (Günlük RSI: {rsi_1d}, kağıt günlükte tepede değil / düşüş trendinde). "
+        f"Satışlar Günlük RSI 30 altına (aşırı satıma) inene kadar sürer; ardından ilk tepki (1. dalga) ve "
+        f"Günlük RSI > 30 üzerinde yeni dip (Günlük PU30 = ana dönüş yeri) oluşur."
+        if rsi_1d is not None and rsi_1d < 70.0
+        else ""
+    )
+
+    if itv == "15m":
+        has_1h_nu70 = False
+        rsi_1h: Optional[float] = None
+        try:
+            df_1h, res_1h = _fetch_adjusted_bars(sym, interval="1h")
+            if df_1h is not None and len(df_1h) >= MIN_BARS_REQUIRED and (res_1h is None or res_1h.status == DataStatus.FRESH):
+                rsi_1h = _last_finite_rsi(df_1h)
+                cfg_1h = dataclasses.replace(
+                    DEFAULT_NU70_CONFIG,
+                    signal_lifetime_bars=SCAN_LIFETIME_BARS.get("1h", 24),
+                    min_gap_bars=SCAN_MIN_GAP_BARS.get("1h", 8),
+                )
+                sig_1h = detect_rsi_nu70(df_1h, cfg_1h, ignore_lifetime=False, interval="1h")
+                has_1h_nu70 = bool(sig_1h and not sig_1h.get("invalidated"))
+        except Exception:
+            has_1h_nu70 = False
+            rsi_1h = None
+
+        if not has_1h_nu70:
+            rsi_txt = f" (1S RSI: {rsi_1h})" if rsi_1h is not None else ""
+            return {
+                "has_1h_nu70": False,
+                "rsi_1h": rsi_1h,
+                "has_4h_nu70": False,
+                "rsi_4h": None,
+                "rsi_1d": rsi_1d,
+                "fractal_phase_code": "TUZAK_15DK_YENI_ZIRVE_BEKLENIR",
+                "fractal_phase_badge": "☠️ 15dk Tek Başına NU70 Tuzak: Öğleden Sonra Yeni Zirve Riski",
+                "recommended_tp_label": "1R Kısa Salınım Hedefi (Tuzak Riski — Şort Tehlikeli)",
+                "recommended_tp_price": target_1r,
+                "fractal_profit_plan": (
+                    f"15 Dakikalıkta NU70 oluştu ancak Saatlikte (1S) henüz NU70 YOK{rsi_txt}. Semih Hoca Kuralı: "
+                    f"'Öğlene kadar düşerim, öğleden sonra dönüp yeni zirve yapabilirim' der. 15dk'lık uyumsuzluk tek başına "
+                    f"tuzaktır; en fazla 1R ({target_1r:.2f} ₺) kısa salınım beklenir. Asıl sert basış dönüp yeni zirveyi aldığında "
+                    f"Saatlikte (1S) NU70 doğarsa başlar (ASELS örneği).{daily_note}"
+                ),
+            }
+
+        return {
+            "has_1h_nu70": True,
+            "rsi_1h": rsi_1h,
+            "has_4h_nu70": False,
+            "rsi_4h": None,
+            "rsi_1d": rsi_1d,
+            "fractal_phase_code": "KASKAD_15DK_1S_ONAYLI",
+            "fractal_phase_badge": "🔥 15dk + 1S NU70 Onaylı: Gerçek Basış Başladı",
+            "recommended_tp_label": "2R Ana Düşüş Hedefi (Saatlik Onaylı Basış)",
+            "recommended_tp_price": target_2r,
+            "fractal_profit_plan": (
+                f"Hem 15 Dakikalık hem Saatlik (1S) grafikte NU70 onaylandı. "
+                f"Tuzak aşaması geçildi ve yeni zirve sonrası Saatlik NU70 devreye girdiği için gerçek satış basışı başlıyor; "
+                f"2R Ana Hedef ({target_2r:.2f} ₺) takip edilir.{daily_note}"
+            ),
+        }
+
     if itv != "1h":
         return {
+            "has_1h_nu70": True,
+            "rsi_1h": None,
             "has_4h_nu70": itv == "4h",
             "rsi_4h": None,
+            "rsi_1d": rsi_1d,
             "fractal_phase_code": "ANA_ZIRVE_SERT_SATIS",
             "fractal_phase_badge": f"🔥 {itv.upper()} Ana Zirve NU70: Sert Satış Fazı",
             "recommended_tp_label": "2R Ana Düşüş Hedefi",
             "recommended_tp_price": target_2r,
             "fractal_profit_plan": (
                 f"{itv.upper()} ana periyotta NU70 zirvesi oluştu; 1 Saatlik GKD kırılımıyla birlikte "
-                f"2R Ana Hedef ({target_2r:.2f} ₺) odaklı sert satış fazıdır."
+                f"2R Ana Hedef ({target_2r:.2f} ₺) odaklı sert satış fazıdır.{daily_note}"
             ),
         }
 
@@ -372,10 +538,7 @@ def _evaluate_4h_fractal_context(
     try:
         df_4h, res_4h = _fetch_adjusted_bars(sym, interval="4h")
         if df_4h is not None and len(df_4h) >= MIN_BARS_REQUIRED and (res_4h is None or res_4h.status == DataStatus.FRESH):
-            rsi_arr_4h = wilder_rsi(df_4h["close"].to_numpy(dtype=np.float64), 14)
-            finite_4h = rsi_arr_4h[np.isfinite(rsi_arr_4h)]
-            if len(finite_4h) > 0:
-                rsi_4h = round(float(finite_4h[-1]), 1)
+            rsi_4h = _last_finite_rsi(df_4h)
             cfg_4h = dataclasses.replace(
                 DEFAULT_NU70_CONFIG,
                 signal_lifetime_bars=SCAN_LIFETIME_BARS.get("4h", 15),
@@ -392,6 +555,7 @@ def _evaluate_4h_fractal_context(
         return {
             "has_4h_nu70": False,
             "rsi_4h": rsi_4h,
+            "rsi_1d": rsi_1d,
             "fractal_phase_code": "SALINIM_SONRA_YENI_ZIRVE",
             "fractal_phase_badge": "⚠️ 4S NU Yok: Önce Salınım → Sonra 1 Zirve Daha",
             "recommended_tp_label": "1R Ara Salınım Hedefi (Kısa Kâr Al)",
@@ -400,13 +564,14 @@ def _evaluate_4h_fractal_context(
                 f"1S NU70 yakalandı ancak 4 Saatlikte henüz NU70 YOK{rsi_txt}. Semih Hoca Kuralı: "
                 f"Kağıt kesin salacak (ara düzeltme) fakat saldıktan sonra 4S NU70'i kurmak için EN AZ 1 ZİRVE DAHA yapacak. "
                 f"Kâr Hesabı: Bu ilk salınımda hedef abartılmaz, 1R Ara Salınım Hedefi ({target_1r:.2f} ₺) bölgesinde kâr alınır; "
-                f"asıl sert satış bir sonraki yeni zirvede 4S NU70 doğduğunda yapılır."
+                f"asıl sert satış bir sonraki yeni zirvede 4S NU70 doğduğunda yapılır.{daily_note}"
             ),
         }
 
     return {
         "has_4h_nu70": True,
         "rsi_4h": rsi_4h,
+        "rsi_1d": rsi_1d,
         "fractal_phase_code": "CIFT_KILIT_SERT_SATIS",
         "fractal_phase_badge": "🔥 1S + 4S NU70 Onaylı: Sert Satış Fazı",
         "recommended_tp_label": "2R Ana Düşüş Hedefi (Sert Satış)",
@@ -414,7 +579,7 @@ def _evaluate_4h_fractal_context(
         "fractal_profit_plan": (
             f"Hem 1 Saatlik hem 4 Saatlik grafikte NU70 tamamlanmış durumda. "
             f"'Bir zirve daha' aşaması geçildiği için net ve sert satış fazıdır; "
-            f"2R Ana Hedef ({target_2r:.2f} ₺) takip edilir."
+            f"2R Ana Hedef ({target_2r:.2f} ₺) takip edilir.{daily_note}"
         ),
     }
 
@@ -429,8 +594,8 @@ def build_nu70_peak_lab(
     Semih NU70 (görülen en yüksek fiyatta RSI < 70) + Asılan Adam / Kayan Yıldız
     ve erken tepe izleme adaylarını Long / Short Matrisi'nden bağımsız tarar.
     """
-    itv = interval if interval in ("1h", "4h", "1d") else "1h"
-    sub_interval = "15m" if itv == "1h" else "1h"
+    itv = interval if interval in ("15m", "1h", "4h", "1d") else "1h"
+    sub_interval = "15m" if itv in ("15m", "1h") else "1h"
 
     target_symbols = [s.upper().strip() for s in (symbols or BIST100_SYMBOLS) if s and s.strip()]
     if viop_only:
@@ -440,7 +605,7 @@ def build_nu70_peak_lab(
         try:
             provider = get_default_provider()
             if hasattr(provider, "prefetch_ohlcv_batch"):
-                for prefetch_itv in tuple(dict.fromkeys((itv, sub_interval, "4h"))):
+                for prefetch_itv in tuple(dict.fromkeys((itv, sub_interval, "1h", "4h", "1d"))):
                     try:
                         provider.prefetch_ohlcv_batch(target_symbols, interval=prefetch_itv)
                     except Exception:
@@ -450,6 +615,11 @@ def build_nu70_peak_lab(
 
     cfg = dataclasses.replace(
         DEFAULT_NU70_CONFIG,
+        signal_lifetime_bars=SCAN_LIFETIME_BARS.get(itv, 36),
+        min_gap_bars=SCAN_MIN_GAP_BARS.get(itv, 8),
+    )
+    pu_cfg = dataclasses.replace(
+        DEFAULT_PU30_CONFIG,
         signal_lifetime_bars=SCAN_LIFETIME_BARS.get(itv, 36),
         min_gap_bars=SCAN_MIN_GAP_BARS.get(itv, 8),
     )
@@ -484,6 +654,16 @@ def build_nu70_peak_lab(
             sig = detect_rsi_nu70(df, cfg, ignore_lifetime=False, interval=itv, include_invalidated=True)
 
             out: Dict[str, Any] = {}
+            sig_pu = detect_rsi_pu30(df, pu_cfg, ignore_lifetime=True, interval=itv)
+            pre_pu30 = detect_oversold_pre_pu30(df, sig_pu, cfg=pu_cfg)
+            if pre_pu30 is not None:
+                out["oversold_watch"] = {
+                    "symbol": sym,
+                    "interval": itv,
+                    "is_viop": is_viop,
+                    "last_close": last_close,
+                    **pre_pu30,
+                }
             has_active_strict = sig is not None and not sig.get("invalidated")
 
             if has_active_strict and sig is not None:
@@ -574,6 +754,7 @@ def build_nu70_peak_lab(
     strict_signals: List[Dict[str, Any]] = []
     early_candidates: List[Dict[str, Any]] = []
     invalidated_signals: List[Dict[str, Any]] = []
+    oversold_dip_watch: List[Dict[str, Any]] = []
     scan_errors: List[Dict[str, str]] = []
 
     if target_symbols:
@@ -585,6 +766,8 @@ def build_nu70_peak_lab(
                     early_candidates.append(item["early"])
                 if "invalidated" in item:
                     invalidated_signals.append(item["invalidated"])
+                if "oversold_watch" in item:
+                    oversold_dip_watch.append(item["oversold_watch"])
                 if "error" in item:
                     scan_errors.append(item["error"])
 
@@ -606,6 +789,9 @@ def build_nu70_peak_lab(
         reverse=True,
     )
     invalidated_signals.sort(key=lambda x: x["symbol"])
+    oversold_dip_watch.sort(
+        key=lambda x: (not bool(x.get("has_reaction")), float(x.get("oversold_rsi") or 99.0))
+    )
 
     hanging_man_count = sum(1 for x in strict_signals + early_candidates if x.get("is_hanging_man"))
     shooting_star_count = sum(1 for x in strict_signals + early_candidates if x.get("is_shooting_star"))
@@ -622,9 +808,11 @@ def build_nu70_peak_lab(
         "triggered_count": sum(1 for x in strict_signals if x.get("triggered")),
         "early_count": len(early_candidates),
         "invalidated_count": len(invalidated_signals),
+        "oversold_watch_count": len(oversold_dip_watch),
         "scan_error_count": len(scan_errors),
         "scan_errors": scan_errors,
         "strict_signals": strict_signals,
         "early_candidates": early_candidates,
         "invalidated_signals": invalidated_signals,
+        "oversold_dip_watch": oversold_dip_watch,
     }

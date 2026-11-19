@@ -111,7 +111,7 @@ def analyze_impulse_and_fib_time(
 
     # Mod A: Standart 3 noktalı Trend-Based Fib Time (t0 -> t1 referans, t2'den ileri projeksiyon)
     # Mod B: Sündürülmüş Fib Zaman (t0=0, t1=0.618 veya 0.382, t2=1.0 kalibrasyonu ile ileri projeksiyon)
-    fib_ratios = [0.382, 0.618, 1.000, 1.382, 1.618, 2.618]
+    fib_ratios = [0.382, 0.618, 1.000, 1.382, 1.618, 2.618, 3.618]
     proj_from_w1: Dict[str, Any] = {}
     proj_stretched_02: Dict[str, Any] = {}
 
@@ -135,7 +135,29 @@ def analyze_impulse_and_fib_time(
             "max_date_after_w2": str(dates.iloc[t3_peak])[:16],
             "bars_from_t2_to_peak": int(t3_peak - t2),
             "w3_vs_w1_price_ratio": round((p3_peak - p2) / wave1_height, 2),
+            "w3_vs_w1_pct": round(((p3_peak - p2) / wave1_height) * 100.0, 1),
             "w3_vs_w1_time_ratio": round((t3_peak - t2) / dt1, 2),
+            "hedef_361_goruldu": bool(((p3_peak - p2) / wave1_height) >= 3.618 or ((p3_peak - p0) / wave1_height) >= 3.618),
+        }
+
+    fib_fiyat_hedefleri: Dict[str, Any] = {}
+    for r in (1.000, 1.618, 2.618, 3.618):
+        key = f"{r:.3f}"
+        target_from_w2 = round(p2 + r * wave1_height, 2)
+        target_from_w0 = round(p0 + r * wave1_height, 2)
+        reached = bool(
+            wave3_progress
+            and (
+                wave3_progress["max_price_after_w2"] >= target_from_w2
+                or wave3_progress["max_price_after_w2"] >= target_from_w0
+            )
+        )
+        fib_fiyat_hedefleri[key] = {
+            "ratio": key,
+            "pct_label": f"%{round(r * 100, 1)}",
+            "target_from_w2": target_from_w2,
+            "target_from_w0": target_from_w0,
+            "reached": reached,
         }
 
     out.update({
@@ -151,6 +173,7 @@ def analyze_impulse_and_fib_time(
             "time_ratio_dt2_over_dt1": round(dt2 / dt1, 2),
             "t1_position_in_02": round(dt1 / dt02, 3),
         },
+        "fib_fiyat_hedefleri": fib_fiyat_hedefleri,
         "fib_zaman_w1_referans": proj_from_w1,
         "fib_zaman_02_sundurme": proj_stretched_02,
         "dalga3_takip": wave3_progress,

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { WorkspacePage, MetricCard, EmptyState } from "@/components/ui/Workspace";
+import SemihDivergenceChart, { type ChartInterval } from "@/components/SemihDivergenceChart";
 import { BIST_30 } from "@/lib/indices";
 
 type Suite = { id: string; label: string; description: string };
@@ -125,29 +126,51 @@ const RULE_MATRIX = [
     meaning: "Saatlik zirvede aşırı hırslı short taşıyıp yeni zirve hareketine yakalanmayı önler; 1R kısa kâr + 2R sert satış ayrımı kurar.",
     status: "AKTİF (NU70 Lab)",
   },
+  {
+    id: "DAILY-PU30-361-IMPULSE",
+    title: "Günlük RSI < 30 Aşırı Satım → Tepki → Günlük RSI > 30 Yeni Dip (PU30) → 1-2 & %361.8 (19 Kasım 2026)",
+    rule: "Genel düşüş trendindeki kağıtta günlükte tepe (NU70) aramak anlamsızdır; satışlar Günlük RSI 30 altına (aşırı satım) inene kadar sürer. Oradan genel tepki alımı (1. dalga) gelir, ardından hisse yeni bir fiyat dibi yapıp Günlük RSI > 30 üzerinde kalırsa (Günlük PU30 = ana dönüş yeri) 1-2 oluşumu tamamlanır ve %361.8 (Fib 3.618) hedefine kadar izlenir.",
+    examples: "VAKBN 1s: 1. dalga + 2. dip sonrası W3 = W1'in 3.81 katı (%381, %361.8 hedefleri geçildi).",
+    meaning: "Düşüş trendi sonunda günlük PU30 dönüşünü 1-2 itki ve %361.8 projeksiyonuyla birleştirir.",
+    status: "AKTİF (İtki & PU30)",
+  },
+  {
+    id: "PRE-PU30-ONE-MORE-DIP",
+    title: "Aşırı Satım (RSI < 30) Sonrası İlk Tepki: 'Henüz RSI > 30 Dip Yok → En Az Bir Dip Daha Gelecek' Kuralı (ASELS 15dk, 19 Kasım 2026)",
+    rule: "Bir hisse aşırı satım bölgesine (RSI < 30) indikten sonra ilk tepki yükselişini verip henüz RSI > 30 üzerinde 2. bir dip (PU30) oluşturmadıysa, dönüş tamamlanmamıştır; RSI > 30 üzerinde 2. dip kurmak için fiyat tekrar aşağı dönüp EN AZ BİR DİP DAHA yapacaktır.",
+    examples: "ASELS 15dk: RSI 30 altına sarkıp 42.72'ye tepki verdi; henüz RSI > 30'da 2. dip olmadığı için en az 1 dip daha beklenir.",
+    meaning: "İlk tepkide erken alım tuzağına düşmek yerine 2. dip (PU30) onayını beklemeyi sağlar.",
+    status: "AKTİF (İtki Lab)",
+  },
 ];
 
 export default function LabPage() {
   const [activeTab, setActiveTab] = useState<"impulse" | "pytest" | "backtest" | "journal" | "longshort" | "nu70lab">("pytest");
   const [symbolsInput, setSymbolsInput] = useState("VAKBN,ISCTR,GARAN,AKBNK,YKBNK,THYAO,ASELS,TUPRS");
-  const [interval, setIntervalVal] = useState<"1h" | "4h" | "1d">("1h");
+  const [interval, setIntervalVal] = useState<"15m" | "1h" | "4h" | "1d">("1h");
   const [impulseData, setImpulseData] = useState<any[]>([]);
   const [loadingImpulse, setLoadingImpulse] = useState(false);
   const impulseRequest = useRef(0);
 
   const [lsSymbolsInput, setLsSymbolsInput] = useState("TUPRS,THYAO,PGSUS,SISE,AKBNK,ISCTR,VAKBN,GARAN,ASELS,KCHOL,SAHOL,BIMAS,DOAS");
-  const [lsInterval, setLsInterval] = useState<"1h" | "4h" | "1d">("1h");
+  const [lsInterval, setLsInterval] = useState<ChartInterval>("1h");
   const [lsViopOnly, setLsViopOnly] = useState(false);
   const [lsData, setLsData] = useState<any | null>(null);
   const [loadingLs, setLoadingLs] = useState(false);
 
   const [nu70SymbolsInput, setNu70SymbolsInput] = useState("TUPRS,THYAO,PGSUS,SISE,AKBNK,ISCTR,VAKBN,GARAN,ASELS,KCHOL,SAHOL,BIMAS,DOAS");
-  const [nu70Interval, setNu70Interval] = useState<"1h" | "4h" | "1d">("1h");
+  const [nu70Interval, setNu70Interval] = useState<ChartInterval>("1h");
   const [nu70ViopOnly, setNu70ViopOnly] = useState(false);
   const [nu70Filter, setNu70Filter] = useState<"all" | "candle" | "triggered">("all");
   const [nu70Data, setNu70Data] = useState<any | null>(null);
   const [loadingNu70, setLoadingNu70] = useState(false);
   const nu70Request = useRef(0);
+
+  const [chartModal, setChartModal] = useState<{
+    symbol: string;
+    interval: ChartInterval;
+    signalPref?: "auto" | "pu30" | "nu70";
+  } | null>(null);
 
   const [pytestData, setPytestData] = useState<TestReport | null>(null);
   const [suites, setSuites] = useState<Suite[]>([]);
@@ -199,7 +222,7 @@ export default function LabPage() {
     }
   };
 
-  const runImpulseTestbed = async (customSyms?: string, customTf?: "1h" | "4h" | "1d") => {
+  const runImpulseTestbed = async (customSyms?: string, customTf?: "15m" | "1h" | "4h" | "1d") => {
     const requestId = ++impulseRequest.current;
     setLoadingImpulse(true);
     setImpulseData([]);
@@ -221,6 +244,7 @@ export default function LabPage() {
   };
 
   const runPytestSuite = async (suite = selectedSuite) => {
+    setSelectedSuite(suite);
     setLoadingPytest(true);
     setPytestData(null);
     setError(null);
@@ -229,7 +253,33 @@ export default function LabPage() {
         const res = await fetch("/lab-results.json", { cache: "no-store" });
         if (!res.ok) throw new Error("Henüz yayınlanmış test raporu yok. Önce Test Merkezi / CI kapısını çalıştırın.");
         const report = await res.json();
-        const result = report.suites.find((item: { suite: string }) => item.suite === suite);
+        let result = report.suites.find((item: { suite: string }) => item.suite === suite);
+        if (!result && suite === "all" && Array.isArray(report.suites) && report.suites.length > 0) {
+          const combinedResults = report.suites.flatMap((s: any) => s.results || []);
+          const combinedSummary = report.suites.reduce(
+            (acc: { total: number; passed: number; failed: number; error: number; skipped: number }, s: any) => ({
+              total: acc.total + Number(s.summary?.total || 0),
+              passed: acc.passed + Number(s.summary?.passed || 0),
+              failed: acc.failed + Number(s.summary?.failed || 0),
+              error: acc.error + Number(s.summary?.error || 0),
+              skipped: acc.skipped + Number(s.summary?.skipped || 0),
+            }),
+            { total: 0, passed: 0, failed: 0, error: 0, skipped: 0 }
+          );
+          const combinedDuration = Number(
+            report.suites.reduce((sum: number, s: any) => sum + Number(s.duration_sec || 0), 0).toFixed(2)
+          );
+          result = {
+            passed: Boolean(report.passed) && report.suites.every((s: any) => Boolean(s.passed)),
+            exit_code: report.suites.every((s: any) => s.exit_code === 0) ? 0 : 1,
+            timed_out: report.suites.some((s: any) => Boolean(s.timed_out)),
+            label: "Tüm regresyonlar (Resilience + PU30 + MTF + Uyumluluk)",
+            completed_at: report.generated_at || report.suites[report.suites.length - 1]?.completed_at || new Date().toISOString(),
+            duration_sec: combinedDuration,
+            summary: combinedSummary,
+            results: combinedResults,
+          };
+        }
         if (!result) throw new Error("Bu paket yayınlanmış raporda yer almıyor.");
         setPytestData({ ...result, output: "Bu kayıt yayınlanan sürümle birlikte gelen test anlık görüntüsüdür. Canlı sitede test yeniden çalıştırılmadı." });
         return;
@@ -246,11 +296,12 @@ export default function LabPage() {
     }
   };
 
-  const loadJournal = async () => {
+  const loadJournal = async (forceScan = false) => {
     setLoadingJournal(true);
     setError(null);
     try {
-      const res = await fetch(`/api/lab?mode=journal`);
+      const qs = new URLSearchParams({ mode: "journal", ...(forceScan ? { suite: "scan" } : {}) }).toString();
+      const res = await fetch(`/api/lab?${qs}`);
       const json = await res.json();
       if (json.status !== "success") throw new Error(json.detail || "Günlük okunamadı");
       setJournalRows(json.rows || []);
@@ -368,7 +419,7 @@ export default function LabPage() {
                     Zaman Dilimi
                   </label>
                   <div className="flex gap-1">
-                    {(["1h", "4h", "1d"] as const).map((tf) => (
+                    {(["15m", "1h", "4h", "1d"] as const).map((tf) => (
                       <button
                         key={tf}
                         onClick={() => {
@@ -381,7 +432,7 @@ export default function LabPage() {
                             : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
                         }`}
                       >
-                        {tf.toUpperCase()}
+                        {tf === "15m" ? "15DK" : tf.toUpperCase()}
                       </button>
                     ))}
                   </div>
@@ -513,7 +564,7 @@ export default function LabPage() {
                               : "bg-slate-950/60 border-slate-800/80 opacity-80"
                           }`}
                         >
-                          <div className="flex items-center justify-between">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
                               <span className="text-base font-black text-white">{item.symbol}</span>
                               <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300">
@@ -525,15 +576,30 @@ export default function LabPage() {
                                 </span>
                               )}
                             </div>
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                item.triggered
-                                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                                  : "bg-slate-800 text-slate-400"
-                              }`}
-                            >
-                              {item.status_text}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  item.triggered
+                                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                                    : "bg-slate-800 text-slate-400"
+                                }`}
+                              >
+                                {item.status_text}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setChartModal({
+                                    symbol: item.symbol,
+                                    interval: (item.interval || lsInterval) as ChartInterval,
+                                    signalPref: "pu30",
+                                  })
+                                }
+                                className="px-2 py-1 rounded-lg border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/50 text-[10px] font-bold"
+                              >
+                                📈 Grafiği Aç
+                              </button>
+                            </div>
                           </div>
 
                           <div className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-slate-800/80 text-xs font-mono">
@@ -598,7 +664,7 @@ export default function LabPage() {
                               : "bg-slate-950/60 border-slate-800/80 opacity-80"
                           }`}
                         >
-                          <div className="flex items-center justify-between">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
                               <span className="text-base font-black text-white">{item.symbol}</span>
                               <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300">
@@ -620,15 +686,30 @@ export default function LabPage() {
                                 </span>
                               )}
                             </div>
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                item.triggered
-                                  ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
-                                  : "bg-slate-800 text-slate-400"
-                              }`}
-                            >
-                              {item.status_text}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  item.triggered
+                                    ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                                    : "bg-slate-800 text-slate-400"
+                                }`}
+                              >
+                                {item.status_text}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setChartModal({
+                                    symbol: item.symbol,
+                                    interval: (item.interval || lsInterval) as ChartInterval,
+                                    signalPref: "nu70",
+                                  })
+                                }
+                                className="px-2 py-1 rounded-lg border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/50 text-[10px] font-bold"
+                              >
+                                📈 Grafiği Aç
+                              </button>
+                            </div>
                           </div>
 
                           <div className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-slate-800/80 text-xs font-mono">
@@ -686,6 +767,7 @@ export default function LabPage() {
         const strictRows = (nu70Data?.strict_signals || []).filter(matchNu70Filter);
         const earlyRows = (nu70Data?.early_candidates || []).filter(matchNu70Filter);
         const invalidatedRows = nu70Data?.invalidated_signals || [];
+        const oversoldRows = nu70Data?.oversold_dip_watch || [];
         return (
           <div className="space-y-6">
             <div className="workspace-panel workspace-panel-body space-y-4 border-l-4 border-l-rose-500">
@@ -747,7 +829,7 @@ export default function LabPage() {
                       Zaman Dilimi
                     </label>
                     <div className="flex gap-1">
-                      {(["1h", "4h", "1d"] as const).map((tf) => (
+                      {(["15m", "1h", "4h", "1d"] as const).map((tf) => (
                         <button
                           key={tf}
                           onClick={() => {
@@ -760,7 +842,7 @@ export default function LabPage() {
                               : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
                           }`}
                         >
-                          {tf.toUpperCase()}
+                          {tf === "15m" ? "15DK" : tf.toUpperCase()}
                         </button>
                       ))}
                     </div>
@@ -852,7 +934,7 @@ export default function LabPage() {
                   <MetricCard
                     label="Erken Tepe İzleme (NU70_ADAY)"
                     value={nu70Data.early_count}
-                    detail={`${nu70Data.invalidated_count} yeni zirvede iptal edilen`}
+                    detail={`${nu70Data.invalidated_count} iptal · ${nu70Data.oversold_watch_count || 0} RSI<30 Dip İzleme`}
                   />
                 </div>
 
@@ -945,15 +1027,30 @@ export default function LabPage() {
                                 </span>
                               )}
                             </div>
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                item.triggered
-                                  ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
-                                  : "bg-slate-800 text-slate-400"
-                              }`}
-                            >
-                              {item.status_text}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  item.triggered
+                                    ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                                    : "bg-slate-800 text-slate-400"
+                                }`}
+                              >
+                                {item.status_text}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setChartModal({
+                                    symbol: item.symbol,
+                                    interval: (item.interval || nu70Interval) as ChartInterval,
+                                    signalPref: "nu70",
+                                  })
+                                }
+                                className="px-2 py-1 rounded-lg border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/50 text-[10px] font-bold"
+                              >
+                                📈 Grafiği Aç
+                              </button>
+                            </div>
                           </div>
 
                           <div className="text-xs font-mono text-slate-300 bg-slate-900/70 rounded-lg px-3 py-2 flex flex-wrap items-center justify-between gap-2">
@@ -1058,9 +1155,24 @@ export default function LabPage() {
                                 {c.candle_label && c.candle_label !== "Yok" ? c.candle_label : "Erken Tepe"}
                               </span>
                             </div>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${c.gkd_broken ? "bg-rose-500/20 text-rose-300 border border-rose-500/40" : "bg-slate-800 text-slate-300"}`}>
-                              {c.gkd_broken ? "Ara Dip Altında" : "İzleme"}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${c.gkd_broken ? "bg-rose-500/20 text-rose-300 border border-rose-500/40" : "bg-slate-800 text-slate-300"}`}>
+                                {c.gkd_broken ? "Ara Dip Altında" : "İzleme"}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setChartModal({
+                                    symbol: c.symbol,
+                                    interval: (c.interval || nu70Interval) as ChartInterval,
+                                    signalPref: "nu70",
+                                  })
+                                }
+                                className="px-2 py-1 rounded-lg border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/50 text-[10px] font-bold"
+                              >
+                                📈 Grafiği Aç
+                              </button>
+                            </div>
                           </div>
                           <div className="flex flex-wrap items-center justify-between text-slate-300 pt-1 border-t border-slate-800/70">
                             <span>
@@ -1108,11 +1220,26 @@ export default function LabPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                       {invalidatedRows.map((inv: any, idx: number) => (
                         <div key={`${inv.symbol}-${idx}`} className="p-3 rounded-xl border border-slate-800 bg-slate-950/70 text-xs font-mono space-y-1">
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between gap-2">
                             <span className="font-bold text-slate-200">{inv.symbol} · {String(inv.interval).toUpperCase()}</span>
-                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-rose-300">
-                              {inv.invalidation_reason}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-rose-300">
+                                {inv.invalidation_reason}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setChartModal({
+                                    symbol: inv.symbol,
+                                    interval: (inv.interval || nu70Interval) as ChartInterval,
+                                    signalPref: "nu70",
+                                  })
+                                }
+                                className="px-2 py-0.5 rounded border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/50 text-[10px] font-bold"
+                              >
+                                📈 Grafiği Aç
+                              </button>
+                            </div>
                           </div>
                           <div className="text-slate-400">
                             Eski 2. Tepe: {Number(inv.tepe2_price).toFixed(2)} ₺ (RSI {inv.tepe2_rsi}) · Son: <strong className="text-white">{Number(inv.last_close).toFixed(2)} ₺</strong>
@@ -1123,6 +1250,82 @@ export default function LabPage() {
                           <p className="font-sans text-[11px] text-slate-400 pt-1 border-t border-slate-800/60">
                             <strong className="text-slate-300">📌 Neden Elendi?</strong>{" "}
                             Eski {Number(inv.tepe2_price).toFixed(2)} ₺ zirvesi sonradan yukarı kırıldığı için (son fiyat {Number(inv.last_close).toFixed(2)} ₺) önceki düşüş uyumu geçersizleşti.
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* BÖLÜM 4: AŞIRI SATIM (RSI < 30) SONRASI 2. DİP (PU30) BEKLEYENLER */}
+                <div className="workspace-panel workspace-panel-body space-y-3 border-t-2 border-t-amber-400">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-wider text-amber-300">
+                        Bölüm 4 — Aşırı Satım (`RSI &lt; 30`) Sonrası 2. Dip (`PU30`) Bekleyenler
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        Semih Hoca ASELS 15dk Kuralı: RSI 30 altına indikten sonra henüz RSI &gt; 30 üzerinde 2. bir dip (PU30) yapmamış hisseler (en az 1 dip daha beklenir; tepkisiz basışta şelale riski).
+                      </p>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs font-mono text-amber-300">
+                      {oversoldRows.length} aşırı satım adayı
+                    </span>
+                  </div>
+
+                  {oversoldRows.length === 0 ? (
+                    <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 text-xs text-slate-400">
+                      Seçili periyotta henüz tamamlanmamış RSI &lt; 30 aşırı satım 1. dibi bulunmadı.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                      {oversoldRows.map((ov: any, idx: number) => (
+                        <div key={`${ov.symbol}-${idx}`} className="p-3.5 rounded-xl border border-amber-500/35 bg-slate-950/90 space-y-2 text-xs font-mono">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-black text-white">{ov.symbol}</span>
+                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">
+                                {ov.interval === "15m" ? "15DK" : String(ov.interval).toUpperCase()}
+                              </span>
+                              {ov.is_viop && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                  VİOP
+                                </span>
+                              )}
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                  ov.has_reaction
+                                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                                    : "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                                }`}
+                              >
+                                {ov.reaction_label || (ov.has_reaction ? "Tepki Geldi" : "Şelale Riski")}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setChartModal({
+                                  symbol: ov.symbol,
+                                  interval: (ov.interval || nu70Interval) as ChartInterval,
+                                  signalPref: "pu30",
+                                })
+                              }
+                              className="px-2 py-1 rounded-lg border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/50 text-[10px] font-bold"
+                            >
+                              📈 Grafiği Aç
+                            </button>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-between text-amber-200 pt-1 border-t border-slate-800/70">
+                            <span>
+                              1. Dip: <strong>{Number(ov.oversold_price).toFixed(2)} ₺</strong> (RSI {ov.oversold_rsi}) · {ov.oversold_date}
+                            </span>
+                            <span>
+                              Son: <strong className="text-white">{Number(ov.last_close).toFixed(2)} ₺</strong> (RSI {ov.current_rsi})
+                            </span>
+                          </div>
+                          <p className="font-sans text-[11px] text-amber-100/90 pt-1 border-t border-slate-800/60 leading-relaxed">
+                            <strong>📌 Semih Hoca Kuralı:</strong> {ov.explanation}
                           </p>
                         </div>
                       ))}
@@ -1140,10 +1343,37 @@ export default function LabPage() {
         <div className="space-y-6">
           <div className="workspace-panel workspace-panel-body space-y-4">
             <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-end justify-between">
-              <div className="flex-1">
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Test Edilecek Hisseler (Virgülle Ayırın)
-                </label>
+              <div className="flex-1 space-y-1.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Test Edilecek Hisseler (Virgülle Ayırın)
+                  </label>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const p = "TUPRS,THYAO,PGSUS,SISE,AKBNK,ISCTR,VAKBN,GARAN,ASELS,KCHOL,SAHOL,BIMAS,DOAS";
+                        setSymbolsInput(p);
+                        runImpulseTestbed(p);
+                      }}
+                      className="text-cyan-400 hover:underline"
+                    >
+                      BIST13 Popüler
+                    </button>
+                    <span className="text-slate-600">·</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const p = BIST_30.join(",");
+                        setSymbolsInput(p);
+                        runImpulseTestbed(p);
+                      }}
+                      className="text-cyan-400 hover:underline"
+                    >
+                      BIST30
+                    </button>
+                  </div>
+                </div>
                 <input
                   type="text"
                   value={symbolsInput}
@@ -1157,7 +1387,7 @@ export default function LabPage() {
                   Zaman Dilimi
                 </label>
                 <div className="flex gap-1.5">
-                  {(["1h", "4h", "1d"] as const).map((tf) => (
+                  {(["15m", "1h", "4h", "1d"] as const).map((tf) => (
                     <button
                       key={tf}
                       onClick={() => {
@@ -1170,12 +1400,23 @@ export default function LabPage() {
                           : "bg-slate-900 border-slate-800 text-slate-400"
                       }`}
                     >
-                      {tf.toUpperCase()}
+                      {tf === "15m" ? "15DK" : tf.toUpperCase()}
                     </button>
                   ))}
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    const preset = "ASELS";
+                    setSymbolsInput(preset);
+                    setIntervalVal("15m");
+                    runImpulseTestbed(preset, "15m");
+                  }}
+                  className="px-3.5 py-2 rounded-xl border border-amber-500/40 bg-amber-950/40 text-amber-200 text-xs font-bold hover:bg-amber-900/50"
+                >
+                  ASELS 15dk (1 Dip Daha Örneği)
+                </button>
                 <button
                   onClick={() => {
                     const preset = "VAKBN,ISCTR";
@@ -1185,7 +1426,7 @@ export default function LabPage() {
                   }}
                   className="px-3.5 py-2 rounded-xl border border-violet-500/40 bg-violet-950/40 text-violet-300 text-xs font-bold hover:bg-violet-900/50"
                 >
-                  VAKBN ve ISCTR örneği
+                  VAKBN &amp; ISCTR (%361 Örneği)
                 </button>
                 <button
                   onClick={() => runImpulseTestbed()}
@@ -1241,16 +1482,50 @@ export default function LabPage() {
                         <span className="px-2.5 py-0.5 rounded-md text-xs font-semibold bg-emerald-950/80 border border-emerald-500/40 text-emerald-300">
                           PU30 TESPİT EDİLDİ ({item.in_live_window ? "CANLI PENCEREDE" : `${item.bars_since_confirm} bar önce`})
                         </span>
+                      ) : item.pre_pu30?.has_oversold_dip1 ? (
+                        <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-amber-950/80 border border-amber-500/50 text-amber-200">
+                          {item.pre_pu30.badge}
+                        </span>
                       ) : (
                         <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-slate-900 border border-slate-700 text-slate-400">
                           {item.status ? `Veri kullanılamıyor: ${item.status}` : "Bu periyotta PU30 yok"}
                         </span>
                       )}
+                      {item.has_signal && item.pre_pu30?.has_oversold_dip1 && (
+                        <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-amber-950/80 border border-amber-500/50 text-amber-200">
+                          {item.pre_pu30.badge}
+                        </span>
+                      )}
                     </div>
-                    <div className="text-xs text-slate-400">
-                      Son Kapanış: <strong className="text-white font-mono">{item.last_close ?? "—"} ₺</strong>
+                    <div className="flex items-center gap-3 text-xs text-slate-400">
+                      <span>Son Kapanış: <strong className="text-white font-mono">{item.last_close ?? "—"} ₺</strong></span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setChartModal({
+                            symbol: item.symbol,
+                            interval: (item.interval || interval) as ChartInterval,
+                            signalPref: "pu30",
+                          })
+                        }
+                        className="px-2.5 py-1 rounded-lg border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/50 text-[11px] font-bold"
+                      >
+                        📈 Grafiği Aç
+                      </button>
                     </div>
                   </div>
+
+                  {item.pre_pu30?.has_oversold_dip1 && (
+                    <div className="rounded-xl border border-amber-500/35 bg-amber-950/25 p-3.5 space-y-1.5 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-amber-200">
+                        <span>1. Aşırı Satım Dibi: <strong>{Number(item.pre_pu30.oversold_price).toFixed(2)} ₺</strong> (RSI {item.pre_pu30.oversold_rsi}) · {item.pre_pu30.oversold_date}</span>
+                        <span>Güncel RSI: <strong>{item.pre_pu30.current_rsi}</strong> · {item.pre_pu30.reaction_label}</span>
+                      </div>
+                      <p className="text-amber-100/90 leading-relaxed">
+                        <strong>📌 Semih Hoca Kuralı (En Az 1 Dip Daha):</strong> {item.pre_pu30.explanation}
+                      </p>
+                    </div>
+                  )}
 
                   {item.status && <p className="text-amber-300 text-sm">{item.error_message || "Veri kalitesi veya geçmiş mum sayısı yetersiz; sinyal değerlendirilmedi."} · {item.bar_count ?? 0} mum</p>}
 
@@ -1336,6 +1611,56 @@ export default function LabPage() {
                         )}
                       </div>
 
+                      {/* 1-2 Oluşumu Sonrası %361.8 Dahil Fibonacci Fiyat Hedefleri */}
+                      {imp.fib_fiyat_hedefleri && (
+                        <div className="rounded-xl border border-violet-500/30 bg-violet-950/15 p-3.5 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-violet-300">
+                              🎯 1-2 Oluşumu Sonrası Fibonacci Fiyat Hedefleri (%100 → %361.8 &ldquo;Arkana Yaslan&rdquo; Seviyesi)
+                            </span>
+                            {w3?.hedef_361_goruldu && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                                ✅ %361 HEDEFİ GÖRÜLDÜ
+                              </span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs font-mono">
+                            {(["1.000", "1.618", "2.618", "3.618"] as const).map((ratioKey) => {
+                              const target = imp.fib_fiyat_hedefleri[ratioKey];
+                              if (!target) return null;
+                              const is361 = ratioKey === "3.618";
+                              return (
+                                <div
+                                  key={ratioKey}
+                                  className={`rounded-lg border p-2.5 ${
+                                    is361
+                                      ? "border-amber-400/50 bg-amber-950/25"
+                                      : "border-slate-800 bg-slate-950/80"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className={is361 ? "font-bold text-amber-300" : "font-bold text-slate-300"}>
+                                      Fib {ratioKey} ({target.pct_label})
+                                    </span>
+                                    {target.reached && <span className="text-[10px] text-emerald-400">✅</span>}
+                                  </div>
+                                  <div className="text-sm font-black text-white mt-1">
+                                    {Number(target.target_from_w2).toFixed(2)} ₺
+                                  </div>
+                                  <div className="text-[10px] text-slate-400">
+                                    Dip 0 bazlı: {Number(target.target_from_w0).toFixed(2)} ₺
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <p className="text-[11px] text-slate-400">
+                            <strong className="text-slate-200">📌 Semih Hoca İtki Kuralı:</strong>{" "}
+                            1. dalga ve 2. dip netleştikten sonra 1. dalga boyunun %161.8, %261.8 ve ana ralli hedefi <strong>%361.8 (3.618x)</strong> seviyeleri izlenir.
+                          </p>
+                        </div>
+                      )}
+
                       {/* Fib Time Table */}
                       {imp.fib_zaman_w1_referans && (
                         <div className="space-y-2">
@@ -1351,7 +1676,7 @@ export default function LabPage() {
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-800/70 font-mono">
-                                {["0.382", "0.618", "1.000", "1.382", "1.618", "2.618"].map((k) => {
+                                {["0.382", "0.618", "1.000", "1.382", "1.618", "2.618", "3.618"].map((k) => {
                                   const fa = imp.fib_zaman_w1_referans[k];
                                   const fb = imp.fib_zaman_02_sundurme[k];
                                   if (!fa || !fb) return null;
@@ -1488,7 +1813,7 @@ export default function LabPage() {
               </button>
               <button
                 onClick={() => runPytestSuite("all")}
-                disabled={loadingPytest || executionMode === "report"}
+                disabled={loadingPytest}
                 className="px-4 py-2 rounded-xl border border-slate-700 bg-slate-900 text-slate-200 font-bold text-xs hover:bg-slate-800 disabled:opacity-50"
               >
                 Tüm testleri çalıştır
@@ -1545,56 +1870,87 @@ export default function LabPage() {
       {/* TAB 4: LIVE SIGNAL JOURNAL */}
       {activeTab === "journal" && (
         <div className="workspace-panel workspace-panel-body space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold text-white">Sinyal günlüğü</h2>
               <p className="text-xs text-slate-400">
                 Tarayıcı çalıştıkça tespit edilen tüm sinyallerin `knowable_at` zaman damgası ve saatlik güven seviyeleriyle değiştirilemez (append-only) kaydı.
               </p>
             </div>
-            <button
-              onClick={loadJournal}
-              disabled={loadingJournal}
-              className="px-4 py-2 rounded-xl border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-bold text-xs"
-            >
-              {loadingJournal ? "Yükleniyor..." : "Günlüğü yenile"}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => loadJournal(true)}
+                disabled={loadingJournal}
+                className="px-4 py-2 rounded-xl border border-emerald-500/40 bg-emerald-950/40 text-emerald-300 font-bold text-xs hover:bg-emerald-900/40 disabled:opacity-50"
+              >
+                {loadingJournal ? "Taranıyor..." : "⚡ Tüm BIST100 (1G / 4S / 1S) Tara & Günlüğe Kaydet"}
+              </button>
+              <button
+                onClick={() => loadJournal(false)}
+                disabled={loadingJournal}
+                className="px-4 py-2 rounded-xl border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-bold text-xs disabled:opacity-50"
+              >
+                {loadingJournal ? "Yükleniyor..." : "Günlüğü yenile"}
+              </button>
+            </div>
           </div>
 
           {journalRows.length === 0 ? (
             <div className="rounded-xl border border-slate-800 bg-slate-950 p-6 text-slate-400 text-xs">
-              Henüz kayıtlı sinyal günlüğü satırı yok veya tarayıcı yeni başlatıldı. Tarayıcı çalıştırıldığında otomatik kaydedilir.
+              Henüz kayıtlı sinyal günlüğü satırı yok veya tarayıcı yeni başlatıldı. Yukarıdaki tarama butonunu çalıştırdığınızda tüm sinyaller kaydedilir.
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-800">
               <table className="w-full text-left text-xs font-mono">
                 <thead className="bg-slate-900 text-slate-400 uppercase">
                   <tr>
+                    <th className="py-2.5 px-3">Tarih</th>
                     <th className="py-2.5 px-3">Sembol</th>
                     <th className="py-2.5 px-3">TF</th>
                     <th className="py-2.5 px-3">Tip</th>
                     <th className="py-2.5 px-3">1. Dip/Tepe</th>
                     <th className="py-2.5 px-3">2. Dip/Tepe</th>
+                    <th className="py-2.5 px-3">Son Fiyat</th>
                     <th className="py-2.5 px-3">Saatlik Güven Seviyesi</th>
                     <th className="py-2.5 px-3">Durum</th>
                     <th className="py-2.5 px-3">Bilinebilir Zaman</th>
+                    <th className="py-2.5 px-3">Grafik</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/70">
                   {journalRows.map((r, idx) => (
                     <tr key={idx} className="hover:bg-slate-900/40">
+                      <td className="py-2 px-3 text-slate-400">{r.date || r.confirm_date || "—"}</td>
                       <td className="py-2 px-3 font-bold text-white">{r.symbol}</td>
                       <td className="py-2 px-3 text-slate-300">{r.interval}</td>
-                      <td className="py-2 px-3 text-emerald-400 font-bold">{r.signal_type}</td>
-                      <td className="py-2 px-3 text-slate-300">
-                        {r.p1_price} (RSI {r.p1_rsi})
+                      <td className={`py-2 px-3 font-bold ${r.signal_type === "NU70" ? "text-rose-400" : "text-emerald-400"}`}>
+                        {r.signal_type}
                       </td>
                       <td className="py-2 px-3 text-slate-300">
-                        {r.p2_price} (RSI {r.p2_rsi})
+                        {r.p1_price ? `${r.p1_price} (RSI ${r.p1_rsi})` : "—"}
                       </td>
+                      <td className="py-2 px-3 text-slate-300">
+                        {r.p2_price ? `${r.p2_price} (RSI ${r.p2_rsi})` : "—"}
+                      </td>
+                      <td className="py-2 px-3 text-white">{r.entry_price ? `${r.entry_price} ₺` : "—"}</td>
                       <td className="py-2 px-3 text-cyan-300">{r.trust_level_price || "—"}</td>
-                      <td className="py-2 px-3 text-amber-300">{r.trust_level_state || "—"}</td>
+                      <td className="py-2 px-3 text-amber-300">{r.trust_level_state || r.trust_level_durum || "—"}</td>
                       <td className="py-2 px-3 text-slate-400">{r.knowable_at}</td>
+                      <td className="py-2 px-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setChartModal({
+                              symbol: r.symbol,
+                              interval: (["15m", "1h", "4h", "1d"].includes(r.interval) ? r.interval : "1h") as ChartInterval,
+                              signalPref: r.signal_type === "NU70" ? "nu70" : "pu30",
+                            })
+                          }
+                          className="px-2 py-1 rounded-lg border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/50 text-[10px] font-bold whitespace-nowrap"
+                        >
+                          📈 Grafiği Aç
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1608,6 +1964,21 @@ export default function LabPage() {
         </div>
       )}
       </section>
+      {chartModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-6 overflow-y-auto"
+          onClick={() => setChartModal(null)}
+        >
+          <div className="w-full max-w-5xl my-auto" onClick={(e) => e.stopPropagation()}>
+            <SemihDivergenceChart
+              symbol={chartModal.symbol}
+              defaultInterval={chartModal.interval}
+              defaultSignalPref={chartModal.signalPref || "auto"}
+              onClose={() => setChartModal(null)}
+            />
+          </div>
+        </div>
+      )}
     </WorkspacePage>
   );
 }

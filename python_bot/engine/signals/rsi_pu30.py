@@ -955,39 +955,167 @@ def scan_universe_rsi_pu30(
 
 
 def get_symbol_chart_data(
-    symbol: str, interval: str = "4h", period: Optional[str] = None
+    symbol: str, interval: str = "4h", period: Optional[str] = None, enrich: bool = False
 ) -> Optional[Dict[str, Any]]:
-    """Sembol bazında mum, RSI serisi ve tespit edilen uyumsuzluk detaylarını getirir."""
+    """Sembol bazında mum, RSI serisi ve tespit edilen uyumsuzluk, NU70 fraktal ve İtki özetini getirir."""
     if interval not in INTERVALS:
         raise ValueError(f"Unsupported interval: {interval}")
+    from python_bot.engine.signals.long_short_matrix import (
+        _compute_short_action_state,
+        _evaluate_4h_fractal_context,
+        detect_oversold_pre_pu30,
+    )
+    from python_bot.engine.signals.nu70_confirmation import detect_early_highest_nu70_candidate
+
     date_fmt = INTERVALS[interval][1]
+    clean_sym = clean_symbol_display(symbol)
 
     df, data_res = _fetch_adjusted_bars(symbol, interval=interval, period=period)
     if df is None:
         return None
 
-    closes = df["close"].to_numpy(dtype=float)
+    closes = df["close"].to_numpy(dtype=np.float64)
     rsi = wilder_rsi(closes, 14)
     rsi_series = pd.Series(rsi)
     rsi_sma = rsi_series.rolling(14, min_periods=1).mean().to_numpy()
-
-    sig_pu = detect_rsi_pu30(df, DEFAULT_PU30_CONFIG, ignore_lifetime=True, interval=interval)
-    sig_nu = detect_rsi_nu70(df, DEFAULT_NU70_CONFIG, ignore_lifetime=True, interval=interval)
-    if sig_pu or sig_nu:
-        if interval == "15m":
-            h1 = df
-        elif interval == "1h":
-            h1 = _fetch_adjusted_bars(symbol, interval="15m")[0]
-        else:
-            h1 = _fetch_adjusted_bars(symbol, interval="1h")[0]
-        for sig in (sig_pu, sig_nu):
-            if sig:
-                apply_hourly_trust_level(sig, df, h1, interval)
 
     dt_ser = pd.to_datetime(df["date"])
     date_strs = dt_ser.dt.strftime(date_fmt).tolist()
     dt_utc = dt_ser.dt.tz_convert("UTC").dt.tz_localize(None) if dt_ser.dt.tz is not None else dt_ser
     epochs = ((dt_utc - _EPOCH) // pd.Timedelta(seconds=1)).to_numpy(dtype=np.int64).tolist()
+
+    fetched_dfs: Dict[str, Any] = {interval: df}
+    sig_pu = detect_rsi_pu30(df, DEFAULT_PU30_CONFIG, ignore_lifetime=True, interval=interval)
+    sig_nu_raw = detect_rsi_nu70(df, DEFAULT_NU70_CONFIG, ignore_lifetime=True, interval=interval, include_invalidated=True)
+    if sig_nu_raw and not sig_nu_raw.get("invalidated"):
+        sig_nu: Optional[Dict[str, Any]] = sig_nu_raw
+        invalidated_nu70: Optional[Dict[str, Any]] = None
+    else:
+        sig_nu = None
+        invalidated_nu70 = sig_nu_raw if (sig_nu_raw and sig_nu_raw.get("invalidated")) else None
+
+    if sig_pu or sig_nu:
+        if interval == "15m":
+            h1 = df
+        else:
+            sub_tf = "15m" if interval == "1h" else "1h"
+            h1 = _fetch_adjusted_bars(symbol, interval=sub_tf)[0]
+            if h1 is not None:
+                fetched_dfs[sub_tf] = h1
+        for sig in (sig_pu, sig_nu):
+            if sig:
+                apply_hourly_trust_level(sig, df, h1, interval)
+
+    if sig_nu is None:
+        cand_nu = detect_early_highest_nu70_candidate(df, rsi, interval=interval)
+        if cand_nu is not None:
+            t1_idx = int(cand_nu["tepe1"]["index"])
+            t2_idx = int(cand_nu["tepe2"]["index"])
+            p1 = {**cand_nu["tepe1"], "time": int(epochs[t1_idx]) if 0 <= t1_idx < len(epochs) else 0}
+            p2 = {**cand_nu["tepe2"], "time": int(epochs[t2_idx]) if 0 <= t2_idx < len(epochs) else 0}
+            gkd = cand_nu.get("guven_kiran_dip") or {}
+            gkd_broken = bool(gkd.get("kirildi"))
+            saatlik_seviye = {
+                "price": gkd.get("price"),
+                "durum": "kirildi" if gkd_broken else "bekleniyor",
+                "kirildi": gkd_broken,
+                "alt_periyot": "15dk" if interval in ("15m", "1h") else "1s",
+                "fiyat_seviyenin": "altinda" if gkd_broken else "ustunde",
+            }
+            sig_nu = {
+                **cand_nu,
+                "type": "NU70",
+                "is_early_candidate": True,
+                "dip1": p1,
+                "dip2": p2,
+                "tepe1": p1,
+                "tepe2": p2,
+                "saatlik_seviye": saatlik_seviye,
+                "fibonacci_levels": [],
+            }
+
+    if sig_nu is not None:
+        last_close_val = round(float(closes[-1]), 2)
+        p2_price_val = float((sig_nu.get("dip2") or sig_nu.get("tepe2") or {}).get("price", last_close_val))
+        s_state = _compute_short_action_state(last_close_val, p2_price_val, sig_nu.get("saatlik_seviye") or {}, interval)
+        try:
+            fractal_ctx = _evaluate_4h_fractal_context(clean_sym, interval, s_state["target_1r"], s_state["target_tp1"])
+        except Exception:
+            fractal_ctx = {}
+        peak_candle = sig_nu.get("peak_candle") or {}
+        sig_nu.update({
+            "gkd_price": s_state["gkd_price"],
+            "triggered": s_state["triggered"],
+            "status_text": s_state["status_text"],
+            "stop_loss": s_state["stop_loss"],
+            "target_1r": s_state["target_1r"],
+            "target_tp1": s_state["target_tp1"],
+            "rr_ratio": s_state["rr_ratio"],
+            "candle_label": peak_candle.get("label_tr", "Yok"),
+            "is_hanging_man": bool(peak_candle.get("is_hanging_man")),
+            "is_shooting_star": bool(peak_candle.get("is_shooting_star")),
+            **fractal_ctx,
+        })
+
+    pre_pu30: Optional[Dict[str, Any]] = None
+    mtf_nu_pu_summary: Dict[str, Any] = {}
+    if enrich:
+        pre_pu30 = detect_oversold_pre_pu30(df, sig_pu)
+
+        def _summarize_tf(
+            tf_name: str,
+            tf_closes: np.ndarray,
+            tf_rsi_arr: np.ndarray,
+            tf_pu: Optional[Dict[str, Any]],
+            tf_nu: Optional[Dict[str, Any]],
+            tf_early: Optional[Dict[str, Any]],
+            tf_inv: Optional[Dict[str, Any]],
+            tf_pre_pu: Optional[Dict[str, Any]],
+        ) -> Dict[str, Any]:
+            fin_rsi = tf_rsi_arr[np.isfinite(tf_rsi_arr)]
+            nu_obj = tf_nu or tf_early
+            tepe2_obj = (nu_obj.get("tepe2") or nu_obj.get("dip2") or {}) if nu_obj else {}
+            pu_dip2_obj = (tf_pu.get("dip2") or {}) if tf_pu else {}
+            return {
+                "interval": tf_name,
+                "last_close": round(float(tf_closes[-1]), 2),
+                "rsi": round(float(fin_rsi[-1]), 1) if len(fin_rsi) > 0 else None,
+                "has_nu70": bool(tf_nu),
+                "has_early_nu70": bool(tf_early),
+                "nu70_candle": ((nu_obj or {}).get("peak_candle") or {}).get("label_tr", "Yok"),
+                "nu70_tepe2": round(float(tepe2_obj["price"]), 2) if tepe2_obj.get("price") is not None else None,
+                "nu70_rsi2": round(float(tepe2_obj["rsi"]), 1) if tepe2_obj.get("rsi") is not None else None,
+                "has_pu30": bool(tf_pu),
+                "pu30_dip2": round(float(pu_dip2_obj["price"]), 2) if pu_dip2_obj.get("price") is not None else None,
+                "has_pre_pu30": bool(tf_pre_pu and tf_pre_pu.get("has_oversold_dip1")),
+                "pre_pu30_price": tf_pre_pu.get("oversold_price") if tf_pre_pu else None,
+                "invalidated_nu70": bool(tf_inv),
+            }
+
+        try:
+            for tf in ("15m", "1h", "4h", "1d"):
+                if tf == interval:
+                    tf_early_cur = sig_nu if (sig_nu and sig_nu.get("is_early_candidate")) else None
+                    tf_strict_cur = sig_nu if (sig_nu and not sig_nu.get("is_early_candidate")) else None
+                    mtf_nu_pu_summary[tf] = _summarize_tf(tf, closes, rsi, sig_pu, tf_strict_cur, tf_early_cur, invalidated_nu70, pre_pu30)
+                    continue
+                tf_df = fetched_dfs.get(tf)
+                if tf_df is None:
+                    tf_df, _ = _fetch_adjusted_bars(symbol, interval=tf)
+                if tf_df is None or len(tf_df) < MIN_BARS_REQUIRED:
+                    continue
+                tf_closes = tf_df["close"].to_numpy(dtype=np.float64)
+                tf_rsi_arr = wilder_rsi(tf_closes, 14)
+                tf_pu = detect_rsi_pu30(tf_df, DEFAULT_PU30_CONFIG, ignore_lifetime=False, interval=tf)
+                tf_nu_raw = detect_rsi_nu70(tf_df, DEFAULT_NU70_CONFIG, ignore_lifetime=False, interval=tf, include_invalidated=True)
+                tf_nu = tf_nu_raw if (tf_nu_raw and not tf_nu_raw.get("invalidated")) else None
+                tf_inv = tf_nu_raw if (tf_nu_raw and tf_nu_raw.get("invalidated")) else None
+                tf_early = detect_early_highest_nu70_candidate(tf_df, tf_rsi_arr, interval=tf) if tf_nu is None else None
+                tf_pre_pu = detect_oversold_pre_pu30(tf_df, tf_pu)
+                mtf_nu_pu_summary[tf] = _summarize_tf(tf, tf_closes, tf_rsi_arr, tf_pu, tf_nu, tf_early, tf_inv, tf_pre_pu)
+        except Exception:
+            pass
+
     opens = df["open"].to_numpy(dtype=float).tolist()
     highs = df["high"].to_numpy(dtype=float).tolist()
     lows = df["low"].to_numpy(dtype=float).tolist()
@@ -1017,12 +1145,14 @@ def get_symbol_chart_data(
 
     # En güncel teyit edilen sinyali birincil olarak seç
     if sig_pu and sig_nu:
-        active_signal = sig_pu if sig_pu.get("bars_since_confirm", 999) <= sig_nu.get("bars_since_confirm", 999) else sig_nu
+        if sig_nu.get("is_early_candidate"):
+            active_signal = sig_pu
+        else:
+            active_signal = sig_pu if sig_pu.get("bars_since_confirm", 999) <= sig_nu.get("bars_since_confirm", 999) else sig_nu
     else:
         active_signal = sig_pu or sig_nu
 
-    clean_sym = clean_symbol_display(symbol)
-    return {
+    payload: Dict[str, Any] = {
         "symbol": clean_sym,
         "interval": interval,
         "data_status": data_res.status.value if data_res else "UNKNOWN",
@@ -1033,3 +1163,8 @@ def get_symbol_chart_data(
         "pu30_signal": sig_pu,
         "nu70_signal": sig_nu,
     }
+    if enrich:
+        payload["pre_pu30"] = pre_pu30
+        payload["invalidated_nu70"] = invalidated_nu70
+        payload["mtf_nu_pu_summary"] = mtf_nu_pu_summary
+    return payload

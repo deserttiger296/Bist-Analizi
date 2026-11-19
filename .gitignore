@@ -58,6 +58,7 @@ venv/
 /journal/
 # Runtime decision/outcome logs written by engine/journal/daily_history.py
 python_bot/engine/journal/*.csv
+!python_bot/engine/journal/pu30_signal_log.csv
 
 # Locally-trained ML model artifacts (regenerate via
 # python_bot/engine/brain/local_classifier.py train_and_save())

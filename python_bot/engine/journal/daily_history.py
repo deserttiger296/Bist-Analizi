@@ -19,6 +19,7 @@ ATR at decision time, which isn't stored. This is a coarser, honestly-labeled
 proxy for "was the direction call right", not the training label definition.
 """
 import csv
+import tempfile
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -42,7 +43,8 @@ OUTCOME_FIELDNAMES = ["date", "symbol", "actual_price", "actual_return_pct", "wa
 
 SIGNAL_DECISION_FIELDNAMES = [
     "date", "symbol", "interval", "signal_type", "confirm_date", "knowable_at",
-    "entry_price", "trust_level_price", "trust_level_durum", "tetiklendi",
+    "entry_price", "p1_price", "p1_rsi", "p2_price", "p2_rsi",
+    "trust_level_price", "trust_level_durum", "tetiklendi",
     "confirmed_timeframes", "resolve_after_days",
 ]
 SIGNAL_OUTCOME_FIELDNAMES = [
@@ -53,6 +55,10 @@ SIGNAL_OUTCOME_FIELDNAMES = [
 _lock = threading.Lock()
 
 
+def _tmp_fallback(path: Path) -> Path:
+    return Path(tempfile.gettempdir()) / path.name
+
+
 def _read_csv(path: Path) -> List[Dict[str, str]]:
     if not path.exists():
         return []
@@ -60,14 +66,60 @@ def _read_csv(path: Path) -> List[Dict[str, str]]:
         return list(csv.DictReader(f))
 
 
+def _ensure_csv_schema(target: Path, fieldnames: List[str]) -> None:
+    if not target.exists() or target.stat().st_size == 0:
+        return
+    with open(target, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        existing_headers = list(reader.fieldnames or [])
+        if existing_headers == list(fieldnames):
+            return
+        migrated_rows = [{col: r.get(col, "") for col in fieldnames} for r in reader]
+    with open(target, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(migrated_rows)
+
+
 def _append_csv(path: Path, fieldnames: List[str], rows: List[Dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    file_exists = path.exists()
-    with open(path, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        if not file_exists:
-            writer.writeheader()
-        writer.writerows(rows)
+    def _write_rows(target: Path) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _ensure_csv_schema(target, fieldnames)
+        file_exists = target.exists() and target.stat().st_size > 0
+        with open(target, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+            if not file_exists:
+                writer.writeheader()
+            writer.writerows(rows)
+
+    try:
+        _write_rows(path)
+    except (OSError, PermissionError):
+        _write_rows(_tmp_fallback(path))
+
+
+def read_signal_journal_rows() -> List[Dict[str, str]]:
+    """Reads signal decision rows from SIGNAL_DECISIONS_FILE and, on read-only
+    deployments (e.g. Vercel /tmp fallback), merges additional runtime rows."""
+    sources = [_read_csv(SIGNAL_DECISIONS_FILE)]
+    if SIGNAL_DECISIONS_FILE.parent == _JOURNAL_DIR:
+        tmp_path = _tmp_fallback(SIGNAL_DECISIONS_FILE)
+        if tmp_path != SIGNAL_DECISIONS_FILE and tmp_path.exists():
+            sources.append(_read_csv(tmp_path))
+
+    merged: Dict[tuple, Dict[str, str]] = {}
+    order: List[tuple] = []
+    for batch in sources:
+        for raw in batch:
+            row = dict(raw)
+            for col in SIGNAL_DECISION_FIELDNAMES:
+                row.setdefault(col, "")
+            row["trust_level_state"] = row.get("trust_level_state") or row.get("trust_level_durum") or ""
+            key = _signal_key(row)
+            if key not in merged:
+                order.append(key)
+            merged[key] = row
+    return [merged[k] for k in order]
 
 
 def log_daily_scan(predictions: List[Dict[str, Any]]) -> int:
@@ -115,7 +167,9 @@ def log_pu30_signals(signals: List[Dict[str, Any]], interval: str = "4h") -> int
     the break is logged as a new immutable event without modifying the earlier row."""
     today = datetime.now(timezone.utc).date().isoformat()
     with _lock:
-        existing_keys = {_signal_key(d) for d in _read_csv(SIGNAL_DECISIONS_FILE)}
+        existing_rows = read_signal_journal_rows()
+        existing_by_key = {_signal_key(d): d for d in existing_rows}
+        backfill_updates: Dict[tuple, Dict[str, Any]] = {}
         rows = []
         for s in signals:
             sym = str(s.get("symbol", ""))
@@ -133,7 +187,22 @@ def log_pu30_signals(signals: List[Dict[str, Any]], interval: str = "4h") -> int
                 "tetiklendi": tetiklendi_str,
             }
             key = _signal_key(candidate)
-            if key in existing_keys:
+            p1 = s.get("dip1") or s.get("tepe1") or {}
+            p2 = s.get("dip2") or s.get("tepe2") or {}
+            p1_price = p1.get("price", "") if isinstance(p1, dict) else ""
+            p1_rsi = p1.get("rsi", "") if isinstance(p1, dict) else ""
+            p2_price = p2.get("price", "") if isinstance(p2, dict) else ""
+            p2_rsi = p2.get("rsi", "") if isinstance(p2, dict) else ""
+
+            if key in existing_by_key:
+                prev = existing_by_key[key]
+                if not prev.get("p1_price") and p1_price != "":
+                    backfill_updates[key] = {
+                        "p1_price": p1_price,
+                        "p1_rsi": p1_rsi,
+                        "p2_price": p2_price,
+                        "p2_rsi": p2_rsi,
+                    }
                 continue
             saatlik = s.get("saatlik_seviye") or {}
             trust_price = saatlik.get("price")
@@ -147,7 +216,7 @@ def log_pu30_signals(signals: List[Dict[str, Any]], interval: str = "4h") -> int
             else:
                 confirmed_tfs_str = str(confirmed_tfs)
 
-            rows.append({
+            row_entry = {
                 "date": today,
                 "symbol": sym,
                 "interval": sig_interval,
@@ -155,13 +224,35 @@ def log_pu30_signals(signals: List[Dict[str, Any]], interval: str = "4h") -> int
                 "confirm_date": confirm_date,
                 "knowable_at": str(s.get("knowable_at") or ""),
                 "entry_price": s.get("last_close") or s.get("current_price") or "",
+                "p1_price": p1_price,
+                "p1_rsi": p1_rsi,
+                "p2_price": p2_price,
+                "p2_rsi": p2_rsi,
                 "trust_level_price": "" if trust_price is None else trust_price,
                 "trust_level_durum": trust_durum,
                 "tetiklendi": tetiklendi_str,
                 "confirmed_timeframes": confirmed_tfs_str,
                 "resolve_after_days": RESOLVE_AFTER_DAYS,
-            })
-            existing_keys.add(key)
+            }
+            rows.append(row_entry)
+            existing_by_key[key] = row_entry
+        if backfill_updates and SIGNAL_DECISIONS_FILE.exists():
+            try:
+                _ensure_csv_schema(SIGNAL_DECISIONS_FILE, SIGNAL_DECISION_FIELDNAMES)
+                disk_rows = _read_csv(SIGNAL_DECISIONS_FILE)
+                changed = False
+                for dr in disk_rows:
+                    dk = _signal_key(dr)
+                    if dk in backfill_updates:
+                        dr.update(backfill_updates[dk])
+                        changed = True
+                if changed:
+                    with open(SIGNAL_DECISIONS_FILE, "w", newline="", encoding="utf-8") as f:
+                        writer = csv.DictWriter(f, fieldnames=SIGNAL_DECISION_FIELDNAMES, extrasaction="ignore")
+                        writer.writeheader()
+                        writer.writerows(disk_rows)
+            except (OSError, PermissionError):
+                pass
         if rows:
             _append_csv(SIGNAL_DECISIONS_FILE, SIGNAL_DECISION_FIELDNAMES, rows)
         return len(rows)

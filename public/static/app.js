@@ -370,7 +370,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function ensureRsiPu30Charts(itv) {
         // 'Tümü' modunda grafik zaman dilimi karttan gelir; saat gösterimi değişirse grafikleri yeniden kur.
         const chartItv = itv || rsiPu30Interval;
-        if (rsiPu30PriceChartInst && rsiPu30ChartItv !== chartItv && ((rsiPu30ChartItv === '1h') !== (chartItv === '1h'))) {
+        const nextIntraday = chartItv === '1h' || chartItv === '15m';
+        const prevIntraday = rsiPu30ChartItv === '1h' || rsiPu30ChartItv === '15m';
+        if (rsiPu30PriceChartInst && rsiPu30ChartItv !== chartItv && (prevIntraday !== nextIntraday)) {
             destroyRsiPu30Charts();
         }
         if (rsiPu30PriceChartInst) { rsiPu30ChartItv = chartItv; return; }
@@ -380,7 +382,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // wall clock treated as UTC -- see _epoch_seconds in rsi_pu30.py) so
         // timeVisible can show real hour-of-day on the 1h timeframe, not
         // just a date.
-        const timeVisible = chartItv === '1h';
+        const timeVisible = chartItv === '1h' || chartItv === '15m';
         rsiPu30PriceChartInst = LightweightCharts.createChart(document.getElementById('rsiPu30PriceChart'), {
             layout: { background: { type: 'solid', color: '#111b28' }, textColor: '#d1d4dc' },
             grid: { vertLines: { color: '#27384b' }, horzLines: { color: '#27384b' } },
@@ -450,7 +452,9 @@ document.addEventListener('DOMContentLoaded', () => {
     async function openRsiPu30Chart(symbol, itv) {
         itv = itv || rsiPu30Interval;
         rsiPu30OpenSymbol = symbol;
-        const intervalLabel = itv === '1h' ? '1 Saatlik (1s)' : (itv === '4h' ? '4 Saatlik (4s)' : 'Günlük (1g)');
+        const intervalLabel = itv === '15m'
+            ? '15 Dakikalık (15dk)'
+            : (itv === '1h' ? '1 Saatlik (1s)' : (itv === '4h' ? '4 Saatlik (4s)' : 'Günlük (1g)'));
         rsiPu30ChartTitle.textContent = `${symbol} — Semih Ersoy Uyumsuzluk & Formasyon Çizgileri (${intervalLabel})`;
         rsiPu30SignalInfo.innerHTML = '<p style="color:var(--text-muted);">Yükleniyor...</p>';
         rsiPu30Modal.classList.remove('hidden');
@@ -522,6 +526,34 @@ document.addEventListener('DOMContentLoaded', () => {
                     `;
                 }
 
+                let nuPlanHtml = '';
+                if (isNU && (sig.fractal_profit_plan || sig.fractal_phase_badge || sig.target_1r != null || sig.target_tp1 != null)) {
+                    const candleBadge = sig.candle_label && sig.candle_label !== 'Yok'
+                        ? ` · <strong>${sig.is_hanging_man ? '🕯️ ' : (sig.is_shooting_star ? '☄️ ' : '')}${sig.candle_label}</strong>`
+                        : '';
+                    nuPlanHtml = `
+                        <div class="target-item" style="grid-column: 1 / -1; border: 1px solid #f43f5e66; background: rgba(244, 63, 94, 0.1);">
+                            <div class="target-label" style="color:#fda4af;">
+                                ${sig.fractal_phase_badge || '🔴 NU70 Fraktal Planı'}${candleBadge}
+                                · 1R Salınım: <strong>${fmtTR(sig.target_1r)} ₺</strong>
+                                · 2R Sert Satış: <strong>${fmtTR(sig.target_tp1)} ₺</strong>
+                                · İptal Stopu: <strong>${fmtTR(sig.stop_loss)} ₺</strong>
+                            </div>
+                            ${sig.fractal_profit_plan ? `<div style="font-size:0.8rem; color:#e2e8f0; margin-top:0.35rem; line-height:1.4;">🎯 <strong>Semih Hoca NU70 &amp; Fraktal Kâr Planı:</strong> ${sig.fractal_profit_plan}</div>` : ''}
+                        </div>
+                    `;
+                }
+
+                let prePuHtml = '';
+                if (detail.pre_pu30 && detail.pre_pu30.has_oversold_dip1) {
+                    prePuHtml = `
+                        <div class="target-item" style="grid-column: 1 / -1; border: 1px solid #f59e0b66; background: rgba(245, 158, 11, 0.1);">
+                            <div class="target-label" style="color:#fcd34d;">⚠️ ${detail.pre_pu30.badge || 'Aşırı Satım Sonrası 1 Dip Daha Bekleniyor'}</div>
+                            <div style="font-size:0.8rem; color:#fef3c7; margin-top:0.35rem; line-height:1.4;"><strong>📌 Semih Hoca Kuralı (En Az 1 Dip Daha):</strong> ${detail.pre_pu30.explanation || ''}</div>
+                        </div>
+                    `;
+                }
+
                 rsiPu30SignalInfo.innerHTML = `
                     <div class="target-item">
                         <div class="target-label">${isNU ? '🟣 1. Zirve (RSI > 70)' : '🔵 1. Dip (RSI < 30)'}</div>
@@ -539,6 +571,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="target-val" style="font-size:1rem; color:${actionColor};">${sig.bars_since_confirm || 0} bar önce</div>
                         <div style="font-size:0.75rem; color:var(--accent); margin-top:0.3rem;">${isNU ? 'Düzeltme: ' : 'Tepki: '}${changeVal}</div>
                     </div>
+                    ${nuPlanHtml}
+                    ${prePuHtml}
                 `;
 
                 const d1Time = sig.dip1.time;
@@ -594,6 +628,26 @@ document.addEventListener('DOMContentLoaded', () => {
                                 lineStyle: LightweightCharts.LineStyle.Solid,
                                 axisLabelVisible: true,
                                 title: `🔴 Güven Kıran Dip: ${fmtTR(sig.guven_kiran_dip.price)} ₺ [SAT/STOP]`
+                            }));
+                        }
+                        if (sig.target_1r != null && Number.isFinite(sig.target_1r)) {
+                            rsiPu30PriceLines.push(rsiPu30CandleSeries.createPriceLine({
+                                price: sig.target_1r,
+                                color: '#f59e0b',
+                                lineWidth: 2,
+                                lineStyle: LightweightCharts.LineStyle.Dotted,
+                                axisLabelVisible: true,
+                                title: `1R Salınım Hedefi: ${fmtTR(sig.target_1r)} ₺`
+                            }));
+                        }
+                        if (sig.target_tp1 != null && Number.isFinite(sig.target_tp1)) {
+                            rsiPu30PriceLines.push(rsiPu30CandleSeries.createPriceLine({
+                                price: sig.target_tp1,
+                                color: '#f43f5e',
+                                lineWidth: 2,
+                                lineStyle: LightweightCharts.LineStyle.Dotted,
+                                axisLabelVisible: true,
+                                title: `2R Sert Satış Hedefi: ${fmtTR(sig.target_tp1)} ₺`
                             }));
                         }
                     } else {
@@ -673,7 +727,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 `;
             } else {
-                rsiPu30SignalInfo.innerHTML = '<p style="color:var(--text-muted);">Seçili zaman diliminde sinyal detayı bulunamadı.</p>';
+                rsiPu30SignalInfo.innerHTML = detail.pre_pu30 && detail.pre_pu30.has_oversold_dip1
+                    ? `<div class="target-item" style="grid-column: 1 / -1; border: 1px solid #f59e0b66; background: rgba(245, 158, 11, 0.1);">
+                            <div class="target-label" style="color:#fcd34d;">⚠️ ${detail.pre_pu30.badge || 'Aşırı Satım Sonrası 1 Dip Daha Bekleniyor'}</div>
+                            <div style="font-size:0.8rem; color:#fef3c7; margin-top:0.35rem; line-height:1.4;"><strong>📌 Semih Hoca Kuralı (En Az 1 Dip Daha):</strong> ${detail.pre_pu30.explanation || ''}</div>
+                       </div>`
+                    : '<p style="color:var(--text-muted);">Seçili zaman diliminde sinyal detayı bulunamadı.</p>';
+            }
+
+            if (detail.pre_pu30 && detail.pre_pu30.has_oversold_dip1 && detail.pre_pu30.oversold_price != null) {
+                rsiPu30PriceLines.push(rsiPu30CandleSeries.createPriceLine({
+                    price: Number(detail.pre_pu30.oversold_price),
+                    color: '#f59e0b',
+                    lineWidth: 2,
+                    lineStyle: LightweightCharts.LineStyle.Dashed,
+                    axisLabelVisible: true,
+                    title: `⚠️ 1. Aşırı Satım Dibi (En Az 1 Dip Daha): ${fmtTR(detail.pre_pu30.oversold_price)} ₺`
+                }));
             }
 
             rsiPu30PriceChartInst.timeScale().fitContent();
