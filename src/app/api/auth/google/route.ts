@@ -4,16 +4,17 @@ import { signOAuthState } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 function getOrigin(req: NextRequest): string {
-  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || req.nextUrl.host || "";
-  if (host.includes("localhost") || host.includes("127.0.0.1")) {
+  const rawHost = req.headers.get("x-forwarded-host") || req.headers.get("host") || req.nextUrl.host || "";
+  const host = rawHost.split(",")[0].trim().split(":")[0].toLowerCase();
+  if (host === "localhost" || host === "127.0.0.1") {
     return "http://localhost:3000";
   }
-  if (host.includes("forfuck-s-sake.vercel.app")) {
+  if (host.endsWith(".vercel.app")) {
     return "https://bist-analizi-forfuck-s-sake.vercel.app";
   }
   const proto = req.headers.get("x-forwarded-proto") || "https";
-  if (host) {
-    return `${proto}://${host}`;
+  if (rawHost) {
+    return `${proto}://${rawHost.split(",")[0].trim()}`;
   }
   return "https://bist-analizi-forfuck-s-sake.vercel.app";
 }

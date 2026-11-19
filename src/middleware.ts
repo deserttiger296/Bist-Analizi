@@ -1,7 +1,23 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+const CANONICAL_HOST = "bist-analizi-forfuck-s-sake.vercel.app";
+
 export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  const { pathname, search } = request.nextUrl;
+  const rawHost =
+    request.headers.get("x-forwarded-host") ||
+    request.headers.get("host") ||
+    request.nextUrl.host ||
+    "";
+  const reqHost = rawHost.split(",")[0].trim().split(":")[0].toLowerCase();
+
+  if (
+    reqHost.endsWith(".vercel.app") &&
+    reqHost !== CANONICAL_HOST &&
+    !pathname.startsWith("/api/py")
+  ) {
+    return NextResponse.redirect(`https://${CANONICAL_HOST}${pathname}${search}`, 307);
+  }
 
   // 1. Allow public routes, auth flows, health check and static assets
   if (
