@@ -11,6 +11,8 @@ import dataclasses
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+import numpy as np
+
 from python_bot.engine.data.provider import DataStatus, get_default_provider
 from python_bot.engine.signals.nu70_confirmation import detect_early_highest_nu70_candidate
 from python_bot.engine.signals.rsi_pu30 import (
@@ -59,6 +61,7 @@ def _compute_short_action_state(
 
     stop_loss = round(float(tepe2_price) * 1.025, 2)
     risk = max(stop_loss - last_close, last_close * 0.02)
+    target_1r = round(max(0.01, last_close - (risk * 1.0)), 2)
     target_tp1 = round(max(0.01, last_close - (risk * 2.0)), 2)
     target_tp2 = round(max(0.01, last_close - (risk * 3.5)), 2)
     rr_ratio = round((last_close - target_tp1) / max(risk, 0.01), 2)
@@ -77,6 +80,7 @@ def _compute_short_action_state(
         "action": action,
         "status_text": status_text,
         "stop_loss": stop_loss,
+        "target_1r": target_1r,
         "target_tp1": target_tp1,
         "target_tp2": target_tp2,
         "rr_ratio": rr_ratio,
@@ -338,6 +342,83 @@ def build_long_short_matrix(
     }
 
 
+def _evaluate_4h_fractal_context(
+    sym: str,
+    itv: str,
+    target_1r: float,
+    target_2r: float,
+) -> Dict[str, Any]:
+    """
+    Semih Hoca 1S / 4S Fraktal Kuralı:
+    1S'de NU70 varken 4S'de henüz NU70 yoksa ara salınım (1R) sonrası
+    4S NU70'i kurmak için en az 1 zirve daha beklenir; asıl sert satış o zirvededir.
+    """
+    if itv != "1h":
+        return {
+            "has_4h_nu70": itv == "4h",
+            "rsi_4h": None,
+            "fractal_phase_code": "ANA_ZIRVE_SERT_SATIS",
+            "fractal_phase_badge": f"🔥 {itv.upper()} Ana Zirve NU70: Sert Satış Fazı",
+            "recommended_tp_label": "2R Ana Düşüş Hedefi",
+            "recommended_tp_price": target_2r,
+            "fractal_profit_plan": (
+                f"{itv.upper()} ana periyotta NU70 zirvesi oluştu; 1 Saatlik GKD kırılımıyla birlikte "
+                f"2R Ana Hedef ({target_2r:.2f} ₺) odaklı sert satış fazıdır."
+            ),
+        }
+
+    has_4h_nu70 = False
+    rsi_4h: Optional[float] = None
+    try:
+        df_4h, res_4h = _fetch_adjusted_bars(sym, interval="4h")
+        if df_4h is not None and len(df_4h) >= MIN_BARS_REQUIRED and (res_4h is None or res_4h.status == DataStatus.FRESH):
+            rsi_arr_4h = wilder_rsi(df_4h["close"].to_numpy(dtype=np.float64), 14)
+            finite_4h = rsi_arr_4h[np.isfinite(rsi_arr_4h)]
+            if len(finite_4h) > 0:
+                rsi_4h = round(float(finite_4h[-1]), 1)
+            cfg_4h = dataclasses.replace(
+                DEFAULT_NU70_CONFIG,
+                signal_lifetime_bars=SCAN_LIFETIME_BARS.get("4h", 15),
+                min_gap_bars=SCAN_MIN_GAP_BARS.get("4h", 6),
+            )
+            sig_4h = detect_rsi_nu70(df_4h, cfg_4h, ignore_lifetime=False, interval="4h")
+            has_4h_nu70 = bool(sig_4h and not sig_4h.get("invalidated"))
+    except Exception:
+        has_4h_nu70 = False
+        rsi_4h = None
+
+    if not has_4h_nu70:
+        rsi_txt = f" (4S RSI: {rsi_4h})" if rsi_4h is not None else ""
+        return {
+            "has_4h_nu70": False,
+            "rsi_4h": rsi_4h,
+            "fractal_phase_code": "SALINIM_SONRA_YENI_ZIRVE",
+            "fractal_phase_badge": "⚠️ 4S NU Yok: Önce Salınım → Sonra 1 Zirve Daha",
+            "recommended_tp_label": "1R Ara Salınım Hedefi (Kısa Kâr Al)",
+            "recommended_tp_price": target_1r,
+            "fractal_profit_plan": (
+                f"1S NU70 yakalandı ancak 4 Saatlikte henüz NU70 YOK{rsi_txt}. Semih Hoca Kuralı: "
+                f"Kağıt kesin salacak (ara düzeltme) fakat saldıktan sonra 4S NU70'i kurmak için EN AZ 1 ZİRVE DAHA yapacak. "
+                f"Kâr Hesabı: Bu ilk salınımda hedef abartılmaz, 1R Ara Salınım Hedefi ({target_1r:.2f} ₺) bölgesinde kâr alınır; "
+                f"asıl sert satış bir sonraki yeni zirvede 4S NU70 doğduğunda yapılır."
+            ),
+        }
+
+    return {
+        "has_4h_nu70": True,
+        "rsi_4h": rsi_4h,
+        "fractal_phase_code": "CIFT_KILIT_SERT_SATIS",
+        "fractal_phase_badge": "🔥 1S + 4S NU70 Onaylı: Sert Satış Fazı",
+        "recommended_tp_label": "2R Ana Düşüş Hedefi (Sert Satış)",
+        "recommended_tp_price": target_2r,
+        "fractal_profit_plan": (
+            f"Hem 1 Saatlik hem 4 Saatlik grafikte NU70 tamamlanmış durumda. "
+            f"'Bir zirve daha' aşaması geçildiği için net ve sert satış fazıdır; "
+            f"2R Ana Hedef ({target_2r:.2f} ₺) takip edilir."
+        ),
+    }
+
+
 def build_nu70_peak_lab(
     symbols: Optional[List[str]] = None,
     interval: str = "1h",
@@ -359,7 +440,7 @@ def build_nu70_peak_lab(
         try:
             provider = get_default_provider()
             if hasattr(provider, "prefetch_ohlcv_batch"):
-                for prefetch_itv in (itv, sub_interval):
+                for prefetch_itv in tuple(dict.fromkeys((itv, sub_interval, "4h"))):
                     try:
                         provider.prefetch_ohlcv_batch(target_symbols, interval=prefetch_itv)
                     except Exception:
@@ -423,6 +504,7 @@ def build_nu70_peak_lab(
                 p2 = sig.get("tepe2") or {}
                 peak_candle = sig.get("peak_candle") or {}
                 s_state = _compute_short_action_state(last_close, float(p2.get("price", last_close)), lvl, itv)
+                fractal_ctx = _evaluate_4h_fractal_context(sym, itv, s_state["target_1r"], s_state["target_tp1"])
                 out["strict"] = {
                     "symbol": sym,
                     "interval": itv,
@@ -446,11 +528,13 @@ def build_nu70_peak_lab(
                     "status_text": s_state["status_text"],
                     "triggered": s_state["triggered"],
                     "stop_loss": s_state["stop_loss"],
+                    "target_1r": s_state["target_1r"],
                     "target_tp1": s_state["target_tp1"],
                     "rr_ratio": s_state["rr_ratio"],
                     "pullback_pct": sig.get("pullback_pct"),
                     "gap_bars": sig.get("gap_bars"),
                     "bars_since_confirm": sig.get("bars_since_confirm"),
+                    **fractal_ctx,
                 }
                 return out
 

@@ -117,6 +117,14 @@ const RULE_MATRIX = [
     meaning: "Zirvede momentum düşüşünü dönüş mumuyla teyit eder; yeni zirve yapan hisseleri ise listeden otomatik düşürür.",
     status: "AKTİF (NU70 Lab)",
   },
+  {
+    id: "MTF-1H-4H-FRACTAL",
+    title: "1S NU70 Var / 4S NU70 Yok: Ara Salınım + 1 Zirve Daha & Kâr Hesabı Kuralı (19 Kasım 2026)",
+    rule: "Saatlikte (1H) NU70 yakalandığında hemen 4 Saatlik (4H) grafik kontrol edilir. 4 Saatlikte henüz NU70 yoksa hisse önce kesin ara düzeltme (salınım) yapar, ardından 4 Saatlik NU70'i kurmak için en az 1 yeni zirve daha dener; asıl sert satış sonraki zirvede 4S NU70 oluştuğunda gelir.",
+    examples: "THYAO 1S NU70 var, 4S NU yok -> Bu salınımda 1R hedefinden kâr al; sonraki yeni zirvede 4S NU doğduğunda sert satış bekle.",
+    meaning: "Saatlik zirvede aşırı hırslı short taşıyıp yeni zirve hareketine yakalanmayı önler; 1R kısa kâr + 2R sert satış ayrımı kurar.",
+    status: "AKTİF (NU70 Lab)",
+  },
 ];
 
 export default function LabPage() {
@@ -925,6 +933,17 @@ export default function LabPage() {
                                   {item.candle_label}
                                 </span>
                               )}
+                              {item.fractal_phase_badge && (
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                                    item.fractal_phase_code === "SALINIM_SONRA_YENI_ZIRVE"
+                                      ? "bg-amber-500/20 text-amber-200 border-amber-500/40"
+                                      : "bg-rose-500/20 text-rose-200 border-rose-500/40"
+                                  }`}
+                                >
+                                  {item.fractal_phase_badge}
+                                </span>
+                              )}
                             </div>
                             <span
                               className={`px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -964,9 +983,10 @@ export default function LabPage() {
                               <span className="text-[9px] text-slate-500 block">Zirve +%2.5 koruma</span>
                             </div>
                             <div>
-                              <span className="text-[10px] text-slate-500 block">2R Hedef</span>
-                              <span className="text-rose-400 font-bold">{Number(item.target_tp1).toFixed(2)} ₺</span>
-                              <span className="text-[9px] text-slate-500 block">Riskin 2 katı düşüş</span>
+                              <span className="text-[10px] text-slate-500 block">1R Salınım / 2R Sert Satış Hedefi</span>
+                              <span className="text-amber-300 font-bold block">1R Salınım: {Number(item.target_1r ?? item.target_tp1).toFixed(2)} ₺</span>
+                              <span className="text-rose-400 font-bold block text-[11px]">2R Sert Satış: {Number(item.target_tp1).toFixed(2)} ₺</span>
+                              <span className="text-[9px] text-slate-500 block">Ara kâr al / Ana düşüş</span>
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-500 block">Teyit / Yaş</span>
@@ -982,6 +1002,17 @@ export default function LabPage() {
                               ? `${item.gkd_price != null ? `${Number(item.gkd_price).toFixed(2)} ₺ ` : ""}GKD aşağı kırıldığı için satış/short aktif; ${Number(item.stop_loss).toFixed(2)} ₺ aşılmadıkça ${Number(item.target_tp1).toFixed(2)} ₺ hedeflenir.`
                               : `${item.gkd_price != null ? `Şu an ${Number(item.last_close).toFixed(2)} ₺ fiyattan ${Number(item.gkd_price).toFixed(2)} ₺ GKD desteğinin kırılması bekleniyor.` : "Alt periyotta GKD kırılım desteği henüz oluşuyor."} ${Number(item.stop_loss).toFixed(2)} ₺ üstü iptaldir.`}
                           </p>
+                          {item.fractal_profit_plan && (
+                            <div
+                              className={`rounded-lg px-3 py-2 text-[11px] leading-relaxed border ${
+                                item.fractal_phase_code === "SALINIM_SONRA_YENI_ZIRVE"
+                                  ? "bg-amber-950/30 border-amber-500/35 text-amber-100"
+                                  : "bg-rose-950/30 border-rose-500/35 text-rose-100"
+                              }`}
+                            >
+                              <strong>🎯 Semih Hoca Operasyon &amp; Kâr Hesabı Planı:</strong> {item.fractal_profit_plan}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

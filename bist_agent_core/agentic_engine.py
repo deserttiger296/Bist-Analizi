@@ -108,7 +108,12 @@ def _semih_assess(sym: str, semih: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     for s in bear:
         candle_info = s.get("peak_candle") or {}
         c_tag = f" [{candle_info['label_tr']}]" if candle_info.get("is_reversal_top") else ""
-        parts.append(f"{s['_itv']} NU70 {s.get('confluence')}{c_tag}" + (" (GKD tetiklendi)" if s.get("tetiklendi") else ""))
+        fractal_tag = (
+            " [4S NU Yok -> Önce 1R ara salınım, sonra 4S NU için en az 1 zirve daha, ardından sert satış]"
+            if s.get("_itv") == "1h" and s.get("confluence") == "SCALP_BEAR"
+            else ""
+        )
+        parts.append(f"{s['_itv']} NU70 {s.get('confluence')}{c_tag}" + (" (GKD tetiklendi)" if s.get("tetiklendi") else "") + fractal_tag)
     for s in bull_main:
         parts.append(f"{s['_itv']} PU30 {s.get('confluence')}" + (" (GVT tetiklendi)" if s.get("tetiklendi") else " (tetik bekleniyor)"))
     for s in b["pu"]:

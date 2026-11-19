@@ -279,6 +279,8 @@ def test_nu70lab_endpoint_separates_strict_early_and_invalidated(monkeypatch):
     )
 
     def _fake_nu70(df, cfg=None, ignore_lifetime=False, interval="1h", include_invalidated=False):
+        if interval == "4h":
+            return None
         px = round(float(df["close"].iloc[-1]), 1)
         if px == 320.0:
             return {
@@ -340,8 +342,12 @@ def test_nu70lab_endpoint_separates_strict_early_and_invalidated(monkeypatch):
     assert res["mode"] == "nu70lab"
     assert res["total_scanned"] == 3
     assert [x["symbol"] for x in res["strict_signals"]] == ["THYAO"]
-    assert res["strict_signals"][0]["is_hanging_man"] is True
-    assert res["strict_signals"][0]["triggered"] is True
+    strict_thyao = res["strict_signals"][0]
+    assert strict_thyao["is_hanging_man"] is True
+    assert strict_thyao["triggered"] is True
+    assert strict_thyao["target_1r"] < strict_thyao["last_close"]
+    assert strict_thyao["fractal_phase_code"] == "SALINIM_SONRA_YENI_ZIRVE"
+    assert "1 ZİRVE DAHA" in strict_thyao["fractal_profit_plan"]
     assert [x["symbol"] for x in res["early_candidates"]] == ["CCOLA"]
     assert [x["symbol"] for x in res["invalidated_signals"]] == ["BIMAS"]
     assert res["invalidated_signals"][0]["invalidation_reason"] == "HIGHER_HIGH_BROKEN"
