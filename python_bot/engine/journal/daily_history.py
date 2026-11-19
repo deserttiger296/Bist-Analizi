@@ -72,9 +72,23 @@ def _ensure_csv_schema(target: Path, fieldnames: List[str]) -> None:
     with open(target, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         existing_headers = list(reader.fieldnames or [])
-        if existing_headers == list(fieldnames):
-            return
-        migrated_rows = [{col: r.get(col, "") for col in fieldnames} for r in reader]
+        raw_rows = list(reader)
+    valid_signal_ids = {
+        _signal_key(r)[:4]
+        for r in raw_rows
+        if (r.get("tetiklendi") or "") in ("True", "False")
+    }
+    filtered_rows = [
+        r for r in raw_rows
+        if (r.get("tetiklendi") or "") in ("True", "False", "")
+        or _signal_key(r)[:4] not in valid_signal_ids
+    ]
+    if existing_headers == list(fieldnames) and len(filtered_rows) == len(raw_rows):
+        return
+    migrated_rows = [
+        {col: ("" if r.get(col) is None else r.get(col, "")) for col in fieldnames}
+        for r in filtered_rows
+    ]
     with open(target, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()

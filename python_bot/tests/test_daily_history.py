@@ -168,3 +168,52 @@ def test_log_pu30_signals_and_resolve_outcomes_immutably(monkeypatch):
     assert hist["pu30_overall_accuracy_pct"] == pytest.approx(100.0)
     assert hist["pu30_triggered_accuracy_pct"] == pytest.approx(100.0)
 
+
+def test_ensure_csv_schema_drops_corrupted_tetiklendi_duplicate():
+    with open(dh.SIGNAL_DECISIONS_FILE, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=dh.SIGNAL_DECISION_FIELDNAMES)
+        writer.writeheader()
+        writer.writerow({
+            "date": "2026-11-19",
+            "symbol": "SNGYO",
+            "interval": "1h",
+            "signal_type": "NU70",
+            "confirm_date": "2026-11-16 11:30",
+            "knowable_at": "2026-11-16T12:30:00+03:00",
+            "entry_price": "2.53",
+            "p1_price": "",
+            "p1_rsi": "",
+            "p2_price": "",
+            "p2_rsi": "",
+            "trust_level_price": "2.88",
+            "trust_level_durum": "86.7",
+            "tetiklendi": "2.88",
+            "confirmed_timeframes": "61.0",
+            "resolve_after_days": "2.7",
+        })
+        writer.writerow({
+            "date": "2026-11-19",
+            "symbol": "SNGYO",
+            "interval": "1h",
+            "signal_type": "NU70",
+            "confirm_date": "2026-11-16 11:30",
+            "knowable_at": "2026-11-16T12:30:00+03:00",
+            "entry_price": "2.53",
+            "p1_price": "2.88",
+            "p1_rsi": "86.7",
+            "p2_price": "2.88",
+            "p2_rsi": "61.0",
+            "trust_level_price": "2.7",
+            "trust_level_durum": "kirildi",
+            "tetiklendi": "True",
+            "confirmed_timeframes": "1h,4h",
+            "resolve_after_days": "5",
+        })
+
+    dh._ensure_csv_schema(dh.SIGNAL_DECISIONS_FILE, dh.SIGNAL_DECISION_FIELDNAMES)
+    rows = dh.read_signal_journal_rows()
+    assert len(rows) == 1
+    assert rows[0]["tetiklendi"] == "True"
+    assert rows[0]["p1_price"] == "2.88"
+    assert rows[0]["p2_price"] == "2.88"
+

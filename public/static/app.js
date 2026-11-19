@@ -630,6 +630,16 @@ document.addEventListener('DOMContentLoaded', () => {
                                 title: `🔴 Güven Kıran Dip: ${fmtTR(sig.guven_kiran_dip.price)} ₺ [SAT/STOP]`
                             }));
                         }
+                        if (sig.stop_loss != null && Number.isFinite(sig.stop_loss)) {
+                            rsiPu30PriceLines.push(rsiPu30CandleSeries.createPriceLine({
+                                price: sig.stop_loss,
+                                color: '#fb7185',
+                                lineWidth: 1,
+                                lineStyle: LightweightCharts.LineStyle.Dashed,
+                                axisLabelVisible: true,
+                                title: `İptal Stopu (+%2.5): ${fmtTR(sig.stop_loss)} ₺`
+                            }));
+                        }
                         if (sig.target_1r != null && Number.isFinite(sig.target_1r)) {
                             rsiPu30PriceLines.push(rsiPu30CandleSeries.createPriceLine({
                                 price: sig.target_1r,

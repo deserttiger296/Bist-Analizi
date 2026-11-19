@@ -583,7 +583,7 @@ export default function SemihDivergenceChart({
                 className={`px-2 py-1 rounded-md font-bold transition-all ${
                   !detail?.pu30_signal
                     ? "text-slate-600 cursor-not-allowed"
-                    : !isNU
+                    : signalPref === "pu30"
                     ? "bg-emerald-500/20 text-emerald-300"
                     : "text-slate-300 hover:text-emerald-300"
                 }`}
@@ -598,7 +598,7 @@ export default function SemihDivergenceChart({
                 className={`px-2 py-1 rounded-md font-bold transition-all ${
                   !detail?.nu70_signal
                     ? "text-slate-600 cursor-not-allowed"
-                    : isNU
+                    : signalPref === "nu70"
                     ? "bg-rose-500/20 text-rose-300"
                     : "text-slate-300 hover:text-rose-300"
                 }`}
