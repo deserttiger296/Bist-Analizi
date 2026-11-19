@@ -37,6 +37,7 @@ from python_bot.engine.data.provider import (
     get_default_provider,
     normalize_bist_symbol,
 )
+from python_bot.engine.signals.nu70_confirmation import evaluate_peak_candles
 
 
 @dataclass(frozen=True)
@@ -401,6 +402,7 @@ def detect_rsi_nu70(
     cfg: NU70Config = DEFAULT_NU70_CONFIG,
     ignore_lifetime: bool = False,
     interval: str = "4h",
+    include_invalidated: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """
     NU70: Negatif Uyumsuzluk (Ayı / Zirve Satış) Sinyal Tespiti.
@@ -411,6 +413,7 @@ def detect_rsi_nu70(
         return None
 
     closes = df["close"].to_numpy(dtype=float)
+    opens = df["open"].to_numpy(dtype=float) if "open" in df.columns else closes
     highs = df["high"].to_numpy(dtype=float)
     lows = df["low"].to_numpy(dtype=float)
     dates = df["date"].to_numpy()
@@ -422,12 +425,28 @@ def detect_rsi_nu70(
     peaks: List[Dict[str, Any]] = []
     signal: Optional[Dict[str, Any]] = None
     eq_tol_nu = 1.0 - cfg.equal_price_tolerance_pct / 100.0
+    closed_mask = np.asarray(is_closed_arr, dtype=bool)
 
     for p in pivot_indices:
         win_rsi = _peak_rsi(rsi, p, cfg.pivot_left_bars, cfg.pivot_right_bars)
         t2_rsi = _resolve_peak2_rsi(rsi, highs, p, cfg, win_rsi)
+        bar_rsi = float(rsi[p]) if p < len(rsi) and not np.isnan(rsi[p]) else float("nan")
+        if _peak_rsi is not _DEFAULT_PEAK_RSI:
+            rsi_source = "window"
+        elif not np.isnan(bar_rsi) and t2_rsi == bar_rsi:
+            rsi_source = "peak_bar"
+        elif t2_rsi == win_rsi:
+            rsi_source = "window"
+        else:
+            rsi_source = "confirm_bar"
         t_as_t1 = {"index": p, "price": float(highs[p]), "rsi": win_rsi}
-        t2 = {"index": p, "price": float(highs[p]), "rsi": t2_rsi}
+        t2 = {
+            "index": p,
+            "price": float(highs[p]),
+            "rsi": t2_rsi,
+            "rsi_at_peak": None if np.isnan(bar_rsi) else round(bar_rsi, 2),
+            "rsi_source": rsi_source,
+        }
 
         if not np.isnan(t2_rsi):
             t2_signal: Optional[Dict[str, Any]] = None
@@ -462,17 +481,34 @@ def detect_rsi_nu70(
                     continue
 
                 between_lo = lows[t1["index"] + 1:t2["index"]]
+                between_hi = highs[t1["index"] + 1:t2["index"]]
                 if len(between_lo) == 0:
                     continue
+
+                # ISCTR koruması: ara bölgede aynı/daha yüksek fiyat daha önce RSI >= 70 ile görülmüşse
+                # sonradan düşük RSI ile aynı seviyeye değmek "görülen en yüksek fiyatta RSI<70" sayılmaz.
+                if cfg.strict_threshold:
+                    between_rsi = rsi[t1["index"] + 1:t2["index"]]
+                    if np.any((between_hi >= t2["price"] * eq_tol_nu) & np.isfinite(between_rsi) & (between_rsi >= cfg.rsi_threshold)):
+                        continue
 
                 min_between = float(between_lo.min())
                 pullback_pct = (1.0 - min_between / t1["price"]) * 100.0
                 # Ayna kural: Tepe 2 aradaki en yüksek nokta olmalı (kuruş toleransı dahil)
-                max_between_nu = float(highs[t1["index"] + 1:t2["index"]].max())
+                max_between_nu = float(between_hi.max())
 
                 if max_between_nu <= t2["price"] / eq_tol_nu and pullback_pct >= cfg.min_pullback_pct:
                     confirm_index = t2["index"] + cfg.pivot_right_bars
                     if confirm_index >= n:
+                        continue
+                    # Teyit sonrası kapalı barlarda tepe2 fiyatı aşıldıysa sinyal geçersizleşir ("görülen en yüksek fiyat" kuralı)
+                    is_invalidated = False
+                    if t2["index"] + 1 < n:
+                        post_slice = slice(t2["index"] + 1, n)
+                        post_highs = highs[post_slice][closed_mask[post_slice]]
+                        if len(post_highs) > 0 and float(post_highs.max()) > t2["price"] / eq_tol_nu:
+                            is_invalidated = True
+                    if cfg.strict_threshold and is_invalidated and not include_invalidated:
                         continue
                     if t2_signal is not None and t1["price"] <= t2_signal["tepe1"]["price"]:
                         continue
@@ -491,6 +527,10 @@ def detect_rsi_nu70(
                     highest_peak = float(max(t1["price"], t2["price"]))
                     nu_diff = highest_peak - min_between
 
+                    peak_candle = evaluate_peak_candles(
+                        opens, highs, lows, closes, rsi, t2["index"], confirm_index
+                    )
+
                     fibonacci_levels = [
                         {"label": "Fibo 1.618 (Düşüş Hedefi)", "level": 1.618, "price": round(highest_peak - 1.618 * nu_diff, 2), "color": "#f43f5e"},
                         {"label": "Fibo 1.382 (Düşüş Seviyesi)", "level": 1.382, "price": round(highest_peak - 1.382 * nu_diff, 2), "color": "#fb7185"},
@@ -499,9 +539,10 @@ def detect_rsi_nu70(
                         {"label": "Fibo 0.618 (Altın Düzeltme)", "level": 0.618, "price": round(highest_peak - 0.618 * nu_diff, 2), "color": "#e2e8f0"},
                     ]
 
+                    candle_txt = f" Mum: {peak_candle['label_tr']}." if peak_candle["is_reversal_top"] else ""
                     explanation = (
                         f"NU70 Negatif Uyumsuzluk: 1. Tepe {t1['price']:.2f} ₺ (RSI: {t1['rsi']:.1f}), "
-                        f"2. Tepe {t2['price']:.2f} ₺ (RSI: {t2['rsi']:.1f}). "
+                        f"2. Tepe {t2['price']:.2f} ₺ (RSI: {t2['rsi']:.1f}).{candle_txt} "
                         f"Sinyal {confirm_ts.strftime(date_fmt)} mum kapanışında teyit edildi."
                     )
 
@@ -513,6 +554,11 @@ def detect_rsi_nu70(
                         "tepe2": {**t2, "date": t2_ts.strftime(date_fmt), "time": _epoch_seconds(t2_ts)},
                         "dip1": {**t1, "date": t1_ts.strftime(date_fmt), "time": _epoch_seconds(t1_ts)},
                         "dip2": {**t2, "date": t2_ts.strftime(date_fmt), "time": _epoch_seconds(t2_ts)},
+                        "peak_candle": peak_candle,
+                        "is_hanging_man": bool(peak_candle["is_hanging_man"]),
+                        "is_shooting_star": bool(peak_candle["is_shooting_star"]),
+                        "invalidated": is_invalidated,
+                        "invalidation_reason": "HIGHER_HIGH_BROKEN" if is_invalidated else None,
                         "pivot_time": _epoch_seconds(t2_ts),
                         "pivot_date": t2_ts.strftime(date_fmt),
                         "confirm_index": confirm_index,
@@ -863,6 +909,11 @@ def scan_universe_rsi_pu30(
                         sig_nu["confluence_badge"] = f"🔴 {_TF_LABEL.get(interval, interval)} TEPE YORULMASI"
                         head = f"{_TF_LABEL.get(interval, interval)} grafikte NU70 oluştu (Saatlik GKD altında kapanışta stop)."
                     sig_nu["strategy_action"] = f"{head} {_trigger_text(sig_nu['saatlik_seviye'], bull=False)}"
+                    candle_meta = sig_nu.get("peak_candle") or {}
+                    if candle_meta.get("is_hanging_man"):
+                        sig_nu["confluence_badge"] += " · 🕯️ Asılan Adam"
+                    elif candle_meta.get("is_shooting_star"):
+                        sig_nu["confluence_badge"] += " · ☄️ Kayan Yıldız"
 
                     found.append(sig_nu)
 
@@ -877,9 +928,15 @@ def scan_universe_rsi_pu30(
             elif err is not None:
                 errors.append({"symbol": clean_symbol_display(symbol), "error": err})
 
-    # En yeni teyit edilen sinyalleri başa yerleştir
+    # En yeni teyit edilen sinyalleri (ve zirve mum formasyonu taşıyanları) başa yerleştir
     _rank = {"DOUBLE_BULL": 0, "DOUBLE_BEAR": 0}
-    results.sort(key=lambda s: (_rank.get(s.get("confluence"), 1), s.get("bars_since_confirm", 999)))
+    results.sort(
+        key=lambda s: (
+            _rank.get(s.get("confluence"), 1),
+            0 if (s.get("peak_candle") or {}).get("is_reversal_top") else 1,
+            s.get("bars_since_confirm", 999),
+        )
+    )
 
     return {
         "signals": results,
@@ -917,7 +974,12 @@ def get_symbol_chart_data(
     sig_pu = detect_rsi_pu30(df, DEFAULT_PU30_CONFIG, ignore_lifetime=True, interval=interval)
     sig_nu = detect_rsi_nu70(df, DEFAULT_NU70_CONFIG, ignore_lifetime=True, interval=interval)
     if sig_pu or sig_nu:
-        h1 = df if interval == "1h" else _fetch_adjusted_bars(symbol, interval="1h")[0]
+        if interval == "15m":
+            h1 = df
+        elif interval == "1h":
+            h1 = _fetch_adjusted_bars(symbol, interval="15m")[0]
+        else:
+            h1 = _fetch_adjusted_bars(symbol, interval="1h")[0]
         for sig in (sig_pu, sig_nu):
             if sig:
                 apply_hourly_trust_level(sig, df, h1, interval)

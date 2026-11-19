@@ -267,6 +267,13 @@ def run_lab_suite(
         viop_flag = viop_only.lower() in ("true", "1", "yes")
         return build_long_short_matrix(symbols=sym_list, intervals=itv_list, viop_only=viop_flag)
 
+    if mode == "nu70lab":
+        from python_bot.engine.signals.long_short_matrix import build_nu70_peak_lab
+        sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()] if symbols and symbols != "ALL" else None
+        itv = interval if interval in ("1h", "4h", "1d") else "1h"
+        viop_flag = viop_only.lower() in ("true", "1", "yes")
+        return build_nu70_peak_lab(symbols=sym_list, interval=itv, viop_only=viop_flag)
+
     if mode == "council":
         from python_bot.engine.brain.agentic_council import run_agentic_council
         sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]

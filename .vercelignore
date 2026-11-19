@@ -13,3 +13,4 @@ python_bot/engine/lab/**
 **/*.joblib
 db/**
 *.db
+.claude/**

@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   if (mode === "pytest" && process.env.VERCEL) {
     return NextResponse.json({ status: "error", detail: "Testler Test Merkezi / CI ortamında çalıştırılır. Yayınlanmış raporu görüntüleyin." }, { status: 409 });
   }
-  if (!["catalog", "impulse", "pytest", "journal", "council", "longshort"].includes(mode) ||
+  if (!["catalog", "impulse", "pytest", "journal", "council", "longshort", "nu70lab"].includes(mode) ||
       (mode === "pytest" && !["resilience", "pu30", "mtf", "compatibility", "all"].includes(suite))) {
     return NextResponse.json({ status: "error", detail: "Geçersiz Lab modu veya test paketi." }, { status: 400 });
   }

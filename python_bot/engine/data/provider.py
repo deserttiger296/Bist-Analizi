@@ -463,6 +463,9 @@ class YFinanceDataProvider:
             fetch_period = period or ("60d" if interval == "15m" else "730d" if interval in ("1h", "4h") else "1y")
 
             raw = self._download_raw(norm_sym, fetch_interval, fetch_period)
+            if (raw is None or raw.empty) and period is None and fetch_interval == "1h" and fetch_period == "730d":
+                # Yeni halka arz veya Yahoo 730d sınır aşımı durumunda 1y fallback
+                raw = self._download_raw(norm_sym, fetch_interval, "1y")
 
             if raw is None or raw.empty:
                 return DataResult(

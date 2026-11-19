@@ -106,7 +106,9 @@ def _semih_assess(sym: str, semih: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     bull_main = [s for s in b["pu"] if s.get("confluence") in ("DOUBLE_BULL", "MACRO_4H")]
     parts: List[str] = []
     for s in bear:
-        parts.append(f"{s['_itv']} NU70 {s.get('confluence')}" + (" (GKD tetiklendi)" if s.get("tetiklendi") else ""))
+        candle_info = s.get("peak_candle") or {}
+        c_tag = f" [{candle_info['label_tr']}]" if candle_info.get("is_reversal_top") else ""
+        parts.append(f"{s['_itv']} NU70 {s.get('confluence')}{c_tag}" + (" (GKD tetiklendi)" if s.get("tetiklendi") else ""))
     for s in bull_main:
         parts.append(f"{s['_itv']} PU30 {s.get('confluence')}" + (" (GVT tetiklendi)" if s.get("tetiklendi") else " (tetik bekleniyor)"))
     for s in b["pu"]:

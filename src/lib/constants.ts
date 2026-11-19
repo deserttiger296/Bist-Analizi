@@ -1,23 +1,22 @@
-export const defaultTrackerSymbols = ["GARAN", "AKBNK", "ARCLK", "THYAO", "DGATE", "KRDMD", "SASA", "EREGL", "TUPRS", "ASELS", "BIMAS", "FROTO"];
+export const defaultTrackerSymbols = ["GARAN", "AKBNK", "ARCLK", "THYAO", "KRDMD", "SASA", "EREGL", "TUPRS", "ASELS", "BIMAS", "FROTO", "PGSUS"];
 
-// Full BIST100 symbol list for comprehensive scanning
+// Full BIST100 symbol list (KAP Q4 2026: Oct-Dec 2026) for comprehensive scanning
 export const bist100Symbols = [
   // BIST30
-  "AKBNK", "ARCLK", "ASELS", "BIMAS", "DGATE", "EKGYO", "ENKAI", "EREGL",
-  "FROTO", "GARAN", "GUBRF", "HEKTS", "ISCTR", "KCHOL", "KOZAA", "KOZAL",
-  "KRDMD", "MGROS", "ODAS", "OYAKC", "PETKM", "PGSUS", "SAHOL", "SASA",
-  "SISE", "TAVHL", "TCELL", "THYAO", "TKFEN", "TOASO", "TUPRS", "YKBNK",
+  "AEFES", "AKBNK", "ASELS", "ASTOR", "BIMAS", "EKGYO", "ENKAI", "EREGL",
+  "FROTO", "GARAN", "GUBRF", "ISCTR", "KCHOL", "KRDMD", "MGROS", "PETKM",
+  "PGSUS", "SAHOL", "SASA", "SISE", "TAVHL", "TCELL", "THYAO", "TOASO",
+  "TRALT", "TRMET", "TTKOM", "TUPRS", "VAKBN", "YKBNK",
   // BIST50 (beyond 30)
-  "AEFES", "AGESA", "AKFGY", "AKSA", "ALARK", "ALFAS", "AYGAZ", "BERA",
-  "BRISA", "CIMSA", "DOHOL", "EGEEN", "GENIL", "HALKB", "ISGYO", "KONTR",
-  "LOGO", "MAVI", "OBAMS", "OTKAR", "PAPIL", "PENTA", "SKBNK", "SOKM",
-  "TMSN", "TSKB", "TTKOM", "TTRAK", "TURSG", "VAKBN", "VESBE", "VESTL",
+  "AKSEN", "ALARK", "BRSAN", "BTCIM", "CANTE", "CCOLA", "CIMSA", "CVKMD",
+  "CWENE", "DOAS", "ECILC", "ENERY", "GLRMK", "HALKB", "HEKTS", "MAVI",
+  "OYAKC", "TSKB", "TURSG", "ULKER",
   // BIST100 (beyond 50)
-  "ADEL", "AKFYE", "AKCNS", "ALBRK", "ANSGR", "ARDYZ", "ASTOR", "AYDEM",
-  "BASGZ", "BIOEN", "BRYAT", "BTCIM", "CCOLA", "CEMTS", "CLEBI", "CANTE",
-  "DOAS", "ECILC", "ENJSA", "EUPWR", "FENER", "GESAN", "GLYHO", "GSDHO",
-  "GWIND", "INDES", "IPEKE", "ISMEN", "IZENR", "KAYSE", "KLRHO", "KMPUR",
-  "KZBGY", "MAGEN", "MIATK", "MPARK", "NETAS", "NUGYO", "QUAGR", "SARKY",
-  "SELEC", "SILVR", "SMRTG", "SNGYO", "TATGD", "TEKNO", "TLMAN", "TRGYO",
-  "ULKER", "YEOTK", "ZOREN",
+  "AGHOL", "AHGAZ", "AKCNS", "AKFYE", "AKSA", "ALBRK", "ALTNY", "ANHYT",
+  "ANSGR", "ARCLK", "AYGAZ", "BERA", "BINHO", "BRYAT", "DOHOL", "ECZYT",
+  "EGEEN", "EGGUB", "ENJSA", "ENTRA", "EUREN", "FENER", "GLYHO", "GRSEL",
+  "GWIND", "ISDMR", "ISMEN", "KARSN", "KATMR", "KCAER", "KORDS", "LMKDC",
+  "MPARK", "OBAMS", "ODAS", "OTKAR", "PAHOL", "RGYAS", "RYSAS", "SNGYO",
+  "SOKM", "TABGD", "TCKRC", "TKFEN", "TRENJ", "TRGYO", "TTRAK", "TUKAS",
+  "VESTL", "ZOREN",
 ];

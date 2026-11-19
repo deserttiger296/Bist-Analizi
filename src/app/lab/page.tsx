@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { WorkspacePage, MetricCard, EmptyState } from "@/components/ui/Workspace";
+import { BIST_30 } from "@/lib/indices";
 
 type Suite = { id: string; label: string; description: string };
 type TestResult = { name: string; group: string; status: string; duration_sec: number; message: string };
@@ -103,10 +104,17 @@ const RULE_MATRIX = [
     examples: "VAKBN 1s: W1 +%5.21 (6 bar, hacim 1.45x) -> W2 28.72 (Fib 0.784) -> W3 32.30 (W1'in 2.42 katı)",
     status: "TESTBED (Deneysel)",
   },
+  {
+    id: "NU70-HANGING-MAN",
+    title: "Görülen En Yüksek Fiyatta RSI < 70 & Asılan Adam Zirve Kuralı (18 Kasım 2026)",
+    rule: "NU70 için 2. tepe görülen en yüksek fiyat olmalı (teyit sonrası yeni yüksek tepe kırılırsa elenir) ve 2. tepe mumunda/teyidinde RSI < 70 oluşmalıdır. Ara bölgede aynı/yüksek fiyatta daha önce RSI >= 70 görülmüşse tekrar sinyal üretilmez. Zirvede Asılan Adam veya Kayan Yıldız dönüş mumu önceliklendirilir; küçük geri çekilmeli adaylar ayrı NU70_ADAY havuzunda izlenir.",
+    examples: "PGSUS 1s (158.90 @ 85.8 -> 160.60 @ 59.7 < 70), THYAO 1s (Asılan Adam), SISE 1s (Kayan Yıldız)",
+    status: "AKTİF (NU70 Lab)",
+  },
 ];
 
 export default function LabPage() {
-  const [activeTab, setActiveTab] = useState<"impulse" | "pytest" | "backtest" | "journal" | "longshort">("pytest");
+  const [activeTab, setActiveTab] = useState<"impulse" | "pytest" | "backtest" | "journal" | "longshort" | "nu70lab">("pytest");
   const [symbolsInput, setSymbolsInput] = useState("VAKBN,ISCTR,GARAN,AKBNK,YKBNK,THYAO,ASELS,TUPRS");
   const [interval, setIntervalVal] = useState<"1h" | "4h" | "1d">("1h");
   const [impulseData, setImpulseData] = useState<any[]>([]);
@@ -118,6 +126,14 @@ export default function LabPage() {
   const [lsViopOnly, setLsViopOnly] = useState(false);
   const [lsData, setLsData] = useState<any | null>(null);
   const [loadingLs, setLoadingLs] = useState(false);
+
+  const [nu70SymbolsInput, setNu70SymbolsInput] = useState("TUPRS,THYAO,PGSUS,SISE,AKBNK,ISCTR,VAKBN,GARAN,ASELS,KCHOL,SAHOL,BIMAS,DOAS");
+  const [nu70Interval, setNu70Interval] = useState<"1h" | "4h" | "1d">("1h");
+  const [nu70ViopOnly, setNu70ViopOnly] = useState(false);
+  const [nu70Filter, setNu70Filter] = useState<"all" | "candle" | "triggered">("all");
+  const [nu70Data, setNu70Data] = useState<any | null>(null);
+  const [loadingNu70, setLoadingNu70] = useState(false);
+  const nu70Request = useRef(0);
 
   const [pytestData, setPytestData] = useState<TestReport | null>(null);
   const [suites, setSuites] = useState<Suite[]>([]);
@@ -145,6 +161,27 @@ export default function LabPage() {
       setError(e?.message || "Long/Short hatası");
     } finally {
       setLoadingLs(false);
+    }
+  };
+
+  const runNu70LabScan = async (syms?: string, tf?: string, viop?: boolean) => {
+    const requestId = ++nu70Request.current;
+    setLoadingNu70(true);
+    setError(null);
+    try {
+      const s = syms ?? nu70SymbolsInput;
+      const i = tf ?? nu70Interval;
+      const v = viop ?? nu70ViopOnly;
+      const qs = new URLSearchParams({ mode: "nu70lab", symbols: s, interval: i, viop_only: String(v) }).toString();
+      const res = await fetch(`/api/lab?${qs}`);
+      const json = await res.json();
+      if (requestId !== nu70Request.current) return;
+      if (json.status !== "success") throw new Error(json.detail || "NU70 Zirve Lab taraması başarısız");
+      setNu70Data(json);
+    } catch (e: any) {
+      if (requestId === nu70Request.current) setError(e?.message || "NU70 Lab hatası");
+    } finally {
+      if (requestId === nu70Request.current) setLoadingNu70(false);
     }
   };
 
@@ -223,7 +260,7 @@ export default function LabPage() {
     const syncTab = () => {
       const tab = window.location.hash.slice(1);
       if (tab === "reference") setActiveTab("backtest");
-      else if (["pytest", "impulse", "journal", "longshort"].includes(tab)) setActiveTab(tab as any);
+      else if (["pytest", "impulse", "journal", "longshort", "nu70lab"].includes(tab)) setActiveTab(tab as any);
     };
     syncTab();
     window.addEventListener("hashchange", syncTab);
@@ -246,6 +283,7 @@ export default function LabPage() {
         {([
           { id: "pytest", label: "Test paketleri" },
           { id: "longshort", label: "Long / Short Matrisi" },
+          { id: "nu70lab", label: "NU70 & Asılan Adam Lab" },
           { id: "impulse", label: "İtki analizi" },
           { id: "backtest", label: "Referans ve kurallar" },
           { id: "journal", label: "Sinyal günlüğü" },
@@ -256,6 +294,7 @@ export default function LabPage() {
             window.history.replaceState(null, "", `#${tab.id === "backtest" ? "reference" : tab.id}`);
             if (tab.id === "journal" && journalRows.length === 0) loadJournal();
             if (tab.id === "longshort" && !lsData) runLongShortScan();
+            if (tab.id === "nu70lab" && !nu70Data) runNu70LabScan();
           }}>{tab.label}</button>)}
       </div>
       <section id="lab-panel" role="tabpanel" aria-labelledby={`lab-tab-${activeTab}`}>
@@ -478,16 +517,16 @@ export default function LabPage() {
                           <div className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-slate-800/80 text-xs font-mono">
                             <div>
                               <span className="text-[10px] text-slate-500 block">Fiyat / Giriş</span>
-                              <span className="text-white font-bold">{item.last_close} ₺</span>
-                              <span className="text-[10px] text-emerald-400/80 block">GVT: {item.entry_level}</span>
+                              <span className="text-white font-bold">{Number(item.last_close).toFixed(2)} ₺</span>
+                              <span className="text-[10px] text-emerald-400/80 block">GVT: {item.entry_level != null ? Number(item.entry_level).toFixed(2) : "—"}</span>
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-500 block">Stop-Loss</span>
-                              <span className="text-rose-400 font-bold">{item.stop_loss} ₺</span>
+                              <span className="text-rose-400 font-bold">{Number(item.stop_loss).toFixed(2)} ₺</span>
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-500 block">Hedef TP1</span>
-                              <span className="text-emerald-400 font-bold">{item.target_tp1} ₺</span>
+                              <span className="text-emerald-400 font-bold">{Number(item.target_tp1).toFixed(2)} ₺</span>
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-500 block">R:R Oranı</span>
@@ -538,6 +577,16 @@ export default function LabPage() {
                                   VİOP
                                 </span>
                               )}
+                              {item.is_hanging_man && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-200 border border-rose-400/40">
+                                  🕯️ Asılan Adam
+                                </span>
+                              )}
+                              {!item.is_hanging_man && item.is_shooting_star && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-500/20 text-orange-200 border border-orange-400/40">
+                                  ☄️ Kayan Yıldız
+                                </span>
+                              )}
                             </div>
                             <span
                               className={`px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -553,16 +602,21 @@ export default function LabPage() {
                           <div className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-slate-800/80 text-xs font-mono">
                             <div>
                               <span className="text-[10px] text-slate-500 block">Fiyat / Kırılan</span>
-                              <span className="text-white font-bold">{item.last_close} ₺</span>
-                              <span className="text-[10px] text-rose-400/80 block">GKD: {item.entry_level}</span>
+                              <span className="text-white font-bold">{Number(item.last_close).toFixed(2)} ₺</span>
+                              <span className="text-[10px] text-rose-400/80 block">
+                                GKD: {item.gkd_price != null ? Number(item.gkd_price).toFixed(2) : "Bekleniyor"}
+                              </span>
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-500 block">İptal Stopu</span>
-                              <span className="text-amber-400 font-bold">{item.stop_loss} ₺</span>
+                              <span className="text-amber-400 font-bold">{Number(item.stop_loss).toFixed(2)} ₺</span>
+                              {item.tepe1_rsi != null && item.tepe2_rsi != null && (
+                                <span className="text-[10px] text-slate-400 block">RSI {item.tepe1_rsi}→{item.tepe2_rsi}</span>
+                              )}
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-500 block">Destek Hedef</span>
-                              <span className="text-rose-400 font-bold">{item.target_tp1} ₺</span>
+                              <span className="text-rose-400 font-bold">{Number(item.target_tp1).toFixed(2)} ₺</span>
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-500 block">R:R Oranı</span>
@@ -579,6 +633,408 @@ export default function LabPage() {
           )}
         </div>
       )}
+
+      {/* TAB: NU70 & ASILAN ADAM ZİRVE LABORATUVARI (AYRI BÖLÜM) */}
+      {activeTab === "nu70lab" && (() => {
+        const matchNu70Filter = (item: any) => {
+          if (nu70Filter === "candle") return Boolean(item.is_hanging_man || item.is_shooting_star);
+          if (nu70Filter === "triggered") return Boolean(item.triggered ?? item.gkd_broken);
+          return true;
+        };
+        const strictRows = (nu70Data?.strict_signals || []).filter(matchNu70Filter);
+        const earlyRows = (nu70Data?.early_candidates || []).filter(matchNu70Filter);
+        const invalidatedRows = nu70Data?.invalidated_signals || [];
+        return (
+          <div className="space-y-6">
+            <div className="workspace-panel workspace-panel-body space-y-4 border-l-4 border-l-rose-500">
+              <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-end justify-between">
+                <div className="flex-1 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      NU70 &amp; Asılan Adam Evreni (Ayrıştırılmış Lab)
+                    </label>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const p = "TUPRS,THYAO,PGSUS,SISE,AKBNK,ISCTR,VAKBN,GARAN,ASELS,KCHOL,SAHOL,BIMAS,DOAS";
+                          setNu70SymbolsInput(p);
+                          runNu70LabScan(p);
+                        }}
+                        className="text-cyan-400 hover:underline"
+                      >
+                        BIST13 Popüler
+                      </button>
+                      <span className="text-slate-600">·</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const p = BIST_30.join(",");
+                          setNu70SymbolsInput(p);
+                          runNu70LabScan(p);
+                        }}
+                        className="text-cyan-400 hover:underline"
+                      >
+                        BIST30
+                      </button>
+                      <span className="text-slate-600">·</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNu70SymbolsInput("ALL");
+                          runNu70LabScan("ALL");
+                        }}
+                        className="text-cyan-400 hover:underline"
+                      >
+                        Tüm BIST100
+                      </button>
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    value={nu70SymbolsInput}
+                    onChange={(e) => setNu70SymbolsInput(e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2 text-sm text-white font-mono focus:border-rose-500 focus:outline-none"
+                    placeholder="Hisseleri virgülle ayırın veya 'ALL' yazın"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-end gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                      Zaman Dilimi
+                    </label>
+                    <div className="flex gap-1">
+                      {(["1h", "4h", "1d"] as const).map((tf) => (
+                        <button
+                          key={tf}
+                          onClick={() => {
+                            setNu70Interval(tf);
+                            runNu70LabScan(nu70SymbolsInput, tf);
+                          }}
+                          className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                            nu70Interval === tf
+                              ? "bg-rose-500/20 border-rose-500 text-rose-300 shadow-sm"
+                              : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
+                          }`}
+                        >
+                          {tf.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                      Filtre
+                    </label>
+                    <div className="flex gap-1">
+                      {([
+                        { id: "all", label: "Tümü" },
+                        { id: "candle", label: "🕯️ Asılan Adam / Kayan Yıldız" },
+                        { id: "triggered", label: "⚡ GKD Kırılanlar" },
+                      ] as const).map((f) => (
+                        <button
+                          key={f.id}
+                          onClick={() => setNu70Filter(f.id)}
+                          className={`px-2.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                            nu70Filter === f.id
+                              ? "bg-amber-500/20 border-amber-500 text-amber-200"
+                              : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <label className="flex items-center gap-2 pb-2 cursor-pointer select-none text-xs text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={nu70ViopOnly}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setNu70ViopOnly(checked);
+                        runNu70LabScan(nu70SymbolsInput, nu70Interval, checked);
+                      }}
+                      className="rounded border-slate-700 bg-slate-900 text-rose-500 focus:ring-0"
+                    />
+                    <span>Sadece VİOP</span>
+                  </label>
+
+                  <button
+                    onClick={() => runNu70LabScan()}
+                    disabled={loadingNu70}
+                    className="w-full lg:w-auto px-5 py-2 rounded-xl border border-rose-500/50 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg shadow-rose-950/50 transition-all disabled:opacity-50"
+                  >
+                    {loadingNu70 ? "Taranıyor..." : "NU70 Zirve Taraması Başlat"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {!nu70Data && !loadingNu70 && (
+              <EmptyState
+                title="NU70 & Asılan Adam Zirve Laboratuvarı Hazır"
+                description="Görülen en yüksek fiyatta RSI < 70 oluşturan katı NU70 zirvelerini, Asılan Adam / Kayan Yıldız mumlarını, erken izleme adaylarını ve yeni zirve ile iptal edilen eski tepeleri Long / Short Matrisi'nden bağımsız olarak inceleyin."
+                action={
+                  <button
+                    onClick={() => runNu70LabScan()}
+                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold"
+                  >
+                    NU70 Zirve Taraması Başlat
+                  </button>
+                }
+              />
+            )}
+
+            {nu70Data && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <MetricCard
+                    label="Taranan Evren"
+                    value={nu70Data.total_scanned}
+                    detail={`${String(nu70Data.interval || nu70Interval).toUpperCase()} · ${nu70Data.triggered_count} GKD kırılımı`}
+                  />
+                  <MetricCard
+                    label="Katı NU70 Zirve (RSI < 70)"
+                    value={nu70Data.strict_count}
+                    detail="Görülen en yüksek fiyat · >=%3 geri çekilme"
+                  />
+                  <MetricCard
+                    label="Asılan Adam / Kayan Yıldız"
+                    value={nu70Data.candle_confirmed_count}
+                    detail={`${nu70Data.hanging_man_count} Asılan Adam · ${nu70Data.shooting_star_count} Kayan Yıldız`}
+                  />
+                  <MetricCard
+                    label="Erken Tepe İzleme (NU70_ADAY)"
+                    value={nu70Data.early_count}
+                    detail={`${nu70Data.invalidated_count} yeni zirvede iptal edilen`}
+                  />
+                </div>
+
+                {nu70Data.scan_error_count > 0 && (
+                  <div className="workspace-notice workspace-notice-warning text-xs font-mono">
+                    <strong>Veri / Tarama Uyarıları ({nu70Data.scan_error_count}):</strong>{" "}
+                    {(nu70Data.scan_errors || [])
+                      .slice(0, 6)
+                      .map((e: any) => `${e.symbol}: ${e.error}`)
+                      .join(" | ")}
+                  </div>
+                )}
+
+                {/* BÖLÜM 1: KATI NU70 ZİRVE & ASILAN ADAM SİNYALLERİ */}
+                <div className="workspace-panel workspace-panel-body space-y-3 border-t-2 border-t-rose-500">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-wider text-rose-300">
+                        Bölüm 1 — Katı NU70 Zirve &amp; Asılan Adam Sinyalleri
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        Görülen en yüksek fiyatta RSI &lt; 70, ara bölgede aynı fiyatta RSI &gt;= 70 tekrarı yok ve teyit sonrası aşılmamış zirveler.
+                      </p>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs font-mono text-rose-300">
+                      {strictRows.length} aktif sinyal
+                    </span>
+                  </div>
+
+                  {strictRows.length === 0 ? (
+                    <div className="rounded-xl border border-slate-800 bg-slate-950 p-5 text-xs text-slate-400">
+                      Seçili filtre ve evrende aktif katı NU70 sinyali bulunamadı.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                      {strictRows.map((item: any, idx: number) => (
+                        <div
+                          key={`${item.symbol}-${idx}`}
+                          className={`p-4 rounded-xl border bg-slate-950/90 space-y-3 ${
+                            item.triggered ? "border-rose-500/60" : "border-slate-800"
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-base font-black text-white">{item.symbol}</span>
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300">
+                                {String(item.interval).toUpperCase()}
+                              </span>
+                              {item.is_viop && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                  VİOP
+                                </span>
+                              )}
+                              {item.is_hanging_man && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/25 text-rose-200 border border-rose-400/50">
+                                  🕯️ Asılan Adam
+                                </span>
+                              )}
+                              {!item.is_hanging_man && item.is_shooting_star && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-500/25 text-orange-200 border border-orange-400/50">
+                                  ☄️ Kayan Yıldız
+                                </span>
+                              )}
+                              {!item.is_hanging_man && !item.is_shooting_star && item.candle_label && item.candle_label !== "Yok" && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">
+                                  {item.candle_label}
+                                </span>
+                              )}
+                            </div>
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                item.triggered
+                                  ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                                  : "bg-slate-800 text-slate-400"
+                              }`}
+                            >
+                              {item.status_text}
+                            </span>
+                          </div>
+
+                          <div className="text-xs font-mono text-slate-300 bg-slate-900/70 rounded-lg px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+                            <span>
+                              1. Tepe <strong className="text-white">{Number(item.tepe1_price).toFixed(2)} ₺</strong> (RSI {item.tepe1_rsi})
+                              {" → "}
+                              2. Tepe <strong className="text-rose-300">{Number(item.tepe2_price).toFixed(2)} ₺</strong> (RSI {item.tepe2_rsi}
+                              {item.rsi_at_peak != null ? `, Mum: ${item.rsi_at_peak}` : ""})
+                            </span>
+                            <span className="text-[11px] text-slate-400">
+                              Çekilme %{item.pullback_pct} · {item.gap_bars} bar
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-4 gap-2 text-xs font-mono">
+                            <div>
+                              <span className="text-[10px] text-slate-500 block">Son / GKD</span>
+                              <span className="text-white font-bold">{Number(item.last_close).toFixed(2)} ₺</span>
+                              <span className="text-[10px] text-rose-400/80 block">
+                                GKD: {item.gkd_price != null ? `${Number(item.gkd_price).toFixed(2)} ₺` : "Bekleniyor"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-500 block">İptal Stopu</span>
+                              <span className="text-amber-400 font-bold">{Number(item.stop_loss).toFixed(2)} ₺</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-500 block">2R Hedef</span>
+                              <span className="text-rose-400 font-bold">{Number(item.target_tp1).toFixed(2)} ₺</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-500 block">Teyit / Yaş</span>
+                              <span className="text-cyan-300 font-bold">{item.rr_ratio}x · {item.bars_since_confirm} bar</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* BÖLÜM 2: ERKEN YÜKSEK TEPE & ASILAN ADAM İZLEME HAVUZU */}
+                <div className="workspace-panel workspace-panel-body space-y-3 border-t-2 border-t-amber-500">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-wider text-amber-300">
+                        Bölüm 2 — Erken Yüksek Tepe &amp; Asılan Adam İzleme Havuzu (NU70_ADAY)
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        Katı NU70&apos;in %3 geri çekilme veya 5 bar aralık kuralını henüz doldurmamış ama görülen en yüksek fiyatta RSI &lt; 70 ve/veya dönüş mumu üreten adaylar.
+                      </p>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs font-mono text-amber-300">
+                      {earlyRows.length} izleme adayı
+                    </span>
+                  </div>
+
+                  {earlyRows.length === 0 ? (
+                    <div className="rounded-xl border border-slate-800 bg-slate-950 p-5 text-xs text-slate-400">
+                      Bu taramada erken izleme adayı (`NU70_ADAY`) bulunamadı.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                      {earlyRows.map((c: any, idx: number) => (
+                        <div key={`${c.symbol}-${idx}`} className="p-3.5 rounded-xl border border-amber-500/30 bg-slate-950/90 space-y-2 text-xs font-mono">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-black text-white">{c.symbol}</span>
+                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">
+                                {String(c.interval).toUpperCase()}
+                              </span>
+                              {c.is_viop && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                  VİOP
+                                </span>
+                              )}
+                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/15 text-amber-200 border border-amber-500/30">
+                                {c.candle_label && c.candle_label !== "Yok" ? c.candle_label : "Erken Tepe"}
+                              </span>
+                            </div>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${c.gkd_broken ? "bg-rose-500/20 text-rose-300 border border-rose-500/40" : "bg-slate-800 text-slate-300"}`}>
+                              {c.gkd_broken ? "Ara Dip Altında" : "İzleme"}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-between text-slate-300 pt-1 border-t border-slate-800/70">
+                            <span>
+                              1. Tepe {Number(c.tepe1_price).toFixed(2)} (RSI {c.tepe1_rsi}) → 2. Tepe {Number(c.tepe2_price).toFixed(2)} (RSI {c.tepe2_rsi})
+                            </span>
+                            <span className="text-white font-bold">Son: {Number(c.last_close).toFixed(2)} ₺</span>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-400">
+                            <span>Ara Dip: {c.entry_level != null ? `${Number(c.entry_level).toFixed(2)} ₺` : "—"} · Stop: {Number(c.stop_loss).toFixed(2)} ₺</span>
+                            <span>Çekilme %{c.pullback_pct} · {c.gap_bars} bar · {c.confirm_date}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* BÖLÜM 3: YENİ ZİRVE İLE İPTAL EDİLEN ESKİ NU70 YAPILARI */}
+                <div className="workspace-panel workspace-panel-body space-y-3 border-t-2 border-t-slate-600">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-wider text-slate-300">
+                        Bölüm 3 — Yeni Zirve ile İptal Edilen Eski NU70 Yapıları (`HIGHER_HIGH_BROKEN`)
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        NU70 teyidi geldikten sonra fiyat önceki 2. tepenin üzerine çıktığı için (ör. BIMAS örneği) aktif listeden elenen hisseler.
+                      </p>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs font-mono text-slate-400">
+                      {invalidatedRows.length} elenen
+                    </span>
+                  </div>
+
+                  {invalidatedRows.length === 0 ? (
+                    <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 text-xs text-slate-400">
+                      Yeni zirve kırılımıyla iptal edilmiş eski NU70 yapısı yok.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {invalidatedRows.map((inv: any, idx: number) => (
+                        <div key={`${inv.symbol}-${idx}`} className="p-3 rounded-xl border border-slate-800 bg-slate-950/70 text-xs font-mono space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-200">{inv.symbol} · {String(inv.interval).toUpperCase()}</span>
+                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-rose-300">
+                              {inv.invalidation_reason}
+                            </span>
+                          </div>
+                          <div className="text-slate-400">
+                            Eski 2. Tepe: {Number(inv.tepe2_price).toFixed(2)} ₺ (RSI {inv.tepe2_rsi}) · Son: <strong className="text-white">{Number(inv.last_close).toFixed(2)} ₺</strong>
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            Mum: {inv.candle_label} · Teyit: {inv.confirm_date}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* TAB 1: IMPULSE & FIB TIME TESTBED */}
       {activeTab === "impulse" && (

@@ -51,7 +51,7 @@ DEFAULT_SYMBOLS = [
     "THYAO", "TCELL", "ISCTR", "AKBNK", "YKBNK",
     "GARAN", "KCHOL", "SAHOL", "TUPRS", "SISE",
     "ASELS", "BIMAS", "FROTO", "EREGL", "PGSUS",
-    "ARCLK", "TOASO", "SASA", "KOZAL", "PETKM",
+    "ARCLK", "TOASO", "SASA", "TRALT", "PETKM",
 ]
 
 
