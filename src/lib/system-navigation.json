@@ -11,6 +11,7 @@
     "label": "ARAŞTIRMA VE TEST",
     "items": [
       {"href": "/mtf-lab.html", "label": "MTF Strateji Lab", "icon": "layers", "badge": "LAB"},
+      {"href": "/impulse-lab", "label": "İtki & WFO Lab", "icon": "activity", "badge": "WFO"},
       {"href": "/lab", "label": "Test Merkezi", "icon": "shield"},
       {"href": "/agentic-ai", "label": "AI Konseyi", "icon": "cpu", "badge": "DENEYSEL"}
     ]

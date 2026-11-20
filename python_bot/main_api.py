@@ -653,6 +653,8 @@ def get_daily_history(days: int = None):
 app.include_router(signal_router)
 from python_bot.mtf_lab_api import router as mtf_lab_router
 app.include_router(mtf_lab_router)
+from python_bot.impulse_lab_api import router as impulse_lab_router
+app.include_router(impulse_lab_router)
 
 
 if __name__ == "__main__":

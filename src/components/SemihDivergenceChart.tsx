@@ -5,12 +5,15 @@ import {
   createChart,
   CandlestickSeries,
   LineSeries,
+  HistogramSeries,
   createSeriesMarkers,
   LineStyle,
   CrosshairMode,
   type UTCTimestamp,
   type SeriesMarker,
   type Time,
+  type CandlestickData,
+  type WhitespaceData,
 } from "lightweight-charts";
 
 export type ChartInterval = "15m" | "1h" | "4h" | "1d";
@@ -125,10 +128,71 @@ interface ChartDetailPayload {
   mtf_nu_pu_summary?: Record<string, MtfTfSummary>;
 }
 
+interface ImpulsePoint {
+  index: number;
+  time: number;
+  date: string;
+  price: number;
+  rsi: number;
+}
+
+interface ImpulsePriceTarget {
+  ratio: string;
+  pct_label: string;
+  target_from_w2: number;
+  target_from_w0: number;
+  target_log: number;
+  zone_low: number;
+  zone_high: number;
+  reached: boolean;
+  reached_log?: boolean;
+}
+
+interface ImpulseFibTimeEntry {
+  offset_bars: number;
+  target_index: number;
+  target_date: string;
+  target_time: number;
+  is_future: boolean;
+  close_at_target: number | null;
+}
+
+interface ImpulseOverlayData {
+  direction: "BULL" | "BEAR";
+  durum: string;
+  quality_grade?: string;
+  quality_label?: string;
+  ideal_retrace?: boolean;
+  gvt_gkd_aligned?: boolean;
+  points?: {
+    p0: ImpulsePoint;
+    p1: ImpulsePoint;
+    p2: ImpulsePoint;
+  };
+  dalga1?: { move_pct: number; duration_bars: number; rsi_delta: number; vol_ratio: number };
+  dalga2?: { price_retracement_fib: number; duration_bars: number };
+  fib_fiyat_hedefleri?: Record<string, ImpulsePriceTarget>;
+  fib_zaman_w1_referans?: Record<string, ImpulseFibTimeEntry>;
+  fib_zaman_02_sundurme?: Record<string, ImpulseFibTimeEntry>;
+}
+
+interface ImpulseOverlayResponse {
+  status: string;
+  symbol: string;
+  interval: string;
+  scale: string;
+  impulse: ImpulseOverlayData | null;
+  bull_impulse: ImpulseOverlayData | null;
+  bear_impulse: ImpulseOverlayData | null;
+}
+
 interface Props {
   symbol: string;
   defaultInterval?: ChartInterval;
   defaultSignalPref?: "auto" | "pu30" | "nu70";
+  defaultShowImpulse?: boolean;
+  defaultFibTimeMode?: "modA" | "modB";
+  defaultScaleMode?: "linear" | "log";
   onClose?: () => void;
 }
 
@@ -151,10 +215,18 @@ export default function SemihDivergenceChart({
   symbol,
   defaultInterval = "1h",
   defaultSignalPref = "auto",
+  defaultShowImpulse = false,
+  defaultFibTimeMode = "modA",
+  defaultScaleMode = "linear",
   onClose,
 }: Props) {
   const [interval, setIntervalVal] = useState<ChartInterval>(defaultInterval);
   const [signalPref, setSignalPref] = useState<"auto" | "pu30" | "nu70">(defaultSignalPref);
+  const [showImpulse, setShowImpulse] = useState<boolean>(defaultShowImpulse);
+  const [fibTimeMode, setFibTimeMode] = useState<"modA" | "modB">(defaultFibTimeMode);
+  const [scaleMode, setScaleMode] = useState<"linear" | "log">(defaultScaleMode);
+  const [impulseOverlay, setImpulseOverlay] = useState<ImpulseOverlayResponse | null>(null);
+  const [loadingImpulse, setLoadingImpulse] = useState<boolean>(false);
   const [detail, setDetail] = useState<ChartDetailPayload | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -165,7 +237,44 @@ export default function SemihDivergenceChart({
   useEffect(() => {
     setIntervalVal(defaultInterval);
     setSignalPref(defaultSignalPref);
-  }, [symbol, defaultInterval, defaultSignalPref]);
+    setShowImpulse(defaultShowImpulse);
+    setFibTimeMode(defaultFibTimeMode);
+    setScaleMode(defaultScaleMode);
+  }, [symbol, defaultInterval, defaultSignalPref, defaultShowImpulse, defaultFibTimeMode, defaultScaleMode]);
+
+  useEffect(() => {
+    if (!showImpulse) {
+      setImpulseOverlay(null);
+      return;
+    }
+    let active = true;
+    const controller = new AbortController();
+    setLoadingImpulse(true);
+    const dirParam = signalPref === "pu30" ? "bull" : signalPref === "nu70" ? "bear" : "auto";
+    fetch(
+      `/api/impulse-lab?mode=chart&symbol=${encodeURIComponent(symbol)}&interval=${interval}&direction=${dirParam}&scale=${scaleMode}`,
+      { signal: controller.signal, cache: "no-store" }
+    )
+      .then(async (res) => {
+        const json = await res.json();
+        if (active && res.ok && json.status === "success") {
+          setImpulseOverlay(json);
+        } else if (active) {
+          setImpulseOverlay(null);
+        }
+      })
+      .catch(() => {
+        if (active) setImpulseOverlay(null);
+      })
+      .finally(() => {
+        if (active) setLoadingImpulse(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [showImpulse, symbol, interval, signalPref, scaleMode]);
 
   useEffect(() => {
     let active = true;
@@ -284,19 +393,45 @@ export default function SemihDivergenceChart({
       title: "30 Aşırı Satım",
     });
 
-    const cData = detail.bars.map((b) => ({
+    const cData: (CandlestickData<Time> | WhitespaceData<Time>)[] = detail.bars.map((b) => ({
       time: b.time as UTCTimestamp,
       open: b.open,
       high: b.high,
       low: b.low,
       close: b.close,
     }));
-    const rData = detail.bars
+    const rData: ({ time: Time; value: number } | WhitespaceData<Time>)[] = detail.bars
       .filter((b) => b.rsi != null && Number.isFinite(b.rsi))
       .map((b) => ({ time: b.time as UTCTimestamp, value: b.rsi as number }));
     const rMaData = detail.bars
       .filter((b) => b.rsi_sma != null && Number.isFinite(b.rsi_sma))
       .map((b) => ({ time: b.time as UTCTimestamp, value: b.rsi_sma as number }));
+
+    const activeImpulse =
+      showImpulse && impulseOverlay?.impulse?.durum === "1_2_yapisi_hazir"
+        ? impulseOverlay.impulse
+        : null;
+    const fibTimeMap =
+      activeImpulse
+        ? fibTimeMode === "modB"
+          ? activeImpulse.fib_zaman_02_sundurme
+          : activeImpulse.fib_zaman_w1_referans
+        : undefined;
+
+    if (fibTimeMap && detail.bars.length > 0) {
+      const lastBarTime = detail.bars[detail.bars.length - 1].time;
+      const futureTimes = Array.from(
+        new Set(
+          Object.values(fibTimeMap)
+            .map((entry) => Number(entry.target_time))
+            .filter((t) => Number.isFinite(t) && t > lastBarTime)
+        )
+      ).sort((a, b) => a - b);
+      for (const ft of futureTimes) {
+        cData.push({ time: ft as UTCTimestamp });
+        rData.push({ time: ft as UTCTimestamp });
+      }
+    }
 
     candleSeries.setData(cData);
     rsiSeries.setData(rData);
@@ -496,6 +631,121 @@ export default function SemihDivergenceChart({
       });
     }
 
+    if (activeImpulse?.points) {
+      const { p0, p1, p2 } = activeImpulse.points;
+      const impBull = activeImpulse.direction === "BULL";
+      const zigzagColor = impBull ? "#facc15" : "#fb7185";
+      if (p0.time && p1.time && p2.time && p0.time < p1.time && p1.time < p2.time) {
+        const zigzagSeries = priceChart.addSeries(LineSeries, {
+          color: zigzagColor,
+          lineWidth: 3,
+          lineStyle: LineStyle.Solid,
+          crosshairMarkerVisible: true,
+          lastValueVisible: false,
+          priceLineVisible: false,
+        });
+        zigzagSeries.setData([
+          { time: p0.time as UTCTimestamp, value: p0.price },
+          { time: p1.time as UTCTimestamp, value: p1.price },
+          { time: p2.time as UTCTimestamp, value: p2.price },
+        ]);
+        createSeriesMarkers(zigzagSeries, [
+          {
+            time: p0.time as UTCTimestamp,
+            position: impBull ? "belowBar" : "aboveBar",
+            color: zigzagColor,
+            shape: "circle",
+            text: `0 (${fmtTR(p0.price)})`,
+          },
+          {
+            time: p1.time as UTCTimestamp,
+            position: impBull ? "aboveBar" : "belowBar",
+            color: zigzagColor,
+            shape: "circle",
+            text: `1 (${fmtTR(p1.price)})`,
+          },
+          {
+            time: p2.time as UTCTimestamp,
+            position: impBull ? "belowBar" : "aboveBar",
+            color: zigzagColor,
+            shape: "circle",
+            text: `2 (${fmtTR(p2.price)})`,
+          },
+        ]);
+      }
+
+      if (activeImpulse.fib_fiyat_hedefleri) {
+        const targetColors: Record<string, string> = {
+          "1.000": "#38bdf8",
+          "1.618": "#22c55e",
+          "2.618": "#a855f7",
+          "3.618": "#f59e0b",
+        };
+        for (const rk of ["1.000", "1.618", "2.618", "3.618"]) {
+          const tgt = activeImpulse.fib_fiyat_hedefleri[rk];
+          if (!tgt) continue;
+          const priceVal = scaleMode === "log" ? tgt.target_log : tgt.target_from_w2;
+          if (!Number.isFinite(priceVal)) continue;
+          const zoneTxt =
+            scaleMode === "log"
+              ? "Log"
+              : `Bölge: ${fmtTR(tgt.zone_low)}–${fmtTR(tgt.zone_high)}`;
+          candleSeries.createPriceLine({
+            price: priceVal,
+            color: targetColors[rk] || "#f59e0b",
+            lineWidth: rk === "3.618" || rk === "1.618" ? 2 : 1,
+            lineStyle: rk === "3.618" ? LineStyle.Solid : LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `⚡ ${tgt.pct_label} İtki: ${fmtTR(priceVal)} ₺ (${zoneTxt})`,
+          });
+        }
+      }
+
+      if (fibTimeMap) {
+        const fibTimeSeries = priceChart.addSeries(HistogramSeries, {
+          priceScaleId: "fibtime",
+          color: "rgba(167, 139, 250, 0.25)",
+          lastValueVisible: false,
+          priceLineVisible: false,
+        });
+        priceChart.priceScale("fibtime").applyOptions({
+          visible: false,
+          scaleMargins: { top: 0.02, bottom: 0.0 },
+        });
+
+        const byTime = new Map<number, string[]>();
+        for (const rk of ["0.382", "0.618", "1.000", "1.618", "2.618", "3.618"]) {
+          const entry = fibTimeMap[rk];
+          if (!entry || !Number.isFinite(entry.target_time)) continue;
+          const t = Number(entry.target_time);
+          const list = byTime.get(t) || [];
+          list.push(rk.replace(/0+$/, "").replace(/\.$/, ""));
+          byTime.set(t, list);
+        }
+
+        const sortedTimes = Array.from(byTime.keys()).sort((a, b) => a - b);
+        fibTimeSeries.setData(
+          sortedTimes.map((t) => ({
+            time: t as UTCTimestamp,
+            value: 1,
+            color: (byTime.get(t) || []).includes("3.618")
+              ? "rgba(245, 158, 11, 0.35)"
+              : "rgba(167, 139, 250, 0.24)",
+          }))
+        );
+        createSeriesMarkers(
+          fibTimeSeries,
+          sortedTimes.map((t) => ({
+            time: t as UTCTimestamp,
+            position: "aboveBar" as const,
+            color: (byTime.get(t) || []).includes("3.618") ? "#f59e0b" : "#a78bfa",
+            shape: "circle" as const,
+            text: `FT ${(byTime.get(t) || []).join("/")}`,
+          }))
+        );
+      }
+    }
+
     let syncing = false;
     priceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
       if (syncing || !range) return;
@@ -544,7 +794,7 @@ export default function SemihDivergenceChart({
       priceChart.remove();
       rsiChart.remove();
     };
-  }, [detail, activeSignal, interval]);
+  }, [detail, activeSignal, interval, showImpulse, impulseOverlay, fibTimeMode, scaleMode]);
 
   const isNU = activeSignal?.type === "NU70" || activeSignal?.trend === "BEAR";
   const lvl = activeSignal?.saatlik_seviye || {};
@@ -564,6 +814,63 @@ export default function SemihDivergenceChart({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowImpulse((prev) => !prev)}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all ${
+              showImpulse
+                ? "bg-amber-500/20 border-amber-400 text-amber-200 shadow-sm"
+                : "bg-slate-900 border-slate-700 text-slate-300 hover:text-amber-200"
+            }`}
+          >
+            ⚡ İtki 1-2-3 &amp; Fib Zaman {loadingImpulse ? "…" : showImpulse ? "AÇIK" : ""}
+          </button>
+
+          {showImpulse && (
+            <div className="flex items-center gap-1 text-[10px]">
+              <div className="flex rounded-lg border border-slate-700 bg-slate-900 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setFibTimeMode("modA")}
+                  className={`px-2 py-0.5 rounded font-bold ${
+                    fibTimeMode === "modA" ? "bg-violet-500/25 text-violet-200" : "text-slate-400"
+                  }`}
+                >
+                  Mod A (W1)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFibTimeMode("modB")}
+                  className={`px-2 py-0.5 rounded font-bold ${
+                    fibTimeMode === "modB" ? "bg-violet-500/25 text-violet-200" : "text-slate-400"
+                  }`}
+                >
+                  Mod B (0-2)
+                </button>
+              </div>
+              <div className="flex rounded-lg border border-slate-700 bg-slate-900 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setScaleMode("linear")}
+                  className={`px-2 py-0.5 rounded font-bold ${
+                    scaleMode === "linear" ? "bg-cyan-500/20 text-cyan-200" : "text-slate-400"
+                  }`}
+                >
+                  Lineer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScaleMode("log")}
+                  className={`px-2 py-0.5 rounded font-bold ${
+                    scaleMode === "log" ? "bg-cyan-500/20 text-cyan-200" : "text-slate-400"
+                  }`}
+                >
+                  Log
+                </button>
+              </div>
+            </div>
+          )}
+
           {(detail?.pu30_signal || detail?.nu70_signal) && (
             <div className="flex rounded-lg border border-slate-700 bg-slate-900 p-0.5 text-[11px]">
               <button
@@ -864,6 +1171,68 @@ export default function SemihDivergenceChart({
           ℹ️ Eski NU70 yapısı ({fmtTR((detail.invalidated_nu70.tepe2 || detail.invalidated_nu70.dip2)?.price)} ₺ · teyit:{" "}
           {detail.invalidated_nu70.confirm_date || "—"}) daha yüksek yeni zirve yapıldığı için (
           <code>{detail.invalidated_nu70.invalidation_reason || "HIGHER_HIGH_BROKEN"}</code>) geçerliliğini yitirdi.
+        </div>
+      )}
+
+      {showImpulse && impulseOverlay?.impulse && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-3 space-y-1.5 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span
+                className={`px-2 py-0.5 rounded font-bold border ${
+                  impulseOverlay.impulse.direction === "BULL"
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                    : "bg-rose-500/20 text-rose-300 border-rose-500/40"
+                }`}
+              >
+                {impulseOverlay.impulse.direction === "BULL" ? "🟢 Yükseliş İtkisi (1-2-3)" : "🔴 Düşüş İtkisi (1-2-3)"}
+              </span>
+              {impulseOverlay.impulse.quality_label && (
+                <span className="px-2 py-0.5 rounded font-bold bg-amber-500/20 text-amber-200 border border-amber-500/40">
+                  {impulseOverlay.impulse.quality_label}
+                </span>
+              )}
+              {impulseOverlay.impulse.gvt_gkd_aligned && (
+                <span className="px-2 py-0.5 rounded font-bold bg-cyan-500/20 text-cyan-200 border border-cyan-500/40">
+                  ✓ GVT/GKD Hizalı
+                </span>
+              )}
+            </div>
+            {impulseOverlay.impulse.durum === "1_2_yapisi_hazir" && impulseOverlay.impulse.fib_fiyat_hedefleri && (
+              <div className="font-mono text-[11px] flex flex-wrap gap-3 text-slate-200">
+                <span>
+                  W2 Fibo: <strong>{impulseOverlay.impulse.dalga2?.price_retracement_fib}</strong>
+                </span>
+                <span>
+                  %161.8:{" "}
+                  <strong className="text-emerald-300">
+                    {fmtTR(
+                      scaleMode === "log"
+                        ? impulseOverlay.impulse.fib_fiyat_hedefleri["1.618"]?.target_log
+                        : impulseOverlay.impulse.fib_fiyat_hedefleri["1.618"]?.target_from_w2
+                    )}{" "}
+                    ₺
+                  </strong>
+                </span>
+                <span>
+                  %361.8:{" "}
+                  <strong className="text-amber-300">
+                    {fmtTR(
+                      scaleMode === "log"
+                        ? impulseOverlay.impulse.fib_fiyat_hedefleri["3.618"]?.target_log
+                        : impulseOverlay.impulse.fib_fiyat_hedefleri["3.618"]?.target_from_w2
+                    )}{" "}
+                    ₺
+                  </strong>
+                </span>
+              </div>
+            )}
+          </div>
+          {impulseOverlay.impulse.durum !== "1_2_yapisi_hazir" && (
+            <p className="text-slate-300 text-[11px]">
+              Bu periyotta henüz tamamlanmış geçerli 1-2 itki yapısı yok (durum: <code>{impulseOverlay.impulse.durum}</code>).
+            </p>
+          )}
         </div>
       )}
 
