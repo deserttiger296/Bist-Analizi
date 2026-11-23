@@ -192,7 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (rsiPu30Interval === 'all') {
                     // Tüm zaman dilimlerini sırayla tara ve tek listede birleştir (sunucuyu yormamak için ardışık).
-                    const itvs = ['4h', '1h', '1d'];
+                    const itvs = ['15m', '1h', '4h', '1d'];
                     const merged = { signals: [], scanned: 0, attempted: 0, errors: [] };
                     const failed = [];
                     for (const itv of itvs) {
@@ -209,7 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (failed.length === itvs.length) {
                         throw new Error('Tarama başarısız — ' + failed.join(' | '));
                     }
-                    const order = { '4h': 0, '1h': 1, '1d': 2 };
+                    const order = { '15m': 0, '1h': 1, '4h': 2, '1d': 3 };
                     merged.signals.sort((a, b) => a.symbol.localeCompare(b.symbol) || order[a._interval] - order[b._interval]);
                     renderRsiPu30(merged);
                     if (failed.length) {
@@ -263,7 +263,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const badgeColor = isNU ? '#f43f5e' : '#10b981';
                 const badgeText = isNU ? '🔴 NU70 (DÜŞÜŞ)' : '🟢 PU30 (YÜKSELİŞ)';
                 const itvKey = s._interval || rsiPu30Interval;
-                const itvShort = { '1h': '1S', '4h': '4S', '1d': 'G' }[itvKey] || String(itvKey).toUpperCase();
+                const itvShort = { '15m': '15DK', '1h': '1S', '4h': '4S', '1d': 'G' }[itvKey] || String(itvKey).toUpperCase();
                 const barsText = `${itvShort} · ` + (s.bars_since_confirm === 0 ? "BU BAR" : `${s.bars_since_confirm || 0} BAR ÖNCE`);
 
                 const p1 = s.tepe1 || s.dip1 || {};
@@ -274,6 +274,46 @@ document.addEventListener('DOMContentLoaded', () => {
                 const rsiChange = (p2.rsi || 0) - (p1.rsi || 0);
                 const rsiChangeText = (rsiChange >= 0 ? '+' : '') + fmtTR(rsiChange, 1);
                 const rsiColor = isNU ? '#f43f5e' : '#10b981';
+
+                const lvl = s.saatlik_seviye || {};
+                const triggerLevelObj = isNU ? s.guven_kiran_dip : s.guven_tazeleyen_tepe;
+                const triggerPriceVal = (triggerLevelObj && triggerLevelObj.price != null) ? triggerLevelObj.price : lvl.seviye;
+                const isTriggered = Boolean(s.tetiklendi || lvl.kirildi);
+                const is15m = itvKey === '15m';
+                const has1hConfirm = Boolean(
+                    s.cross_tf_confirmed ||
+                    (s.confluence_tier && !String(s.confluence_tier).includes('TRAP_15M')) ||
+                    (s.confluence_badge && (String(s.confluence_badge).includes('1S') || String(s.confluence_badge).includes('ÇİFT')))
+                );
+
+                const plainStructureText = isNU
+                    ? `Fiyat <strong>${fmtTR(p1.price)} ₺</strong> zirvesinden sonra <strong>${fmtTR(p2.price)} ₺</strong> seviyesinde ikinci tepeyi yaparken RSI <strong>${fmtTR(p1.rsi, 1)} → ${fmtTR(p2.rsi, 1)}</strong> düştü (alım gücü zayıfladı / yorulma).`
+                    : `Fiyat <strong>${fmtTR(p1.price)} ₺</strong> dibinden sonra <strong>${fmtTR(p2.price)} ₺</strong> seviyesinde ikinci dibi yoklarken RSI <strong>${fmtTR(p1.rsi, 1)} → ${fmtTR(p2.rsi, 1)}</strong> yükseldi (satış baskısı tükendi / güç toplama).`;
+
+                const plainTriggerText = triggerPriceVal != null
+                    ? (isTriggered
+                        ? (isNU
+                            ? `✅ <strong>Alt Zaman Dilimi GKD (${fmtTR(triggerPriceVal)} ₺) Kırıldı:</strong> Güven Kıran Dip aşağı geçildi; düşüş/kâr al teyidi aktif.`
+                            : `✅ <strong>Alt Zaman Dilimi GVT (${fmtTR(triggerPriceVal)} ₺) Aşıldı:</strong> Güven Tazeleyen Tepe yukarı geçildi; dönüş/alış teyidi aktif.`)
+                        : (isNU
+                            ? `⏳ <strong>Alt Zaman Dilimi GKD (${fmtTR(triggerPriceVal)} ₺) Bekleniyor:</strong> Henüz Güven Kıran Dip kırılmadı; kırılım olmadan erken şort/satış açma.`
+                            : `⏳ <strong>Alt Zaman Dilimi GVT (${fmtTR(triggerPriceVal)} ₺) Bekleniyor:</strong> Henüz Güven Tazeleyen Tepe aşılmadı; kırılım olmadan erken alışa atlama.`))
+                    : `⏳ <strong>Alt Zaman Dilimi Teyidi:</strong> Alt periyotta GVT/GKD ara tepe/dip yapısı oluşması bekleniyor; sadece uyumsuzluk göründü diye erken girilmez.`;
+
+                const plain15mNote = is15m
+                    ? (has1hConfirm
+                        ? `<div style="margin-top:0.35rem; color:#6ee7b7; font-weight:700;">🟢 15dk + 1S Onaylı: Saatlik (1S) yapı 15 dakikalık sinyali destekliyor; tek başına tuzak değil.</div>`
+                        : `<div style="margin-top:0.35rem; color:#fcd34d; font-weight:700;">⚠️ 15dk Tek Başına Tuzak (NU15/PU15): Saatlikte onay yokken öğlene kadar düşüp öğleden sonra yeni zirve yapabilir — VİOP'ta erken şort açma!</div>`)
+                    : `<div style="margin-top:0.35rem; color:#94a3b8;">🧮 <strong>VİOP Notu:</strong> 1 kontrat = 100 pay. GVT/GKD teyidi ve stop seviyesi netleşmeden kaldıraçlı pozisyon açmayın (<a href="/viop-rehber" style="color:#38bdf8; text-decoration:underline;">VİOP Rehberi</a>).</div>`;
+
+                const plainSummaryHtml = `
+                    <div style="font-size:0.74rem; color:#e2e8f0; margin-top:0.65rem; line-height:1.45; background:rgba(15,23,42,0.75); padding:0.55rem 0.65rem; border-radius:8px; border:1px solid rgba(56,189,248,0.3);">
+                        <div style="font-weight:800; color:#38bdf8; margin-bottom:0.25rem;">🗣️ Normal İnsan İçin Sade Türkçe Özeti &amp; VİOP Notu</div>
+                        <div>• <strong>1. → 2. ${isNU ? 'Tepe' : 'Dip'} Anlamı:</strong> ${plainStructureText}</div>
+                        <div style="margin-top:0.25rem;">• ${plainTriggerText}</div>
+                        ${plain15mNote}
+                    </div>
+                `;
 
                 const confluenceHtml = s.confluence_badge
                     ? `<div style="font-size:0.75rem; font-weight:800; padding:0.3rem 0.6rem; border-radius:6px; margin-top:0.5rem; display:inline-block; background:${isNU ? 'rgba(244,63,94,0.18)' : 'rgba(16,185,129,0.18)'}; border:1px solid ${isNU ? '#f43f5e' : '#10b981'}; color:${isNU ? '#fda4af' : '#6ee7b7'};">
@@ -334,6 +374,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
 
                     ${strategyHtml}
+
+                    ${plainSummaryHtml}
 
                     ${s.explanation ? `<div style="font-size:0.75rem; color:#94a3b8; margin-top:0.6rem; line-height:1.3; background:rgba(0,0,0,0.25); padding:0.4rem; border-radius:6px;">${s.explanation}</div>` : ''}
 

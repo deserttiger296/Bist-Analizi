@@ -66,12 +66,12 @@ def scan_rsi_pu30(response: Response, interval: str = "4h", signal_type: str = "
     """
     RSI PU30 (Dip/Alış) ve NU70 (Tepe/Satış) uyumsuzluk tarayıcısı.
     Semih Murat Ersoy formülü.
-    interval: "1d", "4h" veya "1h".
+    interval: "1d", "4h", "1h" veya "15m".
     signal_type: "all", "pu30", "nu70".
     """
     interval = (interval or "4h").lower()
     signal_type = (signal_type or "all").lower()
-    if interval not in ("1d", "4h", "1h"):
+    if interval not in ("1d", "4h", "1h", "15m"):
         raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
     if signal_type not in ("all", "pu30", "nu70"):
         raise HTTPException(status_code=400, detail=f"Unsupported signal_type: {signal_type}")
@@ -242,6 +242,8 @@ def run_lab_suite(
                 sub = provider.fetch_ohlcv(sym, interval=sub_interval, include_forming_bar=False)
                 h1_df = sub.df if sub.status == DataStatus.FRESH and sub.df is not None and len(sub.df) >= MIN_BARS_REQUIRED else None
                 apply_hourly_trust_level(sig, res.df, h1_df, interval)
+            elif interval == "15m":
+                apply_hourly_trust_level(sig, res.df, res.df, interval)
             lab_report = analyze_impulse_and_fib_time(res.df, sig)
             items.append({
                 "symbol": sym,

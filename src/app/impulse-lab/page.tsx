@@ -71,7 +71,7 @@ function WfoComparisonPanel({
   if (!slice) {
     return (
       <div className="rounded-xl border border-slate-800 bg-slate-950 p-5 text-xs text-slate-400">
-        Bu filtre kombinasyonu için WFO istatistiği bulunamadı.
+        Bu filtre kombinasyonu için yayınlanmış WFO istatistiği bulunamadı. 15DK (15m) veya özel hisse sepeti WFO analizi için aşağıdaki Bölüm 2&apos;de periyodu seçip <strong>&quot;📊 Seçili Hisselerde Canlı WFO Hesapla&quot;</strong> butonunu kullanabilirsiniz.
       </div>
     );
   }
@@ -209,7 +209,7 @@ export default function ImpulseWfoLabPage() {
   // Published BIST100 WFO snapshot state
   const [report, setReport] = useState<any | null>(null);
   const [loadingReport, setLoadingReport] = useState(true);
-  const [reportTf, setReportTf] = useState<"1h" | "4h" | "1d">("1h");
+  const [reportTf, setReportTf] = useState<"15m" | "1h" | "4h" | "1d">("1h");
   const [reportDir, setReportDir] = useState<DirectionFilter>("all");
   const [reportScale, setReportScale] = useState<ScaleMode>("linear");
 
@@ -357,7 +357,7 @@ export default function ImpulseWfoLabPage() {
 
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <div className="flex rounded-xl border border-slate-800 bg-slate-950 p-1">
-                {(["1h", "4h", "1d"] as const).map((tf) => (
+                {(["15m", "1h", "4h", "1d"] as const).map((tf) => (
                   <button
                     key={tf}
                     type="button"
@@ -366,7 +366,7 @@ export default function ImpulseWfoLabPage() {
                       reportTf === tf ? "bg-cyan-500/20 text-cyan-200" : "text-slate-400 hover:text-white"
                     }`}
                   >
-                    {tf === "1h" ? "1S" : tf === "4h" ? "4S" : "1G"}
+                    {tf === "15m" ? "15DK" : tf === "1h" ? "1S" : tf === "4h" ? "4S" : "1G"}
                   </button>
                 ))}
               </div>
@@ -598,6 +598,33 @@ export default function ImpulseWfoLabPage() {
                     const targets = imp?.fib_fiyat_hedefleri || {};
                     const modA = imp?.fib_zaman_w1_referans || {};
                     const modB = imp?.fib_zaman_02_sundurme || {};
+                    const brokeW1 = Boolean(imp?.dalga3_takip?.w1_tepesi_kirildi);
+                    const p0Num = Number(imp?.p0_price);
+                    const closeNum = Number(item.last_close);
+                    const p0Violated =
+                      Number.isFinite(p0Num) &&
+                      Number.isFinite(closeNum) &&
+                      ((isBull && closeNum < p0Num) || (!isBull && closeNum > p0Num));
+                    const tfLabel =
+                      item.interval === "15m"
+                        ? "15 Dakikalık (15DK)"
+                        : item.interval === "1h"
+                        ? "1 Saatlik (1S)"
+                        : item.interval === "4h"
+                        ? "4 Saatlik (4S)"
+                        : "Günlük (1G)";
+                    const t100 = liveScale === "log" ? targets["1.000"]?.target_log : targets["1.000"]?.target_from_w2;
+                    const t161 = liveScale === "log" ? targets["1.618"]?.target_log : targets["1.618"]?.target_from_w2;
+                    const t261 = liveScale === "log" ? targets["2.618"]?.target_log : targets["2.618"]?.target_from_w2;
+                    const t361 = liveScale === "log" ? targets["3.618"]?.target_log : targets["3.618"]?.target_from_w2;
+
+                    const fibKeys = ["0.382", "0.618", "1.000", "1.618", "2.618", "3.618"] as const;
+                    const nextFutureAKey = fibKeys.find((k) => modA[k]?.is_future);
+                    const nextFutureBKey = fibKeys.find((k) => modB[k]?.is_future);
+                    const nextFutureA = nextFutureAKey ? { ratio: nextFutureAKey, ...modA[nextFutureAKey] } : null;
+                    const nextFutureB = nextFutureBKey ? { ratio: nextFutureBKey, ...modB[nextFutureBKey] } : null;
+                    const lastPastAKey = [...fibKeys].reverse().find((k) => modA[k] && !modA[k].is_future);
+                    const lastPastA = lastPastAKey ? { ratio: lastPastAKey, ...modA[lastPastAKey] } : null;
 
                     return (
                       <div key={`${item.symbol}-${item.direction}-${idx}`} className="rounded-2xl border border-slate-800 bg-slate-950/85 p-4 space-y-4">
@@ -688,6 +715,96 @@ export default function ImpulseWfoLabPage() {
                               📈 İtki &amp; Fib Zaman Grafiğini Aç
                             </button>
                           </div>
+                        </div>
+
+                        {/* SADE TÜRKÇE HİSSE ÖZETİ & VİOP PLANI KUTUSU */}
+                        <div className="rounded-2xl border border-cyan-500/35 bg-cyan-950/20 p-4 space-y-2.5 text-xs text-slate-200 leading-relaxed">
+                          <div className="text-sm font-bold text-cyan-200">
+                            🗣️ Bu Hissede Ne Oluyor? (Normal İnsan İçin Sade Türkçe Özeti &amp; VİOP Planı)
+                          </div>
+                          <p>
+                            <strong>• Durum &amp; Yön:</strong> <strong>{item.symbol}</strong> hissesinde{" "}
+                            <strong>{tfLabel}</strong> grafikte{" "}
+                            {isBull ? (
+                              <>
+                                <strong className="text-emerald-300">Yükseliş İtkisi (PU30)</strong> tespit edildi (dip dönüşü sonrası yukarı yönlü dalga kurgusu; spotta ALIM / VİOP&apos;ta LONG fırsatı adayı).
+                              </>
+                            ) : (
+                              <>
+                                <strong className="text-rose-300">Düşüş İtkisi (NU70)</strong> tespit edildi (tepe yorulması sonrası aşağı yönlü satış dalgası kurgusu; spotta kâr al-korun / VİOP&apos;ta SHORT fırsatı adayı).
+                              </>
+                            )}
+                          </p>
+                          {item.interval === "15m" && (
+                            <p className="rounded-xl border border-amber-500/40 bg-amber-950/30 px-3 py-2 text-amber-200 font-semibold">
+                              ⚠️ 15 Dakikalık (NU15/PU15) Tuzak Kuralı: 15DK grafikteki sinyaller 1 Saatlik (1S) grafikle onaylanmıyorsa yalnızca öğlene kadar kısa bir tepki/satış olarak kalıp öğleden sonra ters yönde yeni dip veya zirve yaparak tuzak kurabilir! İşleme girmeden önce mutlaka 1S periyodu kontrol edin.
+                            </p>
+                          )}
+
+                          {!isReady ? (
+                            <>
+                              <p>
+                                <strong>• 0 → 1 → 2 Hikayesi:</strong> Hissede <strong>0 başlangıç noktası</strong> (
+                                <strong className="text-white font-mono">{fmtTR(imp?.p0_price)} ₺</strong> ·{" "}
+                                {imp?.t0_date || "—"}) tespit edildi; ancak geçerli bir 1. Dalga ve 2. Dalga (dinlenme / geri çekilme) yapısı henüz tamamlanmadı (Durum: <code>{imp?.durum}</code>).
+                              </p>
+                              <p className="text-amber-300 font-bold">
+                                ⏳ Şu An Ne Yapmalı?: 1-2 dalga düzeltmesi tamamlanmadan erken işlem açmak tehlikelidir. Şu an yalnızca izleme modunda kalınmalı; kesin iptal sınırımız (P0) {fmtTR(imp?.p0_price)} ₺ seviyesidir.
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <div className="space-y-1">
+                                <p>
+                                  <strong>• 0 → 1 → 2 Hikayesi:</strong>
+                                </p>
+                                <p className="pl-3">
+                                  1) <strong>İlk Hareket (W1):</strong> Hisse{" "}
+                                  <strong className="text-white font-mono">{fmtTR(imp.p0_price)} ₺</strong>{" "}
+                                  {isBull ? "dip" : "tepe"} noktasından{" "}
+                                  <strong className="text-white font-mono">{fmtTR(imp.dalga1.p1_price)} ₺</strong> seviyesine{" "}
+                                  <strong>{imp.dalga1.duration_bars} mumda</strong> (%{imp.dalga1.move_pct}) güçlü bir ilk dalga yaptı (Hacim ortalamanın{" "}
+                                  <strong>{imp.dalga1.vol_ratio} katı</strong>).
+                                </p>
+                                <p className="pl-3">
+                                  2) <strong>Dinlenme / Düzeltme (W2):</strong> Ardından{" "}
+                                  <strong className="text-amber-200 font-mono">{fmtTR(imp.dalga2.p2_price)} ₺</strong> seviyesine kadar geri çekilip (1. dalganın{" "}
+                                  <strong>%{Math.round(Number(imp.dalga2.price_retracement_fib) * 100)}&apos;i</strong> kadar sağlıklı düzeltme —{" "}
+                                  <strong>{imp.quality_label}</strong>) güç topladı.
+                                </p>
+                              </div>
+
+                              <div>
+                                <p className="mb-1">
+                                  <strong>• Şu An Ne Yapmalı? (Giriş / Tetik / Stop / Hedef):</strong>
+                                </p>
+                                {p0Violated ? (
+                                  <p className="rounded-xl border border-rose-500/50 bg-rose-950/35 px-3 py-2 text-rose-200 font-bold">
+                                    🚨 P0 KESİN İPTAL STOPU İHLAL EDİLDİ: Güncel fiyat ({fmtTR(item.last_close)} ₺), formasyonun başlangıç ve kesin iptal sınırı olan P0 ({fmtTR(imp.p0_price)} ₺) seviyesini ters yönde kırdı! Ayrıca W1 ({fmtTR(imp.dalga1.p1_price)} ₺) kırılımı henüz gelmemişti. Bu formasyon geçerliliğini yitirmiştir (çöp olmuştur), işlem açılmaz!
+                                  </p>
+                                ) : brokeW1 ? (
+                                  <p className="rounded-xl border border-emerald-500/40 bg-emerald-950/30 px-3 py-2 text-emerald-200 font-bold">
+                                    ✅ ONAYLI 3. DALGA BAŞLADI: 1. dalga sınırı ({fmtTR(imp.dalga1.p1_price)} ₺) kırıldığı için 3. Dalga onaylı olarak başlamıştır! Güncel fiyat: {fmtTR(item.last_close)} ₺ (3. dalgada şimdiye kadar görülen en uç seviye: {fmtTR(imp.dalga3_takip?.extreme_price_after_w2)} ₺). Kesin iptal stopu P0 = {fmtTR(imp.p0_price)} ₺ seviyesidir.
+                                  </p>
+                                ) : (
+                                  <p className="rounded-xl border border-amber-500/45 bg-amber-950/30 px-3 py-2 text-amber-200 font-bold">
+                                    ⏳ HENÜZ ONAYLI GİRİŞ TETİĞİ GELMEDİ: Fiyat şu an {fmtTR(item.last_close)} ₺ seviyesinde. Güvenli onay için 1. dalga ucu olan {fmtTR(imp.dalga1.p1_price)} ₺ seviyesinin kırılması bekleniyor! ({fmtTR(imp.p0_price)} ₺ kesin iptal stopudur; bu seviye kırılırsa formasyon çöp olur).
+                                  </p>
+                                )}
+                              </div>
+
+                              <p>
+                                <strong>• Somut Fiyat Hedefleri ({liveScale === "log" ? "Logaritmik" : "Lineer"}):</strong>{" "}
+                                İlk hedef (<strong>%100</strong>): <strong className="text-sky-300 font-mono">{fmtTR(t100)} ₺</strong> ·{" "}
+                                Ana Dalga 3 Hedefi (<strong>%161.8</strong>): <strong className="text-emerald-300 font-mono">{fmtTR(t161)} ₺</strong> ·{" "}
+                                Uzatma Hedefi (<strong>%261.8</strong>): <strong className="text-violet-300 font-mono">{fmtTR(t261)} ₺</strong> ·{" "}
+                                Büyük Trend (&quot;Arkana Yaslan&quot;) Hedefi (<strong>%361.8</strong>): <strong className="text-amber-300 font-mono">{fmtTR(t361)} ₺</strong>.{" "}
+                                <span className="text-slate-300">
+                                  (100 paylık VİOP kontrat adedi ve Takasbank teminat hesabı için kartın sağ üstündeki <strong>&quot;🧮 VİOP Planı&quot;</strong> butonuna tıklayın).
+                                </span>
+                              </p>
+                            </>
+                          )}
                         </div>
 
                         {!isReady ? (
@@ -782,6 +899,41 @@ export default function ImpulseWfoLabPage() {
                                   })}
                                 </tbody>
                               </table>
+                            </div>
+
+                            {/* FİB ZAMAN TABLOSU SADE TÜRKÇE AÇIKLAMASI */}
+                            <div className="rounded-xl border border-violet-500/30 bg-violet-950/15 p-3.5 space-y-1.5 text-xs text-slate-300 leading-relaxed">
+                              <div className="font-bold text-violet-200">
+                                ⏱️ Fib Zaman Tablosu Ne Demek? (Saati Saatine Açıklama)
+                              </div>
+                              <p>
+                                • <strong>Mod A (W1-Bazlı):</strong> 1. dalganın sürdüğü mum sayısını (<strong>{imp.dalga1.duration_bars} bar</strong>) Fibonacci oranlarıyla çarparak 2. dalga dibinden/tepesinden (<strong>{imp.dalga2.t2_date}</strong>) ileriye doğru 3. dalganın hızlanma/karar saatlerini hesaplar.{" "}
+                                <strong>Mod B (0–2 Sündürme):</strong> 0 başlangıç noktasından 2. dalga sonuna kadar geçen toplam süreyi ileriye sündürerek ana döngü pencerelerini gösterir.
+                              </p>
+                              <p>
+                                • <strong>(Gelecek) Yazan Satırlar:</strong> Henüz saati/tarihi gelmemiş, fiyatta ivmelenme, kırılım veya yeni bir pivot dönüşü beklenen sıradaki kritik zaman pencereleridir.{" "}
+                                {nextFutureA || nextFutureB ? (
+                                  <span className="text-amber-200 font-semibold">
+                                    Bu hissede takip edilecek sıradaki ilk gelecek zaman penceresi:{" "}
+                                    {nextFutureA
+                                      ? `Mod A'da Fib ${nextFutureA.ratio} (+${nextFutureA.offset_bars} mum → ${nextFutureA.target_date})`
+                                      : ""}
+                                    {nextFutureA && nextFutureB ? " ve " : ""}
+                                    {nextFutureB
+                                      ? `Mod B'de Fib ${nextFutureB.ratio} (+${nextFutureB.offset_bars} mum → ${nextFutureB.target_date})`
+                                      : ""}
+                                    .
+                                  </span>
+                                ) : (
+                                  <span>Tüm kısa vadeli Fib zaman pencereleri tamamlanmıştır.</span>
+                                )}
+                              </p>
+                              <p>
+                                • <strong>Parantez İçinde Fiyat Yazan Geçmiş Satırlar:</strong> O zaman penceresinin artık geride kaldığını ve tam o tarihteki/saatteki mumun parantez içindeki fiyattan kapandığını gösterir
+                                {lastPastA
+                                  ? ` (örneğin Fib ${lastPastA.ratio} penceresi ${lastPastA.target_date} tarihinde geride kalmış ve o mum ${fmtTR(lastPastA.close_at_target)} ₺ fiyattan kapanmıştır)`
+                                  : ""}.
+                              </p>
                             </div>
                           </>
                         )}

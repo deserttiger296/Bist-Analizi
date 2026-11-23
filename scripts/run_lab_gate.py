@@ -14,7 +14,7 @@ def main():
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     reports = []
-    for suite in ("resilience", "pu30", "mtf", "compatibility"):
+    for suite in ("resilience", "pu30", "mtf", "viop", "compatibility"):
         result = run_test_suite(suite)
         reports.append(result)
         summary = result.get("summary", {})

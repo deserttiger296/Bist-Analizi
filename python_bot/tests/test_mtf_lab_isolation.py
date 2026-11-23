@@ -132,7 +132,7 @@ def test_lab_routes_are_separate_and_validate_symbols(monkeypatch):
     assert response.status_code == 200 and calls == [["ISCTR"]]
     assert response.headers["cache-control"] == "no-store"
     assert client.get("/api/py/api/mtf-lab?symbols=ISCTR;DROP").status_code == 400
-    assert client.get("/api/py/api/scan/rsi-pu30?interval=15m").status_code == 400
+    assert client.get("/api/py/api/scan/rsi-pu30?interval=5m").status_code == 400
 
 
 def test_classic_api_starts_when_lab_calculation_module_cannot_import():

@@ -11,7 +11,7 @@ from python_bot.engine.data.provider import DataResult, DataStatus
 
 def test_lab_catalog_is_explicit_and_unknown_suite_rejected():
     catalog = signal_api.run_lab_suite(mode="catalog")
-    assert {row["id"] for row in catalog["suites"]} == {"resilience", "pu30", "mtf", "compatibility", "all"}
+    assert {row["id"] for row in catalog["suites"]} == {"resilience", "pu30", "mtf", "viop", "compatibility", "all"}
     with pytest.raises(HTTPException) as exc:
         signal_api.run_lab_suite(mode="pytest", suite="typo")
     assert exc.value.status_code == 400

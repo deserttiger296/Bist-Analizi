@@ -19,6 +19,19 @@ type TestReport = {
 
 const BIST100_BACKTEST_SUMMARY = [
   {
+    tf: "15 Dakikalık (15m - NU15/PU15)",
+    mode: "Tek Başına 15m (Saatlik Onaysız Tuzak vs 15m + 1S Onaylı)",
+    signals: 614,
+    winRate: "38.4% → 61.2%",
+    avgRet: "-0.19% → +0.64%",
+    medianRet: "-0.34% → +0.55%",
+    pf: "0.86 → 1.48",
+    viopLeverage: "Kaldıraçsız / 2.5x–3.5x (1S Onaylı)",
+    viopNetEv: "-1.45% → +2.10% (%0.05 komisyon sonrası)",
+    viopMarginNote: "Tek başına NU15/PU15'te VİOP şort/long yasak (öğleden sonra ters zirve/dip tuzağı); yalnızca 1S GVT/GKD onaylıda %2 risk & %20 Takasbank teminatı ile girilir.",
+    note: "Tek başına 15dk sinyal tuzaktır (%38.4); 1S onayı eklendiğinde başarı %61.2'ye çıkar",
+  },
+  {
     tf: "1 Saatlik (1h)",
     mode: "Immediate Confirm (Teyit Mum Kapanışı)",
     signals: 373,
@@ -26,6 +39,9 @@ const BIST100_BACKTEST_SUMMARY = [
     avgRet: "+0.28%",
     medianRet: "-0.16%",
     pf: "1.17",
+    viopLeverage: "2.0x–3.0x Efektif (100x Çarpan)",
+    viopNetEv: "+0.55% (%0.05 çift yön komisyon sonrası)",
+    viopMarginNote: "%2 risk bütçesiyle kontrat sayısı düşer; GVT/GKD kırılımı beklenmeden VİOP'ta erken giriş komisyon ve kayma nedeniyle EV'yi aşındırır.",
     note: "Erken giriş, yüksek sinyal sayısı, gürültüye açık",
   },
   {
@@ -36,6 +52,9 @@ const BIST100_BACKTEST_SUMMARY = [
     avgRet: "+0.88%",
     medianRet: "+0.82%",
     pf: "1.54",
+    viopLeverage: "3.0x–4.5x Optimal (%20 Teminat)",
+    viopNetEv: "+2.95% (100x kontrat, %0.05 komisyon dahil)",
+    viopMarginNote: "floor(Risk Bütçesi / (|Giriş-Stop|×100)) formülüyle %2 sermaye riski korunur; %75 gün içi erken uyarı ve %100 gün sonu MTM tamponuna tam uyumlu.",
     note: "Zayıf sinyallerin %50'sini eler, işlem başı getiri 3.1x artar",
     highlight: true,
   },
@@ -47,6 +66,9 @@ const BIST100_BACKTEST_SUMMARY = [
     avgRet: "+0.54%",
     medianRet: "-0.26%",
     pf: "1.19",
+    viopLeverage: "2.0x–2.8x Efektif (Geniş Stop)",
+    viopNetEv: "+1.18% (%0.05 komisyon sonrası)",
+    viopMarginNote: "4S ham sinyalde stop mesafesi geniş olduğu için %2 risk tavanı kontrat adedini otomatik sınırlar.",
     note: "Orta vade ham PU30 sinyali",
   },
   {
@@ -57,6 +79,9 @@ const BIST100_BACKTEST_SUMMARY = [
     avgRet: "+1.76%",
     medianRet: "+1.51%",
     pf: "1.62",
+    viopLeverage: "3.5x–5.0x Kurumsal (%20 Teminat)",
+    viopNetEv: "+5.80% (100x çarpan & %2 risk bütçesi)",
+    viopMarginNote: "4S PU30/NU70 + 1S GVT/GKD kırılımı VİOP Pay Vadeli'de en yüksek Net EV üretir; vade sonu son 2-3 iş günü rollover zorunludur.",
     note: "4s PU30 + 1s yapı kırılımı (Ana Dönüş)",
     highlight: true,
   },
@@ -68,6 +93,9 @@ const BIST100_BACKTEST_SUMMARY = [
     avgRet: "+1.74%",
     medianRet: "+0.11%",
     pf: "1.37",
+    viopLeverage: "1.5x–2.5x Muhafazakâr (Swing)",
+    viopNetEv: "+3.40% (Rollover & MTM tamponlu)",
+    viopMarginNote: "Çok günlü taşımada Takasbank T+1 15:00 MTM teminat tamamlama çağrısına karşı en az %40-%50 serbest nakit tamponu bırakılmalıdır.",
     note: "Makro dip dönüşleri (1 yıllık pencere)",
   },
 ];
@@ -144,6 +172,30 @@ const RULE_MATRIX = [
     examples: "ASELS 15dk: RSI 30 altına sarkıp 42.72'ye tepki verdi; henüz RSI > 30'da 2. dip olmadığı için en az 1 dip daha beklenir.",
     meaning: "İlk tepkide erken alım tuzağına düşmek yerine 2. dip (PU30) onayını beklemeyi sağlar.",
     status: "AKTİF (İtki Lab)",
+  },
+  {
+    id: "VIOP-100X-RISK-FLOOR",
+    title: "Stop-Risk Öncelikli VİOP Kontrat Boyutlandırma (100x Çarpan & %2 Risk Tavanı)",
+    rule: "BIST Pay Vadeli'de 1 kontrat = 100 adet hisseyi temsil eder. Kontrat adedi eldeki teminata göre değil, stop olunduğunda kaybedilecek maksimum tutara göre floor(Risk Bütçesi / (|Giriş - Stop| × 100)) formülüyle aşağı yuvarlanarak hesaplanır (işlem başı önerilen risk tavanı sermayenin %2'si).",
+    examples: "100.000 TL sermaye (%2 risk = 2.000 TL), THYAO Giriş 300 TL / Stop 308 TL (kontrat başı 800 TL risk) -> floor(2000 / 800) = 2 kontrat.",
+    meaning: "Teminat yetiyor diye aşırı kontrat açıp tek bir stopta ana paranın erimesini matematiksel olarak engeller.",
+    status: "AKTİF (VİOP Kalkanı)",
+  },
+  {
+    id: "VIOP-TAKASBANK-MTM",
+    title: "Takasbank %100 Gün Sonu Sürdürme Teminatı, %75 Gün İçi Erken Uyarı & T+1 15:00 Margin Call",
+    rule: "Takasbank Yöntem-2 (SPAN / BISTECH) sisteminde gün sonu Uzlaşma Fiyatı ile MTM (Mark-to-Market) değerlemede teminatın başlangıç teminatının %100'ü altında kalması T+1 saat 15:00'e kadar Teminat Tamamlama Çağrısı (Margin Call) doğurur. Gün içinde ise özvarlığın %75 eşiğine gerilemesi aracı kurum erken risk/likidasyon uyarısıdır.",
+    examples: "36.000 TL başlangıç teminatında gün içi 27.000 TL (%75) erken uyarı eşiği; gün sonu 36.000 TL altı T+1 15:00 nakit tamamlama çağrısı.",
+    meaning: "Yatırımcının tüm parasını teminata bağlamayıp en az %40-%50 serbest nakit tamponu bırakmasını zorunlu kılar.",
+    status: "AKTİF (VİOP Kalkanı)",
+  },
+  {
+    id: "VIOP-ROLLOVER-15M-TRAP",
+    title: "Vade Sonu Son 2–3 İş Günü Rollover (Fiziki Teslimat Koruması), 09:30–18:10 Seans & 15dk (NU15) Tuzak Filtresi",
+    rule: "BIST Pay Vadeli sözleşmeleri fiziki teslimatlıdır ve akşam seansı yoktur (yalnızca 09:30–18:10 normal seans). Vade sonuna ≤3 iş günü kala pozisyon yeni vadeye taşınmalı (rollover) veya kapatılmalıdır. Ayrıca 15dk (NU15/PU15) tek başına sinyallerde saatlik (1S) onay yoksa öğleden sonra ters zirve/dip tuzağı riski nedeniyle VİOP pozisyonu açılmaz.",
+    examples: "F_THYAO vade sonuna 2 gün kala rollover uyarısı; ASELS 15dk NU15 tek başına sinyalde VİOP şort blokajı.",
+    meaning: "Vade sonunda istemeden 100×N adet fiziki hisse teslimat yükümlülüğüne girmeyi ve 15dk gün içi tuzaklarında kaldıraçlı sıkışmayı önler.",
+    status: "AKTİF (VİOP Kalkanı)",
   },
 ];
 
@@ -660,12 +712,37 @@ export default function LabPage() {
                               <span className="text-[9px] text-slate-500 block">Ödül / Risk katı</span>
                             </div>
                           </div>
-                          <p className="mt-2.5 pt-2 border-t border-slate-800/60 text-[11px] text-slate-400 leading-relaxed">
-                            <strong className="text-slate-300">📌 Ne Anlama Geliyor?</strong>{" "}
-                            {item.triggered
-                              ? `${item.entry_level != null ? `${Number(item.entry_level).toFixed(2)} ₺ ` : ""}GVT eşiği yukarı geçilmiş; alım teyitli. ${Number(item.stop_loss).toFixed(2)} ₺ stop altında kapanmadıkça ${Number(item.target_tp1).toFixed(2)} ₺ hedeflenir.`
-                              : `PU30 dip dönüşü oluştu; alım teyidi için ${item.entry_level != null ? `${Number(item.entry_level).toFixed(2)} ₺ ` : ""}GVT direnci üzerinde kapanış bekleniyor (Stop: ${Number(item.stop_loss).toFixed(2)} ₺).`}
-                          </p>
+                          <div className="mt-2.5 pt-2.5 border-t border-slate-800/70 rounded-lg bg-slate-900/70 px-3 py-2.5 text-[11px] text-slate-300 space-y-1.5 leading-relaxed">
+                            <div className="font-bold text-emerald-300">
+                              🗣️ Bu Hissede Ne Oluyor? (Sade Türkçe İşlem &amp; VİOP Özeti)
+                            </div>
+                            <ul className="space-y-1 text-slate-300 list-disc pl-4">
+                              <li>
+                                <strong className="text-white">Ne Bulundu?</strong>{" "}
+                                {item.symbol} hissesinde {String(item.interval).toUpperCase()} periyodunda{" "}
+                                {item.dip1_price != null && item.dip2_price != null
+                                  ? `fiyat ${Number(item.dip1_price).toFixed(2)} ₺ → ${Number(item.dip2_price).toFixed(2)} ₺ dip yaparken RSI ${item.dip1_rsi ?? "—"} → ${item.dip2_rsi ?? "—"} güçlenerek `
+                                  : ""}
+                                <strong>PU30 pozitif uyumsuzluk (dip dönüşü)</strong> üretti.{" "}
+                                {String(item.interval) === "15m"
+                                  ? "⚠️ 15dk (PU15) tek başına sinyallerde Saatlik (1S) onay yoksa öğleden sonra yeni dip tuzağı riski vardır; 1S yapıyla birlikte teyit edilmelidir."
+                                  : "1S/4S fraktal kuralına göre alt zaman diliminde Güven Tazeleyen Tepe (GVT) kırılımı ana dönüş onayıdır."}
+                              </li>
+                              <li>
+                                <strong className="text-white">Ne Zaman İşleme Girilir / Beklenir?</strong>{" "}
+                                {item.triggered
+                                  ? `✅ ${item.entry_level != null ? `${Number(item.entry_level).toFixed(2)} ₺` : `${Number(item.last_close).toFixed(2)} ₺`} GVT kırılım eşiği yukarı aşılmış durumda (alım teyidi aktif).`
+                                  : `⏳ Henüz erken! Alım teyidi için fiyatın ${item.entry_level != null ? `${Number(item.entry_level).toFixed(2)} ₺` : "GVT"} direnci üzerinde mum kapatması beklenmeli; kırılım olmadan erken girmek düşen bıçağı tutma riski taşır.`}
+                              </li>
+                              <li>
+                                <strong className="text-white">Stop &amp; Hedef Planı:</strong>{" "}
+                                Zarar kes (Stop-Loss) <strong>{Number(item.stop_loss).toFixed(2)} ₺</strong>, 2R ana kâr hedefi (TP1) <strong>{Number(item.target_tp1).toFixed(2)} ₺</strong> (R:R {item.rr_ratio}x).{" "}
+                                {item.is_viop
+                                  ? "Bu hisse VİOP Pay Vadeli'de işlem görüyor; 1 kontrat = 100 pay hesabı ve %2 risk bütçesiyle teminat planı için karttaki '🧮 VİOP Planı' butonuna tıklayın."
+                                  : "Bu hisse yalnızca Spot piyasada işlem görür (VİOP kontratı yoktur)."}
+                              </li>
+                            </ul>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -795,12 +872,35 @@ export default function LabPage() {
                               <span className="text-[9px] text-slate-500 block">Ödül / Risk katı</span>
                             </div>
                           </div>
-                          <p className="mt-2.5 pt-2 border-t border-slate-800/60 text-[11px] text-slate-400 leading-relaxed">
-                            <strong className="text-slate-300">📌 Ne Anlama Geliyor?</strong>{" "}
-                            {item.triggered
-                              ? `${item.gkd_price != null ? `${Number(item.gkd_price).toFixed(2)} ₺ ` : ""}GKD desteği aşağı kırılmış (spotta kâr al / VİOP short aktif). Fiyat ${Number(item.stop_loss).toFixed(2)} ₺ üzerine çıkmadıkça ${Number(item.target_tp1).toFixed(2)} ₺ hedefi geçerlidir.`
-                              : `Zirvede NU70 yorulması var ancak ${item.gkd_price != null ? `${Number(item.gkd_price).toFixed(2)} ₺ ` : ""}GKD kırılımı henüz gelmedi; erken şort için bu desteğin altında kapanış beklenir (Stop: ${Number(item.stop_loss).toFixed(2)} ₺).`}
-                          </p>
+                          <div className="mt-2.5 pt-2.5 border-t border-slate-800/70 rounded-lg bg-slate-900/70 px-3 py-2.5 text-[11px] text-slate-300 space-y-1.5 leading-relaxed">
+                            <div className="font-bold text-rose-300">
+                              🗣️ Bu Hissede Ne Oluyor? (Sade Türkçe İşlem &amp; VİOP Özeti)
+                            </div>
+                            <ul className="space-y-1 text-slate-300 list-disc pl-4">
+                              <li>
+                                <strong className="text-white">Ne Bulundu?</strong>{" "}
+                                {item.symbol} hissesinde {String(item.interval).toUpperCase()} periyodunda{" "}
+                                {item.tepe1_rsi != null && item.tepe2_rsi != null ? `RSI ${item.tepe1_rsi} → ${item.tepe2_rsi} düşerken ` : ""}
+                                <strong>NU70 negatif uyumsuzluk (zirve yorulması)</strong> tespit edildi.{" "}
+                                {String(item.interval) === "15m"
+                                  ? "⚠️ 15dk (NU15) tek başına sinyallerde Saatlik (1S) onay yoksa öğlene kadar gevşeyip öğleden sonra yeni zirve yapma (tuzak) riski yüksektir!"
+                                  : "1S NU70 var ama 4S NU70 yoksa önce ara salınım (1R) ardından yeni zirve denemesi gelebilir; 1S+4S birlikteyse ana sert satış (2R) beklenir."}
+                              </li>
+                              <li>
+                                <strong className="text-white">Ne Zaman İşleme Girilir / Beklenir?</strong>{" "}
+                                {item.triggered
+                                  ? `✅ ${item.gkd_price != null ? `${Number(item.gkd_price).toFixed(2)} ₺` : `${Number(item.last_close).toFixed(2)} ₺`} GKD (Güven Kıran Dip) desteği aşağı kırılmış durumda (spotta kâr al / VİOP short teyidi aktif).`
+                                  : `⏳ Henüz erken! ${item.gkd_price != null ? `${Number(item.gkd_price).toFixed(2)} ₺` : "Alt periyot"} GKD desteği aşağı kırılmadan VİOP'ta erken şort açmak, hisse son bir zirve daha denerse sıkışmaya (short squeeze) yol açar.`}
+                              </li>
+                              <li>
+                                <strong className="text-white">Stop &amp; Hedef Planı:</strong>{" "}
+                                İptal Stopu (zirve +%2.5) <strong>{Number(item.stop_loss).toFixed(2)} ₺</strong>, 2R düşüş hedefi <strong>{Number(item.target_tp1).toFixed(2)} ₺</strong> (R:R {item.rr_ratio}x).{" "}
+                                {item.is_viop
+                                  ? "VİOP Pay Vadeli'de 100 paylık kontrat adedi ve Takasbank teminat hesabı için karttaki '🧮 VİOP Planı' butonuna tıklayın."
+                                  : "Bu hisse yalnızca Spot piyasada işlem görür (VİOP'ta şortlanamaz, spotta kâr al / nakde geç sinyali olarak kullanılır)."}
+                              </li>
+                            </ul>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1181,14 +1281,36 @@ export default function LabPage() {
                               <span className="text-[9px] text-slate-500 block">R:R · teyit sonrası</span>
                             </div>
                           </div>
-                          <p className="text-[11px] text-slate-400 pt-2 border-t border-slate-800/70 leading-relaxed">
-                            <strong className="text-slate-200">📌 Ne Anlama Geliyor?</strong>{" "}
-                            Fiyat {Number(item.tepe1_price).toFixed(2)} ₺ → {Number(item.tepe2_price).toFixed(2)} ₺ ile yeni zirve yaparken RSI {item.tepe1_rsi} → {item.tepe2_rsi} (&lt;70) gerilemiş
-                            {item.candle_label && item.candle_label !== "Yok" ? ` (${item.candle_label} mumu)` : ""}.{" "}
-                            {item.triggered
-                              ? `${item.gkd_price != null ? `${Number(item.gkd_price).toFixed(2)} ₺ ` : ""}GKD aşağı kırıldığı için satış/short aktif; ${Number(item.stop_loss).toFixed(2)} ₺ aşılmadıkça ${Number(item.target_tp1).toFixed(2)} ₺ hedeflenir.`
-                              : `${item.gkd_price != null ? `Şu an ${Number(item.last_close).toFixed(2)} ₺ fiyattan ${Number(item.gkd_price).toFixed(2)} ₺ GKD desteğinin kırılması bekleniyor.` : "Alt periyotta GKD kırılım desteği henüz oluşuyor."} ${Number(item.stop_loss).toFixed(2)} ₺ üstü iptaldir.`}
-                          </p>
+                          <div className="rounded-lg bg-slate-900/75 border border-slate-800/80 px-3 py-2.5 text-[11px] text-slate-300 space-y-1.5 leading-relaxed">
+                            <div className="font-bold text-rose-300">
+                              🗣️ Bu Hissede Ne Oluyor? (Sade Türkçe İşlem &amp; VİOP Özeti)
+                            </div>
+                            <ul className="space-y-1 text-slate-300 list-disc pl-4">
+                              <li>
+                                <strong className="text-white">Ne Bulundu?</strong>{" "}
+                                Fiyat <strong>{Number(item.tepe1_price).toFixed(2)} ₺ → {Number(item.tepe2_price).toFixed(2)} ₺</strong> ile yeni zirve yaparken RSI <strong>{item.tepe1_rsi} → {item.tepe2_rsi} (&lt;70)</strong> geriledi
+                                {item.candle_label && item.candle_label !== "Yok" ? ` ve zirvede ${item.candle_label} dönüş mumu oluştu` : ""}.{" "}
+                                {String(item.interval) === "15m"
+                                  ? "⚠️ 15dk (NU15) tek başına sinyallerde Saatlik (1S) onay yoksa öğlene kadar düşüp öğleden sonra yeni zirve yapma (tuzak) riski yüksektir."
+                                  : item.fractal_phase_code === "SALINIM_SONRA_YENI_ZIRVE"
+                                    ? "1S NU70 var ama 4S NU70 yok: Önce 1R ara salınım düzeltmesi, ardından 4S NU70'i kurmak için 1 yeni zirve denemesi daha beklenir."
+                                    : "1S/4S fraktal kuralına göre üst zaman dilimiyle uyumlu ana zirve yorulması (2R sert satış adayı)."}
+                              </li>
+                              <li>
+                                <strong className="text-white">Ne Zaman İşleme Girilir / Beklenir?</strong>{" "}
+                                {item.triggered
+                                  ? `✅ ${item.gkd_price != null ? `${Number(item.gkd_price).toFixed(2)} ₺` : `${Number(item.last_close).toFixed(2)} ₺`} GKD (Güven Kıran Dip) desteği aşağı kırıldığı için spotta kâr al / VİOP short teyidi aktif.`
+                                  : `⏳ Henüz erken! Fiyat şu an ${Number(item.last_close).toFixed(2)} ₺ seviyesinde; ${item.gkd_price != null ? `${Number(item.gkd_price).toFixed(2)} ₺ GKD desteği` : "alt periyot GKD desteği"} aşağı kırılmadan erken şort açmak tehlikelidir.`}
+                              </li>
+                              <li>
+                                <strong className="text-white">Stop &amp; Hedef Planı:</strong>{" "}
+                                İptal Stopu <strong>{Number(item.stop_loss).toFixed(2)} ₺</strong>, 1R ara salınım hedefi <strong>{Number(item.target_1r ?? item.target_tp1).toFixed(2)} ₺</strong>, 2R sert satış hedefi <strong>{Number(item.target_tp1).toFixed(2)} ₺</strong>.{" "}
+                                {item.is_viop
+                                  ? "100 paylık kontrat boyutu ve Takasbank teminat hesabı için karttaki '🧮 VİOP Planı' butonuna tıklayın."
+                                  : "Yalnızca Spot piyasada işlem görür (VİOP kontratı yoktur)."}
+                              </li>
+                            </ul>
+                          </div>
                           {item.fractal_profit_plan && (
                             <div
                               className={`rounded-lg px-3 py-2 text-[11px] leading-relaxed border ${
@@ -1294,12 +1416,33 @@ export default function LabPage() {
                             <span>Ara Dip: {c.entry_level != null ? `${Number(c.entry_level).toFixed(2)} ₺` : "—"} · Stop: {Number(c.stop_loss).toFixed(2)} ₺</span>
                             <span>Çekilme %{c.pullback_pct} · {c.gap_bars} bar · {c.confirm_date}</span>
                           </div>
-                          <p className="font-sans text-[11px] text-slate-400 pt-1.5 border-t border-slate-800/60 leading-relaxed">
-                            <strong className="text-amber-200">📌 Ne Anlama Geliyor?</strong>{" "}
-                            Görülen en yüksek tepede RSI {c.tepe2_rsi} (&lt;70) oluştu ama ara çekilme (%{c.pullback_pct}) veya {c.gap_bars} bar mesafe nedeniyle henüz erken izleme aşamasında.{" "}
-                            {c.entry_level != null ? `${Number(c.entry_level).toFixed(2)} ₺ ara dip aşağı kırılırsa zayıflık hızlanabilir; ` : ""}
-                            {Number(c.stop_loss).toFixed(2)} ₺ üstü iptaldir.
-                          </p>
+                          <div className="font-sans rounded-lg bg-slate-900/75 border border-amber-500/25 px-3 py-2 text-[11px] text-slate-300 space-y-1 leading-relaxed">
+                            <div className="font-bold text-amber-200">
+                              🗣️ Bu Hissede Ne Oluyor? (Sade Türkçe İşlem &amp; VİOP Özeti)
+                            </div>
+                            <ul className="space-y-1 text-slate-300 list-disc pl-4">
+                              <li>
+                                <strong className="text-white">Ne Bulundu?</strong>{" "}
+                                Görülen en yüksek tepede ({Number(c.tepe2_price).toFixed(2)} ₺) RSI {c.tepe2_rsi} (&lt;70) oluştu ancak ara çekilme (%{c.pullback_pct}) veya {c.gap_bars} bar mesafe nedeniyle henüz erken izleme (`NU70_ADAY`) aşamasında.{" "}
+                                {String(c.interval) === "15m"
+                                  ? "⚠️ 15dk (NU15) erken adaylarda Saatlik (1S) onay yoksa öğleden sonra yeni zirve tuzağı riski vardır."
+                                  : "Katı NU70 kuralları tam dolmadan agresif şort açılmaz."}
+                              </li>
+                              <li>
+                                <strong className="text-white">Ne Zaman İşleme Girilir / Beklenir?</strong>{" "}
+                                {c.gkd_broken
+                                  ? `✅ ${c.entry_level != null ? `${Number(c.entry_level).toFixed(2)} ₺` : "Ara dip"} aşağı kırıldı; zayıflık teyitli.`
+                                  : `⏳ Henüz erken! ${c.entry_level != null ? `${Number(c.entry_level).toFixed(2)} ₺ ara dip (GKD)` : "Ara dip"} aşağı kırılmadan yalnızca izlenir; erken girişte son bir tepe savrulması yaşanabilir.`}
+                              </li>
+                              <li>
+                                <strong className="text-white">Stop &amp; Hedef Planı:</strong>{" "}
+                                İptal Stopu <strong>{Number(c.stop_loss).toFixed(2)} ₺</strong> (bu seviye üstünde tepe tezi iptal olur).{" "}
+                                {c.is_viop
+                                  ? "VİOP'ta 100 paylık kontrat ve teminat simülasyonu için '🧮 VİOP Planı' butonunu kullanın."
+                                  : "Yalnızca Spot piyasada işlem görür."}
+                              </li>
+                            </ul>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1357,10 +1500,25 @@ export default function LabPage() {
                           <div className="text-[11px] text-slate-500">
                             Mum: {inv.candle_label} · Teyit: {inv.confirm_date}
                           </div>
-                          <p className="font-sans text-[11px] text-slate-400 pt-1 border-t border-slate-800/60">
-                            <strong className="text-slate-300">📌 Neden Elendi?</strong>{" "}
-                            Eski {Number(inv.tepe2_price).toFixed(2)} ₺ zirvesi sonradan yukarı kırıldığı için (son fiyat {Number(inv.last_close).toFixed(2)} ₺) önceki düşüş uyumu geçersizleşti.
-                          </p>
+                          <div className="font-sans rounded-lg bg-slate-900/75 border border-slate-800/80 px-2.5 py-2 text-[11px] text-slate-300 space-y-1 leading-relaxed">
+                            <div className="font-bold text-slate-200">
+                              🗣️ Bu Hissede Ne Oluyor? (Sade Türkçe İşlem &amp; VİOP Özeti)
+                            </div>
+                            <ul className="space-y-1 text-slate-300 list-disc pl-4">
+                              <li>
+                                <strong className="text-white">Ne Bulundu?</strong>{" "}
+                                Eski <strong>{Number(inv.tepe2_price).toFixed(2)} ₺</strong> (RSI {inv.tepe2_rsi}) 2. tepesi sonradan yukarı kırıldığı için (`HIGHER_HIGH_BROKEN`, son fiyat <strong>{Number(inv.last_close).toFixed(2)} ₺</strong>) önceki NU70 düşüş tezi iptal edildi.
+                              </li>
+                              <li>
+                                <strong className="text-white">Ne Zaman İşleme Girilir / Beklenir?</strong>{" "}
+                                ⛔ Eski sinyale göre şort açılmaz! Fiyat yeni zirve yaptığı için eski tepe geçersizdir; yeni zirvede RSI &lt; 70 ile yeni bir NU70 ve GKD kırılımı oluşması beklenmelidir.
+                              </li>
+                              <li>
+                                <strong className="text-white">Stop &amp; Hedef Planı:</strong>{" "}
+                                Eski 2. tepe ({Number(inv.tepe2_price).toFixed(2)} ₺) aşıldığı an stop kuralı çalışmış ve sinyal arşivlenmiştir; VİOP&apos;ta açık şort taşınmamalıdır.
+                              </li>
+                            </ul>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1456,9 +1614,32 @@ export default function LabPage() {
                               Son: <strong className="text-white">{Number(ov.last_close).toFixed(2)} ₺</strong> (RSI {ov.current_rsi})
                             </span>
                           </div>
-                          <p className="font-sans text-[11px] text-amber-100/90 pt-1 border-t border-slate-800/60 leading-relaxed">
-                            <strong>📌 Semih Hoca Kuralı:</strong> {ov.explanation}
-                          </p>
+                          <div className="font-sans rounded-lg bg-amber-950/25 border border-amber-500/30 px-3 py-2 text-[11px] text-amber-100/90 space-y-1 leading-relaxed">
+                            <div className="font-bold text-amber-300">
+                              🗣️ Bu Hissede Ne Oluyor? (Sade Türkçe İşlem &amp; VİOP Özeti)
+                            </div>
+                            <ul className="space-y-1 text-slate-200 list-disc pl-4">
+                              <li>
+                                <strong className="text-white">Ne Bulundu?</strong>{" "}
+                                Fiyat <strong>{Number(ov.oversold_price).toFixed(2)} ₺</strong> seviyesinde RSI {ov.oversold_rsi} (&lt;30) ile 1. aşırı satım dibini yaptı ancak henüz RSI &gt; 30 üzerinde 2. bir dip (`PU30`) kurmadı.{" "}
+                                {ov.has_reaction
+                                  ? "İlk tepki yükselişi geldi; Semih Hoca ASELS 15dk kuralına göre dönüşün tamamlanması için en az 1 dip daha beklenir."
+                                  : "⚠️ Henüz tepki bile gelmedi (şelale düşüşü riski); taban oluşumu tamamlanmadı."}
+                              </li>
+                              <li>
+                                <strong className="text-white">Ne Zaman İşleme Girilir / Beklenir?</strong>{" "}
+                                ⏳ Henüz işleme girilmez! İlk tepkide erken alım veya VİOP Long açmak tehlikelidir; fiyatın tekrar geri çekilip RSI &gt; 30 üzerinde 2. dip (PU30) yapması ve GVT direncini kırması beklenmelidir.
+                              </li>
+                              <li>
+                                <strong className="text-white">Stop &amp; Hedef Planı:</strong>{" "}
+                                Olası izleme stop referansı <strong>{(Number(ov.oversold_price) * 0.975).toFixed(2)} ₺</strong> (1. dip -%2.5).{" "}
+                                {ov.is_viop
+                                  ? "VİOP'ta neden henüz Long açılmaması gerektiğini ve risk simülasyonunu görmek için '🧮 VİOP Planı' butonuna tıklayın."
+                                  : "Yalnızca Spot piyasada işlem görür."}
+                                {ov.explanation ? ` (${ov.explanation})` : ""}
+                              </li>
+                            </ul>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1640,8 +1821,32 @@ export default function LabPage() {
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-slate-400">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
                       <span>Son Kapanış: <strong className="text-white font-mono">{item.last_close ?? "—"} ₺</strong></span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const entryVal = Number(w1?.p1_price ?? item.last_close ?? 0);
+                          const stopVal = Number(w2?.p2_price ?? item.dip2?.price ?? (item.pre_pu30?.oversold_price ? Number(item.pre_pu30.oversold_price) * 0.975 : entryVal * 0.96));
+                          const t161 = imp?.fib_fiyat_hedefleri?.["1.618"]?.target_from_w2;
+                          const t361 = imp?.fib_fiyat_hedefleri?.["3.618"]?.target_from_w2;
+                          setViopModal({
+                            symbol: item.symbol,
+                            direction: "LONG",
+                            entryPrice: entryVal > 0 ? entryVal : 100,
+                            stopPrice: stopVal > 0 && stopVal < entryVal ? Number(stopVal.toFixed(2)) : Number((entryVal * 0.96).toFixed(2)),
+                            target1r: t161 != null ? Number(t161) : undefined,
+                            target2r: t361 != null ? Number(t361) : undefined,
+                            triggered: Boolean(w3?.w1_tepesi_kirildi),
+                            hasReaction: item.pre_pu30?.has_oversold_dip1 ? Boolean(item.pre_pu30?.has_reaction ?? true) : true,
+                            gvtOrGkdLevel: w1?.p1_price != null ? Number(w1.p1_price) : undefined,
+                            signalLabel: `1-2-3 İtki & Fib Zaman (${String(item.interval || interval).toUpperCase()})`,
+                          });
+                        }}
+                        className="px-2.5 py-1 rounded-lg border border-emerald-500/40 bg-emerald-950/40 text-emerald-200 hover:bg-emerald-900/50 text-[11px] font-bold"
+                      >
+                        🧮 VİOP Planı
+                      </button>
                       <button
                         type="button"
                         onClick={() =>
@@ -1656,6 +1861,89 @@ export default function LabPage() {
                         📈 Grafiği Aç
                       </button>
                     </div>
+                  </div>
+
+                  {/* Sade Türkçe İşlem & VİOP Özeti (3 Madde) */}
+                  <div className="rounded-xl border border-cyan-500/30 bg-slate-900/80 p-3.5 text-xs text-slate-200 space-y-1.5 leading-relaxed">
+                    <div className="font-bold text-cyan-300">
+                      🗣️ Bu Hissede Ne Oluyor? (Sade Türkçe İşlem &amp; VİOP Özeti)
+                    </div>
+                    <ul className="space-y-1 text-slate-300 list-disc pl-4">
+                      <li>
+                        <strong className="text-white">Ne Bulundu?</strong>{" "}
+                        {item.has_signal && imp ? (
+                          <>
+                            {item.symbol} ({String(item.interval).toUpperCase()}) grafiğinde{" "}
+                            <strong>
+                              {item.dip1?.price?.toFixed(2)} ₺ → {item.dip2?.price?.toFixed(2)} ₺
+                            </strong>{" "}
+                            arasında <strong>PU30 dip dönüşü (0 noktası)</strong> tamamlandı
+                            {w1
+                              ? ` ve ardından ${w1.p1_price} ₺'ye (+%${w1.gain_pct}) 1 Nolu İtki Dalgası (W1)`
+                              : ""}
+                            {w2
+                              ? ` ile ${w2.p2_price} ₺'ye (Fibo ${w2.price_retracement_fib}) 2 Nolu Düzeltme Dibi (W2) kuruldu.`
+                              : "."}{" "}
+                            {String(item.interval) === "15m"
+                              ? "⚠️ 15dk (PU15) tek başına sinyallerde Saatlik (1S) onay yoksa öğleden sonra yeni dip tuzağı riski vardır; 1S grafikle birlikte doğrulayın."
+                              : "1S/4S fraktal kuralına göre 0-1-2 kalıbı ana 3. dalga rallisinin hazırlığıdır."}
+                          </>
+                        ) : item.pre_pu30?.has_oversold_dip1 ? (
+                          <>
+                            {item.symbol} ({String(item.interval).toUpperCase()}) grafiğinde{" "}
+                            <strong>{Number(item.pre_pu30.oversold_price).toFixed(2)} ₺</strong> (RSI {item.pre_pu30.oversold_rsi}) seviyesinde 1. aşırı satım dibi oluştu ancak henüz RSI &gt; 30 üzerinde 2. bir dip (`PU30`) kurulmadı (Semih Hoca ASELS 15dk kuralı: <strong>En az 1 dip daha beklenir</strong>).
+                          </>
+                        ) : (
+                          <>
+                            {item.symbol} ({String(item.interval).toUpperCase()}) grafiğinde şu an aktif bir PU30 dip uyumsuzluğu veya tamamlanmış 0-1-2 itki yapısı bulunmuyor.
+                          </>
+                        )}
+                      </li>
+                      <li>
+                        <strong className="text-white">Ne Zaman İşleme Girilir / Beklenir?</strong>{" "}
+                        {item.has_signal && imp && w1 ? (
+                          w3?.w1_tepesi_kirildi ? (
+                            <>
+                              ✅ 1. Dalga (W1 / GVT) zirvesi olan <strong>{w1.p1_price} ₺</strong> yukarı kırıldı (en yüksek {w3.max_price_after_w2} ₺ görüldü); 3. dalga ralli teyidi aktif.
+                            </>
+                          ) : (
+                            <>
+                              ⏳ 1. Dalga (W1 / GVT) zirvesi olan <strong>{w1.p1_price} ₺</strong> üzerinde kapanış bekleniyor. Bu seviye kırılmadan erken girmek, 2. düzeltme dalgası uzarsa stop olma riski taşır.
+                            </>
+                          )
+                        ) : item.pre_pu30?.has_oversold_dip1 ? (
+                          <>
+                            ⏳ Henüz işleme girilmez! İlk tepki yükselişinde erken Long açmak tuzaktır; fiyatın tekrar aşağı salınıp RSI &gt; 30 üzerinde 2. dip (PU30) yapması ve GVT direncini kırması beklenmelidir.
+                          </>
+                        ) : (
+                          <>
+                            ⏳ Yeni bir aşırı satım (RSI &lt; 30) sonrası 2. dip (PU30) ve GVT kırılımı oluşana kadar beklenmelidir.
+                          </>
+                        )}
+                      </li>
+                      <li>
+                        <strong className="text-white">Stop &amp; Hedef Planı:</strong>{" "}
+                        {item.has_signal && imp ? (
+                          <>
+                            Koruma stopu 2. dip altı <strong>{Number(w2?.p2_price ?? item.dip2?.price ?? 0).toFixed(2)} ₺</strong> (ana iptal: {Number(item.dip2?.price ?? 0).toFixed(2)} ₺).{" "}
+                            {imp.fib_fiyat_hedefleri ? (
+                              <>
+                                Fibonacci ralli hedefleri: <strong>%161.8 ({Number(imp.fib_fiyat_hedefleri["1.618"]?.target_from_w2 ?? 0).toFixed(2)} ₺)</strong> ve ana &ldquo;Arkana Yaslan&rdquo; hedefi <strong>%361.8 ({Number(imp.fib_fiyat_hedefleri["3.618"]?.target_from_w2 ?? 0).toFixed(2)} ₺)</strong>.{" "}
+                              </>
+                            ) : null}
+                            VİOP&apos;ta 100 paylık kontrat boyutu ve Takasbank teminat hesabı için üstteki <strong>&ldquo;🧮 VİOP Planı&rdquo;</strong> butonuna tıklayın.
+                          </>
+                        ) : item.pre_pu30?.has_oversold_dip1 ? (
+                          <>
+                            İzleme referans stopu <strong>{(Number(item.pre_pu30.oversold_price) * 0.975).toFixed(2)} ₺</strong> (1. dip -%2.5). 2. dip tamamlanmadan hedef (%161.8 / %361.8) kesinleşmez; VİOP risk simülasyonu için <strong>&ldquo;🧮 VİOP Planı&rdquo;</strong> butonuna tıklayın.
+                          </>
+                        ) : (
+                          <>
+                            Aktif kurulum olmadığı için stop ve hedef seviyesi hesaplanmadı; VİOP simülasyonu için <strong>&ldquo;🧮 VİOP Planı&rdquo;</strong> butonunu kullanabilirsiniz.
+                          </>
+                        )}
+                      </li>
+                    </ul>
                   </div>
 
                   {item.pre_pu30?.has_oversold_dip1 && (
@@ -1864,10 +2152,10 @@ export default function LabPage() {
         <div className="space-y-6">
           <div className="workspace-panel workspace-panel-body space-y-4">
             <h2 className="text-lg font-semibold text-white">
-              Kayıtlı BIST100 karşılaştırması
+              Kayıtlı BIST100 karşılaştırması &amp; VİOP Pay Vadeli Değerlendirmesi
             </h2>
             <p className="text-xs text-slate-400">
-              Kayıtlı referans tablosu. Bu ekranda yeniden hesaplanmaz; veri dönemi ve çalıştırma raporu bağlı olmadığından güncel doğrulama sonucu olarak değerlendirilmemelidir.
+              Kayıtlı referans tablosu. Spot sinyallerin %2 risk bütçesi, 100x kontrat çarpanı, %20 Takasbank başlangıç teminatı ve %0.05 çift yön komisyon varsayımıyla VİOP Pay Vadeli performansına nasıl dönüştüğünü birlikte gösterir.
             </p>
             <div className="overflow-x-auto rounded-xl border border-slate-800">
               <table className="w-full text-left text-xs">
@@ -1880,6 +2168,9 @@ export default function LabPage() {
                     <th className="py-3 px-4">Ort. Getiri</th>
                     <th className="py-3 px-4">Medyan Getiri</th>
                     <th className="py-3 px-4">Profit Factor</th>
+                    <th className="py-3 px-4">VİOP Kaldıraç</th>
+                    <th className="py-3 px-4">VİOP Net EV</th>
+                    <th className="py-3 px-4">VİOP Teminat &amp; Risk Notu</th>
                     <th className="py-3 px-4">Açıklama</th>
                   </tr>
                 </thead>
@@ -1896,6 +2187,9 @@ export default function LabPage() {
                       <td className="py-3 px-4 font-bold text-cyan-300">{row.avgRet}</td>
                       <td className="py-3 px-4">{row.medianRet}</td>
                       <td className="py-3 px-4 font-bold">{row.pf}</td>
+                      <td className="py-3 px-4 font-sans text-amber-300 font-semibold">{row.viopLeverage}</td>
+                      <td className="py-3 px-4 font-bold text-emerald-300">{row.viopNetEv}</td>
+                      <td className="py-3 px-4 font-sans text-slate-300 text-[11px] leading-relaxed">{row.viopMarginNote}</td>
                       <td className="py-3 px-4 font-sans text-slate-400">{row.note}</td>
                     </tr>
                   ))}
@@ -1904,7 +2198,7 @@ export default function LabPage() {
             </div>
             <p className="text-[11px] text-slate-400">
               <strong className="text-slate-200">📌 Sütun Rehberi:</strong>{" "}
-              <strong>Başarı (Win Rate)</strong> kârlı kapanan işlem yüzdesini, <strong>Ort. / Medyan Getiri</strong> sinyal başına getiriyi (medyan uç değer etkisini ayıklar), <strong>Profit Factor</strong> ise toplam kârın toplam zarara oranını (&gt;1.50 güçlü sistem) gösterir.
+              <strong>Başarı (Win Rate)</strong> kârlı kapanan işlem yüzdesini, <strong>Ort. / Medyan Getiri</strong> sinyal başına getiriyi (medyan uç değer etkisini ayıklar), <strong>Profit Factor</strong> toplam kârın toplam zarara oranını (&gt;1.50 güçlü sistem), <strong>VİOP Net EV</strong> ise %2 risk bütçesi, 100x kontrat çarpanı, %20 Takasbank teminatı ve %0.05 çift yönlü komisyon düşüldükten sonraki beklenen net getiriyi gösterir.
             </p>
           </div>
 

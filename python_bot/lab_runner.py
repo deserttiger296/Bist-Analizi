@@ -12,7 +12,8 @@ SUITES = {
     "resilience": {"label": "Veri güvenilirliği", "description": "Timeout / 429, önbellek, 15dk indirme ve minimum mum korumaları.", "targets": ["test_data_resilience.py"]},
     "pu30": {"label": "Klasik RSI kuralları", "description": "PU30 / NU70 eşikleri, güven seviyeleri ve kapanmış mum kuralları.", "targets": ["test_pu30_strict.py", "test_hourly_trust_level.py", "test_rsi_pu30.py", "test_screener_cli.py", "test_nu70_semih_rules.py"]},
     "mtf": {"label": "MTF strateji laboratuvarı", "description": "Çoklu zaman dilimi, günlük veto, alt periyot baskısı ve klasik motor izolasyonu.", "targets": ["test_pu30_mtf.py", "test_mtf_lab_isolation.py"]},
-    "compatibility": {"label": "Uyumluluk kapısı", "description": "Ortak arayüz, Lab raporları, API sözleşmeleri, Shield risk sınırları ve klasik / MTF izolasyonu. Üretim öncesi zorunlu.", "targets": ["test_lab_runner.py", "test_vercel_engine.py", "test_mtf_lab_isolation.py", "test_shield_risk.py", "test_ui_shell.py"]},
+    "viop": {"label": "VİOP & Sade Türkçe Rehber", "description": "100x Pay Vadeli kontrat motoru, Takasbank %100/%75 teminat, 2.5x/4.0x kaldıraç, vade taşıma (rollover), 25+ sözlük terimi ve SSR bileşen testleri.", "targets": ["test_viop_engine.py"]},
+    "compatibility": {"label": "Uyumluluk kapısı", "description": "Ortak arayüz, Lab raporları, API sözleşmeleri, Shield risk sınırları, VİOP rehber uyumu ve klasik / MTF izolasyonu. Üretim öncesi zorunlu.", "targets": ["test_lab_runner.py", "test_vercel_engine.py", "test_mtf_lab_isolation.py", "test_shield_risk.py", "test_ui_shell.py", "test_viop_engine.py"]},
     "all": {"label": "Tüm regresyonlar", "description": "Depodaki tüm Python testleri; daha uzun sürebilir.", "targets": []},
 }
 

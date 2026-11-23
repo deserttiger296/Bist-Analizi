@@ -206,7 +206,7 @@ def run_agentic_council(
             ],
         }
 
-    # Çapraz zaman dilimi kontrolü (1s <-> 4s)
+    # Çapraz zaman dilimi kontrolü (15dk -> 1s, 1s <-> 4s, 1g -> 1s)
     cross_tf = "4h" if interval == "1h" else "1h"
     cross_res = provider.fetch_ohlcv(symbol, interval=cross_tf, include_forming_bar=False)
     cross_cfg = dataclasses.replace(
@@ -220,8 +220,8 @@ def run_agentic_council(
         and detect_rsi_pu30(cross_res.df, cross_cfg, interval=cross_tf)
     )
 
-    h1_df = df if interval == "1h" else (cross_res.df if cross_tf == "1h" else None)
-    apply_hourly_trust_level(sig, df, h1_df, interval)
+    sub_df = df if interval in ("15m", "1h") else (cross_res.df if cross_tf == "1h" else None)
+    apply_hourly_trust_level(sig, df, sub_df, interval)
     trust = sig.get("saatlik_seviye") or {}
     impulse = analyze_impulse_and_fib_time(df, sig)
     w1 = impulse.get("dalga1")
@@ -272,7 +272,12 @@ def run_agentic_council(
     stop_dist_pct = round((last_close / stop_price - 1.0) * 100.0, 2) if stop_price > 0 else 0.0
     risk_warnings: List[str] = []
     if not has_cross:
-        risk_warnings.append("Üst zaman dilimi (4s) teyidi yok; düşüş trendinde kısa tepki kalabilir.")
+        if interval == "15m":
+            risk_warnings.append(
+                "15dk (NU15/PU15) tek başına sinyal: Saatlik (1s) onay yokken öğlene kadar tepki/düşüş yapıp öğleden sonra ters yönde yeni dip/zirve alma (tuzak) riski yüksektir."
+            )
+        else:
+            risk_warnings.append("Üst zaman dilimi (4s) teyidi yok; düşüş trendinde kısa tepki kalabilir.")
     if not trust.get("kirildi"):
         risk_warnings.append("Saatlik güven tazeleyen tepe henüz kapanışla kırılmadı (erken giriş riski).")
     if w1 and float(w1.get("volume_multiplier", 0.0)) < 1.0:
