@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { verifySession } from "@/lib/auth";
+import { isAdminEmail, verifySession } from "@/lib/auth";
 import { readTelemetryErrors, recordTelemetryError } from "@/lib/telemetry";
 
 export const dynamic = "force-dynamic";
@@ -17,9 +17,10 @@ function isAuthorizedWatchdogRequest(req: NextRequest): boolean {
     }
   }
 
-  // 2. Authenticated user session cookie
+  // 2. Authenticated ADMIN user session cookie
   const sessionCookie = req.cookies.get("bist_session")?.value;
-  if (sessionCookie && verifySession(sessionCookie)) {
+  const sessionUser = sessionCookie ? verifySession(sessionCookie) : null;
+  if (sessionUser && isAdminEmail(sessionUser.email)) {
     return true;
   }
 

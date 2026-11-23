@@ -90,3 +90,34 @@ CREATE TABLE IF NOT EXISTS fundamentals (
 
 CREATE INDEX IF NOT EXISTS idx_fundamentals_symbol_period ON fundamentals (symbol, period_end DESC);
 CREATE INDEX IF NOT EXISTS idx_fundamentals_reported_at ON fundamentals (reported_at);
+
+-- Authentication audit logs (Google OAuth logins & blocked attempts)
+CREATE TABLE IF NOT EXISTS auth_login_logs (
+  id TEXT PRIMARY KEY,
+  google_sub TEXT,
+  email TEXT NOT NULL,
+  name TEXT,
+  picture TEXT,
+  status TEXT NOT NULL,            -- 'ALLOWED' | 'BLOCKED' | 'ERROR'
+  block_reason TEXT,
+  ip_address TEXT,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_login_logs_created_at ON auth_login_logs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_auth_login_logs_email ON auth_login_logs (email, created_at DESC);
+
+-- Banned accounts (email / Google sub level access denial)
+CREATE TABLE IF NOT EXISTS banned_users (
+  email TEXT PRIMARY KEY,          -- normalized lowercase email
+  google_sub TEXT,
+  reason TEXT,
+  banned_by TEXT,
+  banned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ,
+  active BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE INDEX IF NOT EXISTS idx_banned_users_active ON banned_users (active, banned_at DESC);
+CREATE INDEX IF NOT EXISTS idx_banned_users_google_sub ON banned_users (google_sub) WHERE google_sub IS NOT NULL;

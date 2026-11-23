@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { signSession, verifyOAuthState } from "@/lib/auth";
+import {
+  clearSessionCookie,
+  getClientIp,
+  normalizeEmail,
+  signSession,
+  verifyOAuthState,
+} from "@/lib/auth";
+import { isUserBanned, recordLoginEvent } from "@/lib/authAudit";
 import { recordTelemetryError } from "@/lib/telemetry";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +33,8 @@ export async function GET(req: NextRequest) {
   const state = searchParams.get("state");
   const error = searchParams.get("error");
   const origin = getOrigin(req);
+  const ipAddress = getClientIp(req.headers);
+  const userAgent = req.headers.get("user-agent") || "unknown";
 
   if (error) {
     return NextResponse.redirect(`${origin}/login?auth_error=${encodeURIComponent(error)}`);
@@ -35,17 +44,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${origin}/login?auth_error=missing_code`);
   }
 
-  // Lenient state verification: validates HMAC state or cookie when available.
-  // In mobile Safari, iOS and in-app webviews (WhatsApp/Telegram), cross-site cookie isolation
-  // can drop cookies or strip query parameters. We log mismatched state but proceed to Google's
-  // token exchange which cryptographically validates the one-time authorization code.
+  // Enforce cryptographic HMAC state verification (works statelessly even when
+  // mobile Safari / in-app WebViews drop the oauth_state cookie) to prevent Login CSRF.
   const savedState = req.cookies.get("oauth_state")?.value;
-  const isStateValid = verifyOAuthState(state) || (Boolean(savedState) && savedState === state);
-  if (!isStateValid) {
-    console.warn("[OAuth callback] State missing or mismatched, relying on Google token exchange verification:", {
-      state,
-      savedState,
+  const hmacValid = verifyOAuthState(state);
+  const cookieMatches = !savedState || savedState === state;
+  if (!hmacValid || !cookieMatches) {
+    console.warn("[OAuth callback] Rejected invalid OAuth state", {
+      hmacValid,
+      hasSavedState: Boolean(savedState),
+      ipAddress,
     });
+    recordTelemetryError({
+      source: "oauth_callback",
+      url: req.url,
+      userAgent,
+      message: "OAuth callback rejected due to invalid CSRF state",
+      context: { stage: "state_check", hmacValid, hasSavedState: Boolean(savedState), ipAddress },
+    });
+    return NextResponse.redirect(`${origin}/login?auth_error=invalid_state`);
   }
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -76,7 +93,7 @@ export async function GET(req: NextRequest) {
       recordTelemetryError({
         source: "oauth_callback",
         url: req.url,
-        userAgent: req.headers.get("user-agent") || "unknown",
+        userAgent,
         message: `OAuth token exchange failed (HTTP ${tokenRes.status})`,
         stack: errText,
         context: { stage: "token_exchange", status: tokenRes.status },
@@ -98,7 +115,7 @@ export async function GET(req: NextRequest) {
       recordTelemetryError({
         source: "oauth_callback",
         url: req.url,
-        userAgent: req.headers.get("user-agent") || "unknown",
+        userAgent,
         message: `OAuth userinfo failed (HTTP ${userRes.status})`,
         stack: userErrText,
         context: { stage: "userinfo", status: userRes.status },
@@ -107,15 +124,67 @@ export async function GET(req: NextRequest) {
     }
 
     const profile = await userRes.json();
+    const email = normalizeEmail(profile.email);
+    const googleSub = typeof profile.sub === "string" ? profile.sub : "";
+    const displayName = profile.name || profile.given_name || "Kullanıcı";
+
+    if (!email || !googleSub) {
+      return NextResponse.redirect(`${origin}/login?auth_error=userinfo_incomplete`);
+    }
+
+    if (profile.email_verified === false) {
+      await recordLoginEvent({
+        googleSub,
+        email,
+        name: displayName,
+        picture: profile.picture,
+        status: "BLOCKED",
+        blockReason: "Google e-posta adresi doğrulanmamış",
+        ipAddress,
+        userAgent,
+      });
+      return NextResponse.redirect(`${origin}/login?auth_error=unverified_email`);
+    }
+
+    // 3. Giriş Yasağı (Ban) Kontrolü
+    const banStatus = await isUserBanned(email, googleSub);
+    if (banStatus.banned) {
+      await recordLoginEvent({
+        googleSub,
+        email,
+        name: displayName,
+        picture: profile.picture,
+        status: "BLOCKED",
+        blockReason: banStatus.reason || "Hesap yasaklı",
+        ipAddress,
+        userAgent,
+      });
+      const blockedRes = NextResponse.redirect(`${origin}/login?auth_error=banned`);
+      clearSessionCookie(blockedRes);
+      blockedRes.cookies.delete("oauth_state");
+      return blockedRes;
+    }
+
     const sessionUser = {
-      id: profile.sub,
-      email: profile.email,
-      name: profile.name || profile.given_name || "Kullanıcı",
+      id: googleSub,
+      email,
+      name: displayName,
       picture: profile.picture,
       given_name: profile.given_name,
     };
 
-    // 3. Oturum Çerezini Oluştur (30 gün geçerli)
+    // 4. Başarılı Google Girişini Logla
+    await recordLoginEvent({
+      googleSub,
+      email,
+      name: displayName,
+      picture: profile.picture,
+      status: "ALLOWED",
+      ipAddress,
+      userAgent,
+    });
+
+    // 5. Oturum Çerezini Oluştur (30 gün geçerli)
     const sessionToken = signSession(sessionUser, 30 * 24 * 60 * 60);
 
     const redirectTarget = `${origin}/index.html?auth=success`;
@@ -132,14 +201,15 @@ export async function GET(req: NextRequest) {
     response.cookies.delete("oauth_state");
 
     return response;
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[OAuth] Callback exception:", err);
+    const errObj = err as { message?: string; stack?: string } | null;
     recordTelemetryError({
       source: "oauth_callback",
       url: req.url,
-      userAgent: req.headers.get("user-agent") || "unknown",
-      message: err?.message ? `OAuth callback exception: ${err.message}` : "OAuth callback exception",
-      stack: err?.stack || String(err),
+      userAgent,
+      message: errObj?.message ? `OAuth callback exception: ${errObj.message}` : "OAuth callback exception",
+      stack: errObj?.stack || String(err),
       context: { stage: "exception" },
     });
     return NextResponse.redirect(`${origin}/login?auth_error=internal_error`);

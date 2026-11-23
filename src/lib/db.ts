@@ -1,11 +1,16 @@
 import { Pool } from 'pg';
 
+const connectionString = (process.env.DATABASE_URL || process.env.POSTGRES_URL || '').trim();
+const isLocalDb =
+  !connectionString ||
+  /@(localhost|127\.0\.0\.1|\[::1\]|db)(:|\/)/i.test(connectionString);
+
 // Create a single global connection pool for the entire application.
-// Local Postgres (docker-compose.yml, db/schema.sql) — no cloud DB involved.
+// Supports local Postgres (docker-compose.yml) and hosted Supabase/Neon poolers on Vercel.
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  // Add reasonable timeouts and limits for serverless environments
-  max: 20, // Max number of connections in the pool
+  connectionString: connectionString || undefined,
+  ssl: isLocalDb ? undefined : { rejectUnauthorized: false },
+  max: process.env.VERCEL ? 5 : 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
 });

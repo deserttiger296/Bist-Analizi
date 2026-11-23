@@ -3,8 +3,24 @@ import { redirect } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { verifySession } from "@/lib/auth";
+import { isUserBanned } from "@/lib/authAudit";
 
 export const dynamic = "force-dynamic";
+
+function formatAuthError(code: string): string {
+  switch (code) {
+    case "banned":
+      return "Bu Google hesabının sisteme erişimi yönetici tarafından kısıtlanmıştır.";
+    case "invalid_state":
+      return "Güvenlik doğrulaması (OAuth state) süresi doldu veya eşleşmedi. Lütfen tekrar giriş yapın.";
+    case "unverified_email":
+      return "Google hesabınızın e-posta adresi doğrulanmamış. Doğrulanmış bir hesapla giriş yapın.";
+    case "access_denied":
+      return "Google giriş izni iptal edildi.";
+    default:
+      return `Giriş yapılamadı (${code}). Lütfen tekrar deneyin.`;
+  }
+}
 
 export default async function LoginPage({
   searchParams,
@@ -16,7 +32,10 @@ export default async function LoginPage({
   const user = verifySession(token);
 
   if (user) {
-    redirect("/index.html");
+    const ban = await isUserBanned(user.email, user.id);
+    if (!ban.banned) {
+      redirect("/index.html");
+    }
   }
 
   const sp = await searchParams;
@@ -92,7 +111,7 @@ export default async function LoginPage({
               <svg className="w-4 h-4 shrink-0 text-rose-400" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
               </svg>
-              <span>Giriş yapılamadı ({authError}). Lütfen tekrar deneyin.</span>
+              <span>{formatAuthError(authError)}</span>
             </div>
           )}
 

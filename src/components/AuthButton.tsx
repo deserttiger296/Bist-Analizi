@@ -12,6 +12,7 @@ interface AuthUser {
 
 export function AuthButton() {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -20,11 +21,16 @@ export function AuthButton() {
       .then((data) => {
         if (data.authenticated && data.user) {
           setUser(data.user);
+          setIsAdmin(Boolean(data.isAdmin));
         } else {
           setUser(null);
+          setIsAdmin(false);
         }
       })
-      .catch(() => setUser(null))
+      .catch(() => {
+        setUser(null);
+        setIsAdmin(false);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -50,6 +56,15 @@ export function AuthButton() {
         <span className="font-semibold text-slate-200 max-w-[90px] truncate" title={user.email}>
           {user.name}
         </span>
+        {isAdmin && (
+          <a
+            href="/admin/security"
+            className="text-cyan-400 hover:text-cyan-300 font-semibold ml-1 text-[11px] transition-colors"
+            title="Güvenlik, Giriş Logları ve Yasaklama Paneli"
+          >
+            Güvenlik
+          </a>
+        )}
         <a
           href="/api/auth/logout"
           className="text-slate-400 hover:text-rose-400 font-bold ml-1 text-[11px] transition-colors"
