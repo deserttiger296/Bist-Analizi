@@ -25,5 +25,11 @@
       {"href": "/index.html#architecture", "label": "Sistem Mimarisi", "icon": "grid"},
       {"href": "/index.html#weights", "label": "Model Ağırlıkları", "icon": "sliders"}
     ]
+  },
+  {
+    "label": "REHBER VE EĞİTİM",
+    "items": [
+      {"href": "/viop-rehber", "label": "VİOP & Strateji Rehberi", "icon": "file", "badge": "REHBER"}
+    ]
   }
 ]

@@ -11,7 +11,8 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_all_active_screens_use_one_workspace_layout():
     pages = ['scanner/page.tsx', 'radar/page.tsx', 'agentic-ai/page.tsx',
              '(trading)/signal-terminal/page.tsx', 'analysis/[symbol]/page.tsx',
-             'report/page.tsx', 'history/page.tsx', 'lab/page.tsx']
+             'report/page.tsx', 'history/page.tsx', 'lab/page.tsx',
+             'impulse-lab/page.tsx', 'viop-rehber/page.tsx']
     for page in pages:
         source = (ROOT / 'src/app' / page).read_text(encoding='utf-8')
         assert '<WorkspacePage' in source, page

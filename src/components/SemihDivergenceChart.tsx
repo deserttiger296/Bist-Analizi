@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { TermHint } from "@/components/GlossaryTooltip";
 import {
   createChart,
   CandlestickSeries,
@@ -805,8 +806,14 @@ export default function SemihDivergenceChart({
     <div className="rounded-2xl border border-slate-700/80 bg-[#0d1520] p-4 sm:p-5 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm sm:text-base font-extrabold text-white">
-            {symbol} — Semih Ersoy Uyumsuzluk &amp; Formasyon Çizgileri ({INTERVAL_LABELS[interval]})
+          <h3 className="text-sm sm:text-base font-extrabold text-white flex flex-wrap items-center gap-1.5">
+            <span>
+              {symbol} — Semih Ersoy Uyumsuzluk &amp; Formasyon Çizgileri ({INTERVAL_LABELS[interval]})
+            </span>
+            <TermHint id="PU30" />
+            <TermHint id="NU70" />
+            <TermHint id="GVT" />
+            <TermHint id="GKD" />
           </h3>
           <p className="text-[11px] text-slate-400">
             Fiyattaki mavi uyumsuzluk çizgisi, Güven Kıran Dip / Güven Tazeleyen Direnç ve RSI(14) + Sarı SMA(14).
@@ -1251,6 +1258,16 @@ export default function SemihDivergenceChart({
       <div className={loading || errorMsg ? "hidden" : "space-y-2"}>
         <div ref={priceContainerRef} className="w-full overflow-hidden rounded-xl border border-slate-800" />
         <div ref={rsiContainerRef} className="w-full overflow-hidden rounded-xl border border-slate-800" />
+        <div
+          data-chart-legend="true"
+          className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl border border-slate-800 bg-slate-950/80 px-3.5 py-2 text-[11px] text-slate-300"
+        >
+          <strong className="text-slate-100">Bu Grafiği Nasıl Okurum? (Renk Lejantı):</strong>
+          <span>🔵 <strong>Mavi Çizgi:</strong> PU30 / NU70 Uyumsuzluk Eğimi</span>
+          <span>🟢 <strong>Yeşil Kesikli:</strong> GVT (Alım Teyit Direnci) <TermHint id="GVT" /></span>
+          <span>🔴 <strong>Kırmızı Kesikli:</strong> GKD (Satış / VİOP Short Desteği) &amp; Stop <TermHint id="GKD" /></span>
+          <span>🟡 <strong>Altın/Mor:</strong> 1-2-3 İtki (%161.8 / %361.8) &amp; Fib Zaman <TermHint id="FIB_ZAMAN_MOD_A" /></span>
+        </div>
       </div>
     </div>
   );

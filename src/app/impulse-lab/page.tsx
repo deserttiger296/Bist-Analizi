@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { WorkspacePage, MetricCard, EmptyState } from "@/components/ui/Workspace";
 import SemihDivergenceChart, { type ChartInterval } from "@/components/SemihDivergenceChart";
+import { PlainGuideBanner } from "@/components/PlainGuideBanner";
+import { TermHint } from "@/components/GlossaryTooltip";
+import { ViopCalculator, type ViopSignalPreset } from "@/components/ViopCalculator";
 
 type DirectionFilter = "all" | "BULL" | "BEAR";
 type ScaleMode = "linear" | "log";
@@ -108,23 +111,23 @@ function WfoComparisonPanel({
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono pt-1 border-t border-slate-800/70">
         <div>
-          <span className="text-[10px] text-slate-500 block">Profit Factor</span>
+          <span className="text-[10px] text-slate-500 block">Profit Factor <TermHint id="PROFIT_FACTOR" /></span>
           <strong className={s.profit_factor >= 1.2 ? "text-emerald-300" : s.profit_factor >= 1 ? "text-amber-300" : "text-rose-400"}>
             {s.profit_factor}
           </strong>
         </div>
         <div>
-          <span className="text-[10px] text-slate-500 block">Net EV (-%{costPct})</span>
+          <span className="text-[10px] text-slate-500 block">Net EV (-%{costPct}) <TermHint id="NET_EV" /></span>
           <strong className={s.net_ev_pct > 0 ? "text-emerald-300" : "text-rose-400"}>
             {s.net_ev_pct > 0 ? "+" : ""}%{s.net_ev_pct}
           </strong>
         </div>
         <div>
-          <span className="text-[10px] text-slate-500 block">Fib Zaman (±1 bar)</span>
+          <span className="text-[10px] text-slate-500 block">Fib Zaman (±1 bar) <TermHint id="FIB_ZAMAN_MOD_A" /></span>
           <strong className="text-violet-300">A: %{s.fib_time_hit_mod_a_pct} · B: %{s.fib_time_hit_mod_b_pct}</strong>
         </div>
         <div>
-          <span className="text-[10px] text-slate-500 block">A+ İdeal 1-2 ({s.ideal_a_plus_count})</span>
+          <span className="text-[10px] text-slate-500 block">A+ İdeal 1-2 ({s.ideal_a_plus_count}) <TermHint id="A_PLUS_IDEAL_12" /></span>
           <strong className="text-amber-200">%161: {s.ideal_a_plus_hit_161_pct}% · %361: {s.ideal_a_plus_hit_361_pct}%</strong>
         </div>
       </div>
@@ -165,10 +168,10 @@ function WfoComparisonPanel({
           <table className="w-full text-left text-xs font-mono">
             <thead className="bg-slate-900 text-slate-400 uppercase text-[10px]">
               <tr>
-                <th className="py-2 px-3">OOS Fold</th>
+                <th className="py-2 px-3">OOS Fold <TermHint id="WFO_OOS_FOLD" /></th>
                 <th className="py-2 px-3">Önceki Eğitim</th>
                 <th className="py-2 px-3">Test Dönemi (Sıfır Sızıntı)</th>
-                <th className="py-2 px-3">t2 Erken (n / %161 / %361 / Net EV)</th>
+                <th className="py-2 px-3">t2 Erken (n / %161 / %361 / Net EV) <TermHint id="T2_TEYIDI" /></th>
                 <th className="py-2 px-3">W1 Onaylı (n / %161 / %361 / Net EV)</th>
               </tr>
             </thead>
@@ -230,6 +233,7 @@ export default function ImpulseWfoLabPage() {
     signalPref: "pu30" | "nu70";
     scaleMode: ScaleMode;
   } | null>(null);
+  const [viopModal, setViopModal] = useState<ViopSignalPreset | null>(null);
 
   useEffect(() => {
     setLoadingReport(true);
@@ -304,6 +308,9 @@ export default function ImpulseWfoLabPage() {
       description="PU30 Yükseliş ve NU70 Düşüş 1-2-3 itki yapıları, Fibonacci Zaman çizgileri ve sıfır veri sızıntılı Walk-Forward (WFO) istatistikleri. Üretim motorlarından tamamen ayrı çalışır."
       actions={
         <div className="flex flex-wrap gap-2">
+          <Link href="/viop-rehber" className="rsi-button">
+            VİOP Rehberi
+          </Link>
           <Link href="/lab" className="rsi-button">
             Test Merkezi (/lab)
           </Link>
@@ -314,6 +321,18 @@ export default function ImpulseWfoLabPage() {
       }
     >
       <div className="space-y-8">
+        <PlainGuideBanner
+          storageKey="impulse_lab_guide"
+          title="İtki & WFO Laboratuvarını 3 Adımda Nasıl Okursun?"
+          steps={[
+            "1. Adım (1-2-3 İtki Yapısı): P0 dip/tepe noktasından başlayan 1. dalga (W1) ve P0'ı kırmayan 2. düzeltme dalgası (W2 · A+ ideal %38.2–%78.6) tamamlandığında 3. dalga (%161.8 ve %361.8) hedefleri açılır.",
+            "2. Adım (Giriş & Stop): İptal stopu her zaman P0 fiyatıdır. t2 Teyidi erken girişi, W1/GVT-GKD kırılımı ise onaylı girişi temsil eder; WFO tablosu geçmişte bu kuralların sıfır sızıntıyla ne kadar çalıştığını kanıtlar.",
+            "3. Adım (VİOP Planı): Hazır 1-2 yapılarında '🧮 VİOP Planı' butonuna basarak P0 stop mesafene göre kaç kontrat açman gerektiğini ve Lineer/Log hedeflerdeki TL kârını anında görebilirsin.",
+          ]}
+          ctaHref="/viop-rehber"
+          ctaLabel="VİOP & Strateji Rehberi"
+        />
+
         <div className="rounded-2xl border border-amber-500/35 bg-amber-950/20 px-4 py-3 text-xs text-amber-100 leading-relaxed">
           <strong>🧪 İzole Test Modu:</strong> Bu ekran kendi bağımsız motorunu (<code>/api/impulse-lab</code>) kullanır; klasik tarayıcıları veya Test Merkezi sekmelerini etkilemez. Dalga 2 geri çekilmesi <code>%23.6–%88.6</code> filtrelenir (<code>%38.2–%78.6</code> = <strong>A+ İdeal 1-2</strong>), stop her zaman <code>P0</code>&apos;dır ve BIST gidiş-dönüş maliyeti (<code>%0.25</code>) Net EV hesabından düşülür.
         </div>
@@ -615,10 +634,45 @@ export default function ImpulseWfoLabPage() {
                             )}
                           </div>
 
-                          <div className="flex items-center gap-3 text-xs">
+                          <div className="flex flex-wrap items-center gap-2 text-xs">
                             <span className="text-slate-400">
                               Son: <strong className="text-white font-mono">{fmtTR(item.last_close)} ₺</strong>
                             </span>
+                            {imp?.durum === "1_2_yapisi_hazir" && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setViopModal({
+                                    symbol: item.symbol,
+                                    direction: item.direction === "BEAR" ? "SHORT" : "LONG",
+                                    stopPrice: Number(imp.p0_price),
+                                    entryPrice: Number(
+                                      imp.dalga3_takip?.w1_tepesi_kirildi
+                                        ? item.last_close
+                                        : imp.dalga1?.p1_price ?? item.last_close
+                                    ),
+                                    target1r: Number(
+                                      liveScale === "log"
+                                        ? targets["1.618"]?.target_log
+                                        : targets["1.618"]?.target_from_w2
+                                    ),
+                                    target2r: Number(
+                                      liveScale === "log"
+                                        ? targets["3.618"]?.target_log
+                                        : targets["3.618"]?.target_from_w2
+                                    ),
+                                    triggered: Boolean(
+                                      imp.dalga3_takip?.w1_tepesi_kirildi || imp.gvt_gkd_aligned
+                                    ),
+                                    signalLabel: `1-2-3 İtki (${liveScale === "log" ? "Log" : "Lineer"})`,
+                                    gvtOrGkdLevel: Number(imp.dalga1?.p1_price ?? item.last_close),
+                                  })
+                                }
+                                className="px-3 py-1.5 rounded-lg border border-emerald-500/50 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-100 font-bold text-xs"
+                              >
+                                🧮 VİOP Planı
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() =>
@@ -755,6 +809,24 @@ export default function ImpulseWfoLabPage() {
               defaultFibTimeMode="modA"
               defaultScaleMode={chartModal.scaleMode}
               onClose={() => setChartModal(null)}
+            />
+          </div>
+        </div>
+      )}
+
+      {viopModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          data-viop-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-6 overflow-y-auto"
+          onClick={() => setViopModal(null)}
+        >
+          <div className="w-full max-w-4xl my-auto" onClick={(e) => e.stopPropagation()}>
+            <ViopCalculator
+              signalPreset={viopModal}
+              compact
+              onClose={() => setViopModal(null)}
             />
           </div>
         </div>

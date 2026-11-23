@@ -458,6 +458,18 @@ document.addEventListener('DOMContentLoaded', () => {
         rsiPu30ChartTitle.textContent = `${symbol} — Semih Ersoy Uyumsuzluk & Formasyon Çizgileri (${intervalLabel})`;
         rsiPu30SignalInfo.innerHTML = '<p style="color:var(--text-muted);">Yükleniyor...</p>';
         rsiPu30Modal.classList.remove('hidden');
+        const modalContent = rsiPu30Modal.querySelector('.modal-content') || rsiPu30Modal;
+        let legendEl = rsiPu30Modal.querySelector('[data-rsi-legend]');
+        if (!legendEl && modalContent) {
+            legendEl = document.createElement('div');
+            legendEl.setAttribute('data-rsi-legend', '1');
+            legendEl.className = 'rsi-chart-legend';
+            legendEl.style.cssText = 'margin-top:0.75rem;padding:0.55rem 0.85rem;border-radius:10px;border:1px solid rgba(51,65,85,0.75);background:rgba(15,23,42,0.85);font-size:0.76rem;color:#cbd5e1;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0.6rem;';
+            modalContent.appendChild(legendEl);
+        }
+        if (legendEl) {
+            legendEl.innerHTML = `<span><strong>Renk Lejantı:</strong> 🔵 Mavi: PU30/NU70 Uyumsuzluk · 🟢 Yeşil: GVT (Alım Teyit Direnci) · 🔴 Kırmızı: GKD (Satış / VİOP Short Desteği) &amp; Stop · 🟡 Sarı: RSI SMA(14)</span><a href="/viop-rehber" style="color:#69ddbb;font-weight:700;text-decoration:underline;white-space:nowrap;">🧮 VİOP &amp; Strateji Rehberi</a>`;
+        }
         ensureRsiPu30Charts(itv);
 
         // Önceki yatay seviye çizgilerini temizle

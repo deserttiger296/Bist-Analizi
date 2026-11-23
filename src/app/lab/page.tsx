@@ -5,6 +5,9 @@ import Link from "next/link";
 import { WorkspacePage, MetricCard, EmptyState } from "@/components/ui/Workspace";
 import SemihDivergenceChart, { type ChartInterval } from "@/components/SemihDivergenceChart";
 import { BIST_30 } from "@/lib/indices";
+import { PlainGuideBanner } from "@/components/PlainGuideBanner";
+import { TermHint } from "@/components/GlossaryTooltip";
+import { ViopCalculator, type ViopSignalPreset } from "@/components/ViopCalculator";
 
 type Suite = { id: string; label: string; description: string };
 type TestResult = { name: string; group: string; status: string; duration_sec: number; message: string };
@@ -171,6 +174,7 @@ export default function LabPage() {
     interval: ChartInterval;
     signalPref?: "auto" | "pu30" | "nu70";
   } | null>(null);
+  const [viopModal, setViopModal] = useState<ViopSignalPreset | null>(null);
 
   const [pytestData, setPytestData] = useState<TestReport | null>(null);
   const [suites, setSuites] = useState<Suite[]>([]);
@@ -335,7 +339,7 @@ export default function LabPage() {
   return (
     <WorkspacePage title="Test Merkezi" eyebrow="ARAŞTIRMA VE DOĞRULAMA"
       description="Veri güvenilirliğini, RSI kurallarını ve sistem uyumunu doğrulayın. Testler yalnızca başlattığınızda çalışır."
-      actions={<><Link href="/impulse-lab" className="rsi-button">İtki &amp; WFO Lab</Link><Link href="/mtf-lab.html" className="rsi-button">MTF Strateji Lab</Link><Link href="/index.html#rsipu30" className="rsi-button">RSI Radarı</Link></>}>
+      actions={<><Link href="/viop-rehber" className="rsi-button">VİOP Rehberi</Link><Link href="/impulse-lab" className="rsi-button">İtki &amp; WFO Lab</Link><Link href="/mtf-lab.html" className="rsi-button">MTF Strateji Lab</Link><Link href="/index.html#rsipu30" className="rsi-button">RSI Radarı</Link></>}>
       <div className="workspace-notice workspace-notice-warning">Yeni özellik → Test Merkezi → Regresyon → Uyumluluk kapısı → Üretime geçiş. Başarısız veya eksik kontrol geçişi durdurur.</div>
       <div className="workspace-tabs" role="tablist" aria-label="Test Merkezi bölümleri" onKeyDown={event => {
         if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -372,6 +376,17 @@ export default function LabPage() {
       {/* TAB 0: LONG / SHORT KARAR MATRİSİ */}
       {activeTab === "longshort" && (
         <div className="space-y-6">
+          <PlainGuideBanner
+            storageKey="lab_longshort"
+            title="Long / Short Matrisini 3 Adımda Nasıl Kullanırsın?"
+            steps={[
+              "1. Adım (Yön & Onay): Sol sütun PU30 dip dönüşüyle yükseliş (Long), sağ sütun NU70 tepe yorulmasıyla düşüş (VİOP Short / Kâr Al) adaylarını listeler.",
+              "2. Adım (GVT & GKD Kırılımı): 'GVT Üstü Onaylı' veya 'GKD Altı Onaylı' yazmayan kartlarda henüz kırılım gelmemiştir; erken pozisyon açılmaz.",
+              "3. Adım (VİOP Planı): VİOP rozetli hisselerde '🧮 VİOP Planı' butonuna tıklayarak 1 kontrat = 100 hisse çarpanıyla stop riskine uygun kontrat ve teminat hesabını aç.",
+            ]}
+            ctaHref="/viop-rehber"
+            ctaLabel="VİOP & Strateji Rehberi"
+          />
           <div className="workspace-panel workspace-panel-body space-y-4">
             <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-end justify-between">
               <div className="flex-1 space-y-2">
@@ -576,7 +591,7 @@ export default function LabPage() {
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span
                                 className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                                   item.triggered
@@ -586,6 +601,26 @@ export default function LabPage() {
                               >
                                 {item.status_text}
                               </span>
+                              {item.is_viop && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setViopModal({
+                                      symbol: item.symbol,
+                                      direction: "LONG",
+                                      entryPrice: Number(item.entry_level ?? item.gvt_price ?? item.last_close),
+                                      stopPrice: Number(item.stop_loss),
+                                      target2r: Number(item.target_tp1),
+                                      triggered: Boolean(item.triggered),
+                                      gvtOrGkdLevel: Number(item.entry_level ?? item.gvt_price ?? item.last_close),
+                                      signalLabel: `Long Matrisi (${String(item.interval).toUpperCase()})`,
+                                    })
+                                  }
+                                  className="px-2 py-1 rounded-lg border border-emerald-500/40 bg-emerald-950/40 text-emerald-200 hover:bg-emerald-900/50 text-[10px] font-bold"
+                                >
+                                  🧮 VİOP Planı
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() =>
@@ -604,23 +639,23 @@ export default function LabPage() {
 
                           <div className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-slate-800/80 text-xs font-mono">
                             <div>
-                              <span className="text-[10px] text-slate-500 block">Fiyat / Giriş</span>
+                              <span className="text-[10px] text-slate-500 block">Fiyat / Giriş <TermHint id="GVT" /></span>
                               <span className="text-white font-bold">{Number(item.last_close).toFixed(2)} ₺</span>
                               <span className="text-[10px] text-emerald-400/80 block">GVT: {item.entry_level != null ? Number(item.entry_level).toFixed(2) : "—"}</span>
                               <span className="text-[9px] text-slate-500 block">Alım kırılım eşiği</span>
                             </div>
                             <div>
-                              <span className="text-[10px] text-slate-500 block">Stop-Loss</span>
+                              <span className="text-[10px] text-slate-500 block">Stop-Loss <TermHint id="STOP_LOSS" /></span>
                               <span className="text-rose-400 font-bold">{Number(item.stop_loss).toFixed(2)} ₺</span>
                               <span className="text-[9px] text-slate-500 block">Dip altı koruma</span>
                             </div>
                             <div>
-                              <span className="text-[10px] text-slate-500 block">Hedef TP1</span>
+                              <span className="text-[10px] text-slate-500 block">Hedef TP1 <TermHint id="2R" /></span>
                               <span className="text-emerald-400 font-bold">{Number(item.target_tp1).toFixed(2)} ₺</span>
                               <span className="text-[9px] text-slate-500 block">2x risk kâr hedefi</span>
                             </div>
                             <div>
-                              <span className="text-[10px] text-slate-500 block">R:R Oranı</span>
+                              <span className="text-[10px] text-slate-500 block">R:R Oranı <TermHint id="RR" /></span>
                               <span className="text-cyan-300 font-bold">{item.rr_ratio}x</span>
                               <span className="text-[9px] text-slate-500 block">Ödül / Risk katı</span>
                             </div>
@@ -686,7 +721,7 @@ export default function LabPage() {
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span
                                 className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                                   item.triggered
@@ -696,6 +731,26 @@ export default function LabPage() {
                               >
                                 {item.status_text}
                               </span>
+                              {item.is_viop && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setViopModal({
+                                      symbol: item.symbol,
+                                      direction: "SHORT",
+                                      entryPrice: Number(item.entry_level ?? item.gkd_price ?? item.last_close),
+                                      stopPrice: Number(item.stop_loss),
+                                      target2r: Number(item.target_tp1),
+                                      triggered: Boolean(item.triggered),
+                                      gvtOrGkdLevel: Number(item.gkd_price ?? item.entry_level ?? item.last_close),
+                                      signalLabel: `Short Matrisi (${String(item.interval).toUpperCase()})`,
+                                    })
+                                  }
+                                  className="px-2 py-1 rounded-lg border border-rose-500/40 bg-rose-950/40 text-rose-200 hover:bg-rose-900/50 text-[10px] font-bold"
+                                >
+                                  🧮 VİOP Planı
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() =>
@@ -714,7 +769,7 @@ export default function LabPage() {
 
                           <div className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-slate-800/80 text-xs font-mono">
                             <div>
-                              <span className="text-[10px] text-slate-500 block">Fiyat / Kırılan</span>
+                              <span className="text-[10px] text-slate-500 block">Fiyat / Kırılan <TermHint id="GKD" /></span>
                               <span className="text-white font-bold">{Number(item.last_close).toFixed(2)} ₺</span>
                               <span className="text-[10px] text-rose-400/80 block">
                                 GKD: {item.gkd_price != null ? Number(item.gkd_price).toFixed(2) : "Bekleniyor"}
@@ -722,7 +777,7 @@ export default function LabPage() {
                               <span className="text-[9px] text-slate-500 block">Satış kırılım eşiği</span>
                             </div>
                             <div>
-                              <span className="text-[10px] text-slate-500 block">İptal Stopu</span>
+                              <span className="text-[10px] text-slate-500 block">İptal Stopu <TermHint id="STOP_LOSS" /></span>
                               <span className="text-amber-400 font-bold">{Number(item.stop_loss).toFixed(2)} ₺</span>
                               {item.tepe1_rsi != null && item.tepe2_rsi != null && (
                                 <span className="text-[10px] text-slate-400 block">RSI {item.tepe1_rsi}→{item.tepe2_rsi}</span>
@@ -730,12 +785,12 @@ export default function LabPage() {
                               <span className="text-[9px] text-slate-500 block">Zirve +%2.5 stop</span>
                             </div>
                             <div>
-                              <span className="text-[10px] text-slate-500 block">Destek Hedef</span>
+                              <span className="text-[10px] text-slate-500 block">Destek Hedef <TermHint id="2R" /></span>
                               <span className="text-rose-400 font-bold">{Number(item.target_tp1).toFixed(2)} ₺</span>
                               <span className="text-[9px] text-slate-500 block">2x risk düşüş hedefi</span>
                             </div>
                             <div>
-                              <span className="text-[10px] text-slate-500 block">R:R Oranı</span>
+                              <span className="text-[10px] text-slate-500 block">R:R Oranı <TermHint id="RR" /></span>
                               <span className="text-cyan-300 font-bold">{item.rr_ratio}x</span>
                               <span className="text-[9px] text-slate-500 block">Ödül / Risk katı</span>
                             </div>
@@ -770,6 +825,17 @@ export default function LabPage() {
         const oversoldRows = nu70Data?.oversold_dip_watch || [];
         return (
           <div className="space-y-6">
+            <PlainGuideBanner
+              storageKey="lab_nu70lab"
+              title="NU70 & Asılan Adam Zirve Laboratuvarını 3 Adımda Nasıl Okursun?"
+              steps={[
+                "1. Adım (Katı NU70 vs Erken Aday): Bölüm 1 tüm şartları tamamlanmış zirve yorulmalarını, Bölüm 2 ise henüz %3 geri çekilme veya 5 bar mesafesini doldurmamış erken adayları (NU70_ADAY) gösterir.",
+                "2. Adım (1S/4S Fraktal & 15dk Tuzak): 1S NU70 var ama 4S NU70 yoksa 1R kısa salınım kâr al hedeflenir; 15dk tek başına NU70 ise tuzaktır (öğleden sonra yeni zirve riski).",
+                "3. Adım (VİOP Short & Şelale Koruması): VİOP hisselerinde '🧮 VİOP Planı' butonuyla GKD kırılımına göre short kontrat planını kur; Bölüm 4'teki tepkisiz aşırı satım (şelale) hisselerinde ise 2. dip (PU30) gelmeden Long açma.",
+              ]}
+              ctaHref="/viop-rehber"
+              ctaLabel="VİOP & Strateji Rehberi"
+            />
             <div className="workspace-panel workspace-panel-body space-y-4 border-l-4 border-l-rose-500">
               <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-end justify-between">
                 <div className="flex-1 space-y-2">
@@ -964,8 +1030,10 @@ export default function LabPage() {
                 <div className="workspace-panel workspace-panel-body space-y-3 border-t-2 border-t-rose-500">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <h3 className="text-sm font-black uppercase tracking-wider text-rose-300">
-                        Bölüm 1 — Katı NU70 Zirve &amp; Asılan Adam Sinyalleri
+                      <h3 className="text-sm font-black uppercase tracking-wider text-rose-300 flex flex-wrap items-center gap-1.5">
+                        <span>Bölüm 1 — Katı NU70 Zirve &amp; Asılan Adam Sinyalleri</span>
+                        <TermHint id="NU70" />
+                        <TermHint id="ASILAN_ADAM" />
                       </h3>
                       <p className="text-xs text-slate-400">
                         Görülen en yüksek fiyatta RSI &lt; 70, ara bölgede aynı fiyatta RSI &gt;= 70 tekrarı yok ve teyit sonrası aşılmamış zirveler.
@@ -1027,7 +1095,7 @@ export default function LabPage() {
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span
                                 className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                                   item.triggered
@@ -1037,6 +1105,28 @@ export default function LabPage() {
                               >
                                 {item.status_text}
                               </span>
+                              {item.is_viop && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setViopModal({
+                                      symbol: item.symbol,
+                                      direction: "SHORT",
+                                      entryPrice: Number(item.gkd_price ?? item.last_close),
+                                      stopPrice: Number(item.stop_loss),
+                                      target1r: item.target_1r != null ? Number(item.target_1r) : undefined,
+                                      target2r: item.target_tp1 != null ? Number(item.target_tp1) : undefined,
+                                      triggered: Boolean(item.triggered),
+                                      fractalPhaseCode: item.fractal_phase_code ?? null,
+                                      gvtOrGkdLevel: Number(item.gkd_price ?? item.last_close),
+                                      signalLabel: `NU70 Zirve Lab (${String(item.interval).toUpperCase()})`,
+                                    })
+                                  }
+                                  className="px-2 py-1 rounded-lg border border-rose-500/40 bg-rose-950/40 text-rose-200 hover:bg-rose-900/50 text-[10px] font-bold"
+                                >
+                                  🧮 VİOP Planı
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() =>
@@ -1120,8 +1210,9 @@ export default function LabPage() {
                 <div className="workspace-panel workspace-panel-body space-y-3 border-t-2 border-t-amber-500">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <h3 className="text-sm font-black uppercase tracking-wider text-amber-300">
-                        Bölüm 2 — Erken Yüksek Tepe &amp; Asılan Adam İzleme Havuzu (NU70_ADAY)
+                      <h3 className="text-sm font-black uppercase tracking-wider text-amber-300 flex flex-wrap items-center gap-1.5">
+                        <span>Bölüm 2 — Erken Yüksek Tepe &amp; Asılan Adam İzleme Havuzu (NU70_ADAY)</span>
+                        <TermHint id="NU70_ADAY" />
                       </h3>
                       <p className="text-xs text-slate-400">
                         Katı NU70&apos;in %3 geri çekilme veya 5 bar aralık kuralını henüz doldurmamış ama görülen en yüksek fiyatta RSI &lt; 70 ve/veya dönüş mumu üreten adaylar.
@@ -1155,10 +1246,29 @@ export default function LabPage() {
                                 {c.candle_label && c.candle_label !== "Yok" ? c.candle_label : "Erken Tepe"}
                               </span>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${c.gkd_broken ? "bg-rose-500/20 text-rose-300 border border-rose-500/40" : "bg-slate-800 text-slate-300"}`}>
                                 {c.gkd_broken ? "Ara Dip Altında" : "İzleme"}
                               </span>
+                              {c.is_viop && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setViopModal({
+                                      symbol: c.symbol,
+                                      direction: "SHORT",
+                                      entryPrice: Number(c.entry_level ?? c.last_close),
+                                      stopPrice: Number(c.stop_loss),
+                                      triggered: Boolean(c.gkd_broken),
+                                      gvtOrGkdLevel: Number(c.entry_level ?? c.last_close),
+                                      signalLabel: `NU70_ADAY İzleme (${String(c.interval).toUpperCase()})`,
+                                    })
+                                  }
+                                  className="px-2 py-1 rounded-lg border border-amber-500/40 bg-amber-950/40 text-amber-200 hover:bg-amber-900/50 text-[10px] font-bold"
+                                >
+                                  🧮 VİOP Planı
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() =>
@@ -1261,8 +1371,9 @@ export default function LabPage() {
                 <div className="workspace-panel workspace-panel-body space-y-3 border-t-2 border-t-amber-400">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <h3 className="text-sm font-black uppercase tracking-wider text-amber-300">
-                        Bölüm 4 — Aşırı Satım (`RSI &lt; 30`) Sonrası 2. Dip (`PU30`) Bekleyenler
+                      <h3 className="text-sm font-black uppercase tracking-wider text-amber-300 flex flex-wrap items-center gap-1.5">
+                        <span>Bölüm 4 — Aşırı Satım (`RSI &lt; 30`) Sonrası 2. Dip (`PU30`) Bekleyenler</span>
+                        <TermHint id="EN_AZ_1_DIP_DAHA" />
                       </h3>
                       <p className="text-xs text-slate-400">
                         Semih Hoca ASELS 15dk Kuralı: RSI 30 altına indikten sonra henüz RSI &gt; 30 üzerinde 2. bir dip (PU30) yapmamış hisseler (en az 1 dip daha beklenir; tepkisiz basışta şelale riski).
@@ -1302,19 +1413,40 @@ export default function LabPage() {
                                 {ov.reaction_label || (ov.has_reaction ? "Tepki Geldi" : "Şelale Riski")}
                               </span>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setChartModal({
-                                  symbol: ov.symbol,
-                                  interval: (ov.interval || nu70Interval) as ChartInterval,
-                                  signalPref: "pu30",
-                                })
-                              }
-                              className="px-2 py-1 rounded-lg border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/50 text-[10px] font-bold"
-                            >
-                              📈 Grafiği Aç
-                            </button>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {ov.is_viop && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setViopModal({
+                                      symbol: ov.symbol,
+                                      direction: "LONG",
+                                      entryPrice: Number(ov.last_close),
+                                      stopPrice: Number((Number(ov.oversold_price) * 0.975).toFixed(2)),
+                                      triggered: false,
+                                      hasReaction: Boolean(ov.has_reaction),
+                                      signalLabel: `Aşırı Satım Dip İzleme (${String(ov.interval).toUpperCase()})`,
+                                    })
+                                  }
+                                  className="px-2 py-1 rounded-lg border border-amber-500/40 bg-amber-950/40 text-amber-200 hover:bg-amber-900/50 text-[10px] font-bold"
+                                >
+                                  🧮 VİOP Planı
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setChartModal({
+                                    symbol: ov.symbol,
+                                    interval: (ov.interval || nu70Interval) as ChartInterval,
+                                    signalPref: "pu30",
+                                  })
+                                }
+                                className="px-2 py-1 rounded-lg border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/50 text-[10px] font-bold"
+                              >
+                                📈 Grafiği Aç
+                              </button>
+                            </div>
                           </div>
                           <div className="flex flex-wrap items-center justify-between text-amber-200 pt-1 border-t border-slate-800/70">
                             <span>
@@ -1341,6 +1473,17 @@ export default function LabPage() {
       {/* TAB 1: IMPULSE & FIB TIME TESTBED */}
       {activeTab === "impulse" && (
         <div className="space-y-6">
+          <PlainGuideBanner
+            storageKey="lab_impulse"
+            title="1-2-3 İtki & Fib Zaman Testbed'ini 3 Adımda Nasıl Okursun?"
+            steps={[
+              "1. Adım (t0 → t1 → t2 Çapaları): t0 PU30 dönüşünün 2. dibini, t1 ilk güçlü yükselişin (W1) zirvesini, t2 ise t0'ı kırmayan düzeltme dibini gösterir.",
+              "2. Adım (%161.8 ve %361.8 Hedefleri): 2. dip tamamlandığında W1 boyunun 1,618 ve 3,618 katı ileriye taşınarak 3. dalga ralli hedefleri hesaplanır.",
+              "3. Adım (Fib Zaman Mod A / Mod B): Fiyatın hangi bar ve tarihte ivme kazanabileceğini Mod A (W1 süresi) ve Mod B (0-2 toplam süresi) sütunlarından takip et.",
+            ]}
+            ctaHref="/viop-rehber"
+            ctaLabel="VİOP & Strateji Rehberi"
+          />
           <div className="workspace-panel workspace-panel-body space-y-4">
             <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-end justify-between">
               <div className="flex-1 space-y-1.5">
@@ -1869,10 +2012,25 @@ export default function LabPage() {
 
       {/* TAB 4: LIVE SIGNAL JOURNAL */}
       {activeTab === "journal" && (
+        <div className="space-y-6">
+          <PlainGuideBanner
+            storageKey="lab_journal"
+            title="Canlı Sinyal Günlüğünü (Append-Only) 3 Adımda Nasıl Okursun?"
+            steps={[
+              "1. Adım (Sıfır Geleceğe Bakış): Bu tablodaki her sinyal mum kapandıktan sonra canlıda ilk görülebildiği 'knowable_at' zaman damgasıyla kaydedilir; geriye dönük silinmez.",
+              "2. Adım (Saatlik Güven Seviyesi): Sinyalin yanındaki Saatlik Güven Seviyesi (GVT veya GKD) kırılmadan işlem tetiklenmiş sayılmaz.",
+              "3. Adım (Grafik & VİOP Doğrulaması): '📈 Grafiği Aç' ile uyumsuzluk eğimini incele, VİOP kontrat planı için VİOP Rehberi'ndeki hesaplayıcıyı kullan.",
+            ]}
+            ctaHref="/viop-rehber"
+            ctaLabel="VİOP & Strateji Rehberi"
+          />
         <div className="workspace-panel workspace-panel-body space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-white">Sinyal günlüğü</h2>
+              <h2 className="text-lg font-semibold text-white flex flex-wrap items-center gap-1.5">
+                <span>Sinyal günlüğü</span>
+                <TermHint id="KNOWABLE_AT" />
+              </h2>
               <p className="text-xs text-slate-400">
                 Tarayıcı çalıştıkça tespit edilen tüm sinyallerin `knowable_at` zaman damgası ve saatlik güven seviyeleriyle değiştirilemez (append-only) kaydı.
               </p>
@@ -1962,6 +2120,7 @@ export default function LabPage() {
             <strong>1./2. Dip/Tepe</strong> uyumsuzluğun iki fiyat ve RSI ucunu, <strong>Saatlik Güven Seviyesi</strong> alt-periyot GVT/GKD kırılım eşik fiyatını, <strong>Durum</strong> eşiğin kırılıp kırılmadığını, <strong>Bilinebilir Zaman (knowable_at)</strong> ise sinyalin mum kapandıktan sonra canlıda ilk görülebildiği anı (gelecekten veri sızıntısı önlemi) gösterir.
           </p>
         </div>
+        </div>
       )}
       </section>
       {chartModal && (
@@ -1975,6 +2134,23 @@ export default function LabPage() {
               defaultInterval={chartModal.interval}
               defaultSignalPref={chartModal.signalPref || "auto"}
               onClose={() => setChartModal(null)}
+            />
+          </div>
+        </div>
+      )}
+      {viopModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          data-viop-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-6 overflow-y-auto"
+          onClick={() => setViopModal(null)}
+        >
+          <div className="w-full max-w-4xl my-auto" onClick={(e) => e.stopPropagation()}>
+            <ViopCalculator
+              signalPreset={viopModal}
+              compact
+              onClose={() => setViopModal(null)}
             />
           </div>
         </div>

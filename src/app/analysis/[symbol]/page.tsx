@@ -112,7 +112,7 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
   };
 
   return (
-    <WorkspacePage title={quote.ticker} eyebrow="RSI ANALİZİ · HİSSE İNCELEMESİ" description={<>{quote.name} için veri kaynağından alınan teknik görünüm. <StatusBadge tone={signal.includes("BUY") ? "positive" : signal.includes("SELL") || signal === "TUZAK" ? "negative" : "neutral"}>{signalLabel[signal] || signal}</StatusBadge></>} actions={<div className="flex flex-wrap gap-2 print:hidden"><PrintButton /><Link href="/lab#reference" className="rsi-button">Referans ve kurallar</Link><Link href="/index.html#rsipu30" className="rsi-button">RSI Radarı</Link></div>} className="print:bg-white print:text-black">
+    <WorkspacePage title={quote.ticker} eyebrow="RSI ANALİZİ · HİSSE İNCELEMESİ" description={<>{quote.name} için veri kaynağından alınan teknik görünüm. <StatusBadge tone={signal.includes("BUY") ? "positive" : signal.includes("SELL") || signal === "TUZAK" ? "negative" : "neutral"}>{signalLabel[signal] || signal}</StatusBadge></>} actions={<div className="flex flex-wrap gap-2 print:hidden"><PrintButton /><Link href="/viop-rehber" className="rsi-button">VİOP Rehberi</Link><Link href="/lab#reference" className="rsi-button">Referans ve kurallar</Link><Link href="/index.html#rsipu30" className="rsi-button">RSI Radarı</Link></div>} className="print:bg-white print:text-black">
       <div className="space-y-6">
         <div className="grid gap-6 lg:grid-cols-[1.45fr_0.85fr] print:grid-cols-1 print:gap-4">
           <div className="space-y-6 print:space-y-4">
@@ -169,6 +169,22 @@ export default async function StockReportPage({ params }: { params: Promise<{ sy
               <div className="flex items-center justify-between print:mb-2">
                 <h2 className="text-lg sm:text-xl font-semibold text-white print:text-black">Semih Ersoy PU30 / NU70 Uyumsuzluk, Fraktal &amp; İtki Analizi (İnteraktif Grafik)</h2>
                 <span className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-gray-400 print:text-gray-500">15DK · 1S · 4S · GÜNLÜK</span>
+              </div>
+              <div className="mt-3 rounded-xl border border-slate-700/80 bg-slate-950/70 px-3.5 py-2.5 text-xs text-slate-300 flex flex-wrap items-center justify-between gap-2 print:hidden">
+                <div className="space-y-0.5">
+                  <div>
+                    <strong className="text-emerald-300">Sade Türkçe 3 Adım:</strong>{" "}
+                    <strong>1)</strong> Mavi çizgiyle PU30 (dip) veya NU70 (tepe) uyumsuzluğunu gör ·{" "}
+                    <strong>2)</strong> Alt periyotta yeşil GVT (Alım) veya kırmızı GKD (Satış / VİOP Short) kırılımını bekle ·{" "}
+                    <strong>3)</strong> Kırılım gelmeden erken işlem açma, stop mesafene göre kontrat hesapla.
+                  </div>
+                </div>
+                <Link
+                  href="/viop-rehber"
+                  className="shrink-0 rounded-lg border border-emerald-500/40 bg-emerald-950/40 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:border-emerald-400 hover:text-white"
+                >
+                  🧮 VİOP &amp; Strateji Rehberi
+                </Link>
               </div>
               <div className="mt-4 sm:mt-6 print:mt-0">
                 <InteractiveChartWrapper symbol={quote.ticker} />
