@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { verifySessionEdge } from "@/lib/authEdge";
+import { getInternalProxyToken, verifySessionEdge } from "@/lib/authEdge";
 
 const CANONICAL_HOST = "bist-analizi-forfuck-s-sake.vercel.app";
 
@@ -52,6 +52,17 @@ export async function middleware(request: NextRequest) {
 
   // 3. Protect API routes with JSON 401 instead of HTML redirect
   if (pathname.startsWith("/api")) {
+    // Allow internal server-to-server proxy calls from Next.js API routes to /api/py/*
+    if (pathname.startsWith("/api/py")) {
+      const providedInternal = (request.headers.get("x-bist-internal") || "").trim();
+      if (providedInternal) {
+        const expectedInternal = await getInternalProxyToken();
+        if (expectedInternal && providedInternal === expectedInternal) {
+          return NextResponse.next();
+        }
+      }
+    }
+
     // Allow cron scan when a valid CRON_SECRET bearer/header token is provided
     if (pathname === "/api/bist/cron/scan") {
       const cronSecret = (process.env.CRON_SECRET || "").trim();

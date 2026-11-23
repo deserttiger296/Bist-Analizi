@@ -1,3 +1,5 @@
+import { getInternalProxyToken } from "@/lib/authEdge";
+
 /** Shared server-only transport. Never substitute generated market data. */
 function resolveBackendUrl(): string {
   const explicit = process.env.SNIPER_ENGINE_URL;
@@ -15,7 +17,12 @@ export async function backendRequest(path: string, init: RequestInit = {}): Prom
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 280000);
   try {
-    const response = await fetch(`${BACKEND_URL}${path}`, { ...init, cache: "no-store", signal: controller.signal });
+    const headers = new Headers(init.headers);
+    const internalToken = await getInternalProxyToken();
+    if (internalToken) {
+      headers.set("x-bist-internal", internalToken);
+    }
+    const response = await fetch(`${BACKEND_URL}${path}`, { ...init, headers, cache: "no-store", signal: controller.signal });
     const text = await response.text();
     try {
       // Pass the engine's CDN cache policy through, so the proxy response is cached too.

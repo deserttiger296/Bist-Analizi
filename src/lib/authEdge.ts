@@ -121,3 +121,24 @@ export async function verifySessionEdge(
     return null;
   }
 }
+
+/**
+ * Derives a deterministic internal proxy token from AUTH_SECRET so server-side
+ * Next.js routes can call `/api/py/*` without exposing `/api/py/*` publicly.
+ */
+export async function getInternalProxyToken(): Promise<string | null> {
+  const secret = getEdgeAuthSecret();
+  if (!secret) return null;
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode("bist-internal-py-proxy"));
+  return Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}

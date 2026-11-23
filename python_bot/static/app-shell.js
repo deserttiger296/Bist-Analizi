@@ -99,10 +99,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         const avatar = u.picture
                             ? `<img src="${u.picture}" alt="${u.name}" style="width:20px;height:20px;border-radius:50%;border:1px solid rgba(6,182,212,0.5);margin-right:6px;" referrerpolicy="no-referrer">`
                             : `<span style="width:20px;height:20px;border-radius:50%;background:#0891b2;color:#fff;font-weight:bold;font-size:10px;display:inline-flex;align-items:center;justify-content:center;margin-right:6px;">${(u.name||'U').charAt(0).toUpperCase()}</span>`;
+                        const adminLink = data.isAdmin
+                            ? `<a href="/admin/security" style="color:#22d3ee;font-weight:700;margin-left:8px;font-size:11px;text-decoration:none;" title="Güvenlik, Giriş Logları ve Yasaklama Paneli">Güvenlik</a>`
+                            : '';
                         wrap.innerHTML = `
                             <div style="display:flex;align-items:center;background:rgba(15,23,42,0.85);border:1px solid rgba(51,65,85,0.8);padding:3px 10px;border-radius:10px;font-size:12px;color:#e2e8f0;">
                                 ${avatar}
                                 <span style="font-weight:600;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${u.email}">${u.name}</span>
+                                ${adminLink}
                                 <a href="/api/auth/logout" style="color:#94a3b8;font-weight:700;margin-left:8px;font-size:11px;text-decoration:none;" title="Çıkış Yap">Çıkış</a>
                             </div>
                         `;
